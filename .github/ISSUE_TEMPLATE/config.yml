@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/security
+    about: Report a security problem without exposing sensitive details in a public issue.

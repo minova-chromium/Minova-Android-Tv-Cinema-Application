@@ -1,0 +1,922 @@
+package com.minova.cinema.ui.player
+
+import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
+import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.C
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Button
+import androidx.tv.material3.Text
+import coil3.compose.AsyncImage
+import com.minova.cinema.data.remote.PlaybackQuality
+import com.minova.cinema.data.remote.PlexConfig
+import com.minova.cinema.data.remote.PlexConnection
+import com.minova.cinema.data.remote.PlexUrlFactory
+import com.minova.cinema.domain.MediaContent
+import com.minova.cinema.domain.AudioStream
+import com.minova.cinema.domain.SubtitleStream
+import com.minova.cinema.ui.theme.MinovaCyan
+import com.minova.cinema.ui.theme.MinovaMuted
+import com.minova.cinema.ui.theme.MinovaNightDeep
+import com.minova.cinema.ui.theme.MinovaSurface
+import com.minova.cinema.ui.theme.MinovaTeal
+import kotlinx.coroutines.delay
+import java.util.UUID
+
+private data class SubtitleTrackOption(
+    val id: String,
+    val label: String,
+    val language: String?,
+    val group: Tracks.Group,
+    val trackIndex: Int,
+)
+
+private data class AudioTrackOption(
+    val id: String,
+    val label: String,
+    val language: String?,
+    val codec: String?,
+    val channels: Int?,
+    val passthroughSupported: Boolean,
+    val group: Tracks.Group,
+    val trackIndex: Int,
+)
+
+@OptIn(UnstableApi::class)
+@Composable
+fun PlayerScreen(
+    content: MediaContent,
+    connection: PlexConnection,
+    onProgress: (positionMs: Long, durationMs: Long, state: String) -> Unit,
+    onSubtitleStreamSelected: (subtitleStreamId: Long?, onComplete: () -> Unit) -> Unit,
+    onAudioStreamSelected: (audioStreamId: Long, onComplete: () -> Unit) -> Unit,
+    onPlaybackEnded: (onReady: (MediaContent?) -> Unit) -> Unit,
+    onPlayNext: (MediaContent) -> Unit,
+) {
+    val playback = content.playback
+    if (playback == null) {
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            Text("This item has no playable Plex media part.")
+        }
+        return
+    }
+
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val latestProgress by rememberUpdatedState(onProgress)
+    val latestPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
+    val urlFactory = remember(connection) { PlexUrlFactory(connection) }
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var requestBottomFocus by remember { mutableStateOf(false) }
+    var bottomControlsFocused by remember { mutableStateOf(false) }
+    var selectedQuality by remember { mutableStateOf(PlaybackQuality.Original) }
+    var settingsVisible by remember { mutableStateOf(false) }
+    var subtitleTracks by remember { mutableStateOf<List<SubtitleTrackOption>>(emptyList()) }
+    var selectedSubtitleId by remember { mutableStateOf<String?>(null) }
+    var audioTracks by remember { mutableStateOf<List<AudioTrackOption>>(emptyList()) }
+    var selectedAudioTrackId by remember { mutableStateOf<String?>(null) }
+    var selectedPlexAudioId by remember(playback.audioStreams) {
+        mutableStateOf(playback.audioStreams.firstOrNull { it.selected }?.id)
+    }
+    var selectedPlexSubtitleId by remember(playback.subtitles) {
+        mutableStateOf(playback.subtitles.firstOrNull { it.selected }?.id)
+    }
+    var playbackTimeLeftMs by remember(content.ratingKey) { mutableStateOf(content.timeLeftMs ?: 0L) }
+    var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
+    var nextEpisode by remember(content.ratingKey) { mutableStateOf<MediaContent?>(null) }
+    var nextUpLoading by remember(content.ratingKey) { mutableStateOf(false) }
+    var endHandled by remember(content.ratingKey) { mutableStateOf(false) }
+    var firstLoad by remember { mutableStateOf(true) }
+    val settingsFocusRequester = remember { FocusRequester() }
+    val latestSelectedQuality by rememberUpdatedState(selectedQuality)
+
+    // Movie/media attributes select Android's HDMI/optical media route and
+    // request audio focus. Avoiding AudioProcessors keeps encoded passthrough
+    // available for Dolby and DTS tracks.
+    val cinemaAudioAttributes = remember {
+        AudioAttributes.Builder()
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .setUsage(C.USAGE_MEDIA)
+            .build()
+    }
+
+    // Read the formats advertised by the connected TV or receiver. Media3's
+    // context-aware DefaultAudioSink uses the same system capabilities.
+    val audioCapabilities = remember(context, cinemaAudioAttributes) {
+        AudioCapabilities.getCapabilities(
+            context,
+            cinemaAudioAttributes,
+            null,
+            emptyList(),
+        )
+    }
+
+    val player = remember(content.ratingKey, connection) {
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(PlexConfig.requestHeaders(connection))
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(45_000)
+            .setAllowCrossProtocolRedirects(true)
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+        val sourceFactory = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory)
+
+        // Prefer cinema bitstream formats when Plex exposes multiple default
+        // audio choices. The renderer still rejects unsupported formats and
+        // falls back normally instead of forcing an invalid bitstream.
+        val trackSelector = DefaultTrackSelector(context).apply {
+            setParameters(
+                buildUponParameters()
+                    .setPreferredAudioMimeTypes(
+                        MimeTypes.AUDIO_E_AC3_JOC,
+                        MimeTypes.AUDIO_E_AC3,
+                        MimeTypes.AUDIO_AC3,
+                        MimeTypes.AUDIO_DTS_X,
+                        MimeTypes.AUDIO_DTS_HD,
+                        MimeTypes.AUDIO_DTS,
+                        MimeTypes.AUDIO_TRUEHD,
+                    )
+                    .setAllowAudioMixedMimeTypeAdaptiveness(false)
+                    .build(),
+            )
+        }
+
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(sourceFactory)
+            .setTrackSelector(trackSelector)
+            .setAudioAttributes(cinemaAudioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
+            // Pass the exact source cadence to Android's video Surface. A TV
+            // with Match Content Frame Rate enabled can select 24/50/60 Hz.
+            .setVideoChangeFrameRateStrategy(
+                C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS,
+            )
+            .build()
+            .apply {
+                repeatMode = Player.REPEAT_MODE_OFF
+                playWhenReady = true
+            }
+    }
+
+    fun mediaItemFor(quality: PlaybackQuality): MediaItem {
+        val uri = if (quality == PlaybackQuality.Original) {
+            playback.directUrl
+        } else {
+            urlFactory.transcode(
+                ratingKey = content.ratingKey,
+                quality = quality,
+                // A new Plex transcoder session prevents a previous quality or
+                // burned-subtitle choice from being reused by the server.
+                sessionId = UUID.randomUUID().toString(),
+                subtitleStreamId = selectedPlexSubtitleId,
+                audioStreamId = selectedPlexAudioId,
+            )
+        }
+        return MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId(content.ratingKey)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(content.title).build())
+            .setSubtitleConfigurations(playback.subtitles.mapNotNull(::subtitleConfiguration))
+            .build()
+    }
+
+    LaunchedEffect(
+        selectedQuality,
+        selectedPlexSubtitleId.takeIf { selectedQuality != PlaybackQuality.Original },
+        selectedPlexAudioId.takeIf { selectedQuality != PlaybackQuality.Original },
+        player,
+        content.ratingKey,
+    ) {
+        val existingPosition = if (firstLoad) content.viewOffsetMs else player.currentPosition
+        val shouldPlay = firstLoad || player.playWhenReady
+        player.setMediaItem(mediaItemFor(selectedQuality))
+        player.prepare()
+        if (existingPosition > 0L) player.seekTo(existingPosition)
+        player.playWhenReady = shouldPlay
+        firstLoad = false
+    }
+
+    fun resumeSynchronized() {
+        val resumePosition = player.currentPosition.coerceAtLeast(0L)
+        player.seekTo(resumePosition)
+        player.play()
+    }
+
+    // Tracks can change after preparation, a Plex transcode change, or a new
+    // period in an HLS stream. Rebuild the D-pad menu from Player.Tracks each
+    // time so selection is always based on Media3's real active track groups.
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                selectedSubtitleId = null
+                subtitleTracks = tracks.groups.flatMapIndexed { groupIndex, group ->
+                    if (group.type != C.TRACK_TYPE_TEXT) return@flatMapIndexed emptyList()
+                    (0 until group.length).map { trackIndex ->
+                        val format = group.getTrackFormat(trackIndex)
+                        SubtitleTrackOption(
+                            id = "$groupIndex:$trackIndex",
+                            label = format.label
+                                ?: format.language
+                                ?: "Subtitle ${trackIndex + 1}",
+                            language = format.language,
+                            group = group,
+                            trackIndex = trackIndex,
+                        ).also { option ->
+                            if (group.isTrackSelected(trackIndex)) selectedSubtitleId = option.id
+                        }
+                    }
+                }
+                selectedAudioTrackId = null
+                audioTracks = tracks.groups.flatMapIndexed { groupIndex, group ->
+                    if (group.type != C.TRACK_TYPE_AUDIO) return@flatMapIndexed emptyList()
+                    (0 until group.length).map { trackIndex ->
+                        val format = group.getTrackFormat(trackIndex)
+                        AudioTrackOption(
+                            id = "$groupIndex:$trackIndex",
+                            label = format.label
+                                ?: format.language
+                                ?: "Audio ${trackIndex + 1}",
+                            language = format.language,
+                            codec = format.codecs ?: format.sampleMimeType?.substringAfter('/'),
+                            channels = format.channelCount.takeIf { it > 0 },
+                            passthroughSupported = audioCapabilities
+                                .isPassthroughPlaybackSupported(format, cinemaAudioAttributes),
+                            group = group,
+                            trackIndex = trackIndex,
+                        ).also { option ->
+                            if (group.isTrackSelected(trackIndex)) selectedAudioTrackId = option.id
+                        }
+                    }
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                val fallback = fallbackQualityFor(latestSelectedQuality, error)
+                if (fallback != null) {
+                    playbackMessage = "${latestSelectedQuality.label} is not supported by this TV. Switching to ${fallback.label}…"
+                    selectedQuality = fallback
+                } else {
+                    playbackMessage = "Playback failed: ${error.errorCodeName}. Try another quality or audio track."
+                }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) playbackMessage = null
+                if (playbackState == Player.STATE_ENDED && !endHandled) {
+                    endHandled = true
+                    controlsVisible = false
+                    nextUpLoading = content.kind == com.minova.cinema.domain.MediaKind.Episode
+                    latestPlaybackEnded { resolvedNext ->
+                        nextUpLoading = false
+                        nextEpisode = resolvedNext
+                    }
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+
+    LaunchedEffect(player) {
+        var secondsSinceReport = 0
+        while (true) {
+            delay(1_000)
+            val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
+            playbackTimeLeftMs = (duration - player.currentPosition).coerceAtLeast(0L)
+            secondsSinceReport += 1
+            if (secondsSinceReport >= 10) {
+                latestProgress(
+                    player.currentPosition,
+                    duration,
+                    if (player.isPlaying) "playing" else "paused",
+                )
+                secondsSinceReport = 0
+            }
+        }
+    }
+
+    LaunchedEffect(requestBottomFocus) {
+        if (requestBottomFocus) {
+            delay(40)
+            runCatching { settingsFocusRequester.requestFocus() }
+            requestBottomFocus = false
+        }
+    }
+
+    LaunchedEffect(controlsVisible, bottomControlsFocused, settingsVisible) {
+        if (controlsVisible && !bottomControlsFocused && !settingsVisible) {
+            delay(5_000)
+            controlsVisible = false
+        }
+    }
+
+    // Pause when the app loses the foreground and release every decoder,
+    // surface and AudioTrack when this Composable leaves navigation.
+    DisposableEffect(player, lifecycleOwner) {
+        var resumePlayback = true
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    resumePlayback = player.playWhenReady
+                    player.pause()
+                }
+                Lifecycle.Event.ON_START -> if (resumePlayback) resumeSynchronized()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
+            latestProgress(player.currentPosition, duration, "stopped")
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            playerView?.player = null
+            player.release()
+        }
+    }
+
+    BackHandler(enabled = settingsVisible) {
+        settingsVisible = false
+        playerView?.requestFocus()
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        AndroidView(
+            factory = { viewContext ->
+                PlayerView(viewContext).apply {
+                    this.player = player
+                    // Compose owns the TV controls. This guarantees that OK is
+                    // play/pause instead of merely revealing PlayerView chrome.
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    setKeepContentOnPlayerReset(true)
+                    keepScreenOn = true
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    contentDescription = "Playing ${content.title}"
+                    requestFocus()
+                    playerView = this
+                }
+            },
+            update = { if (it.player !== player) it.player = player },
+            modifier = Modifier
+                .fillMaxSize()
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown || settingsVisible) {
+                        return@onPreviewKeyEvent false
+                    }
+                    when (event.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_MENU,
+                        KeyEvent.KEYCODE_SETTINGS,
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        -> {
+                            controlsVisible = true
+                            requestBottomFocus = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            player.seekBack()
+                            controlsVisible = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            player.seekForward()
+                            controlsVisible = true
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        -> {
+                            if (event.nativeKeyEvent.repeatCount == 0) {
+                                if (player.isPlaying) player.pause() else resumeSynchronized()
+                                controlsVisible = true
+                            }
+                            true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> { resumeSynchronized(); true }
+                        KeyEvent.KEYCODE_MEDIA_PAUSE -> { player.pause(); true }
+                        else -> false
+                    }
+                },
+        )
+
+        AnimatedVisibility(
+            visible = controlsVisible && !settingsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.94f))),
+                    )
+                    .padding(start = 34.dp, end = 34.dp, top = 55.dp, bottom = 24.dp)
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown &&
+                            event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP
+                        ) {
+                            bottomControlsFocused = false
+                            playerView?.requestFocus()
+                            true
+                        } else false
+                    },
+            ) {
+                Text(content.title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    playbackTimeLeftMs.takeIf { it > 0L }?.let {
+                        Text(formatPlayerTimeLeft(it), color = MinovaTeal, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text("Settings are available below", color = MinovaMuted, style = MaterialTheme.typography.bodyMedium)
+                }
+                Button(
+                    onClick = {
+                        bottomControlsFocused = false
+                        settingsVisible = true
+                    },
+                    modifier = Modifier
+                        .padding(top = 14.dp)
+                        .focusRequester(settingsFocusRequester)
+                        .onFocusChanged { bottomControlsFocused = it.isFocused },
+                ) {
+                    Text("Playback settings")
+                }
+            }
+        }
+
+        playbackMessage?.let { message ->
+            Text(
+                text = message,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(MinovaNightDeep.copy(alpha = 0.94f), RoundedCornerShape(8.dp))
+                    .border(1.dp, MinovaCyan, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+        }
+
+        if (nextUpLoading) {
+            Text(
+                "Finding the next episode…",
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(MinovaNightDeep.copy(alpha = 0.92f), RoundedCornerShape(8.dp))
+                    .padding(22.dp),
+            )
+        }
+
+        nextEpisode?.let { episode ->
+            NextUpOverlay(
+                episode = episode,
+                onPlay = { onPlayNext(episode) },
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+
+        // This panel is entered only through Playback settings at the bottom.
+        if (settingsVisible) {
+            PlaybackSettingsPanel(
+                selectedQuality = selectedQuality,
+                audioTracks = audioTracks,
+                selectedAudioTrackId = selectedAudioTrackId,
+                plexAudioStreams = playback.audioStreams,
+                selectedPlexAudioId = selectedPlexAudioId,
+                subtitleTracks = subtitleTracks,
+                selectedSubtitleId = selectedSubtitleId,
+                plexSubtitles = playback.subtitles,
+                selectedPlexSubtitleId = selectedPlexSubtitleId,
+                onQualitySelected = {
+                    selectedQuality = it
+                    settingsVisible = false
+                },
+                onAudioSelected = { option ->
+                    selectedAudioTrackId = option.id
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                        .addOverride(TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex))
+                        .build()
+                    val matchingPlexStream = playback.audioStreams.firstOrNull { stream ->
+                        option.language != null && stream.language.equals(option.language, ignoreCase = true) &&
+                            (option.codec == null || stream.codec.equals(option.codec, ignoreCase = true))
+                    } ?: playback.audioStreams.firstOrNull { stream ->
+                        stream.label.equals(option.label, ignoreCase = true)
+                    }
+                    matchingPlexStream?.let { stream ->
+                        onAudioStreamSelected(stream.id) { selectedPlexAudioId = stream.id }
+                    }
+                },
+                onPlexAudioSelected = { stream ->
+                    onAudioStreamSelected(stream.id) { selectedPlexAudioId = stream.id }
+                },
+                onSubtitleSelected = { option ->
+                    selectedSubtitleId = option?.id
+                    val builder = player.trackSelectionParameters.buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    if (option == null) {
+                        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    } else {
+                        builder
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .addOverride(
+                                TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex),
+                            )
+                    }
+                    player.trackSelectionParameters = builder.build()
+                    val matchingPlexStream = option?.let { selectedTrack ->
+                        playback.subtitles.firstOrNull { stream ->
+                            selectedTrack.language != null &&
+                                stream.language.equals(selectedTrack.language, ignoreCase = true)
+                        } ?: playback.subtitles.firstOrNull { stream ->
+                            stream.label.equals(selectedTrack.label, ignoreCase = true)
+                        }
+                    }
+                    onSubtitleStreamSelected(matchingPlexStream?.id) {
+                        selectedPlexSubtitleId = matchingPlexStream?.id ?: 0L
+                    }
+                },
+                onPlexSubtitleSelected = { stream ->
+                    onSubtitleStreamSelected(stream?.id) {
+                        selectedPlexSubtitleId = stream?.id ?: 0L
+                    }
+                },
+                onClose = {
+                    settingsVisible = false
+                    playerView?.requestFocus()
+                },
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
+    }
+}
+
+/** Premium end-of-episode prompt. The Play button receives focus immediately. */
+@Composable
+private fun NextUpOverlay(
+    episode: MediaContent,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val playFocus = remember { FocusRequester() }
+    LaunchedEffect(episode.ratingKey) {
+        delay(80)
+        playFocus.requestFocus()
+    }
+    Row(
+        modifier = modifier
+            .width(760.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MinovaNightDeep.copy(alpha = 0.97f))
+            .border(2.dp, MinovaCyan, RoundedCornerShape(14.dp))
+            .padding(24.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = episode.backdropUrl ?: episode.posterUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .width(310.dp)
+                .height(174.dp)
+                .clip(RoundedCornerShape(9.dp)),
+        )
+        Column(Modifier.weight(1f)) {
+            Text("NEXT UP", color = MinovaCyan, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                episode.secondaryTitle ?: episode.title,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(top = 7.dp),
+            )
+            Text(
+                episode.title,
+                color = MinovaMuted,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 3.dp),
+            )
+            episode.timeLeftLabel?.let {
+                Text(it, color = MinovaTeal, modifier = Modifier.padding(top = 5.dp))
+            }
+            Button(
+                onClick = onPlay,
+                modifier = Modifier.padding(top = 16.dp).focusRequester(playFocus),
+            ) {
+                Text("Play next episode")
+            }
+        }
+    }
+}
+
+@OptIn(UnstableApi::class)
+private fun subtitleConfiguration(stream: SubtitleStream): MediaItem.SubtitleConfiguration? {
+    val uri = stream.key?.toUri() ?: return null
+    val mimeType = when (stream.codec?.lowercase()) {
+        "srt", "subrip" -> MimeTypes.APPLICATION_SUBRIP
+        "ass", "ssa" -> MimeTypes.TEXT_SSA
+        "vtt", "webvtt" -> MimeTypes.TEXT_VTT
+        "ttml" -> MimeTypes.APPLICATION_TTML
+        else -> return null
+    }
+    return MediaItem.SubtitleConfiguration.Builder(uri)
+        .setMimeType(mimeType)
+        .setLanguage(stream.language)
+        .setLabel(stream.label)
+        .setSelectionFlags(if (stream.selected) C.SELECTION_FLAG_DEFAULT else 0)
+        .build()
+}
+
+@Composable
+private fun PlaybackSettingsPanel(
+    selectedQuality: PlaybackQuality,
+    audioTracks: List<AudioTrackOption>,
+    selectedAudioTrackId: String?,
+    plexAudioStreams: List<AudioStream>,
+    selectedPlexAudioId: Long?,
+    subtitleTracks: List<SubtitleTrackOption>,
+    selectedSubtitleId: String?,
+    plexSubtitles: List<SubtitleStream>,
+    selectedPlexSubtitleId: Long?,
+    onQualitySelected: (PlaybackQuality) -> Unit,
+    onAudioSelected: (AudioTrackOption) -> Unit,
+    onPlexAudioSelected: (AudioStream) -> Unit,
+    onSubtitleSelected: (SubtitleTrackOption?) -> Unit,
+    onPlexSubtitleSelected: (SubtitleStream?) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(80)
+        firstFocus.requestFocus()
+    }
+
+    Column(
+        modifier = modifier
+            .width(430.dp)
+            .fillMaxHeight()
+            .background(MinovaNightDeep.copy(alpha = 0.96f))
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 34.dp, vertical = 30.dp),
+    ) {
+        Text("Playback settings", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "QUALITY",
+            color = MinovaCyan,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 28.dp, bottom = 8.dp),
+        )
+        PlaybackQuality.entries.forEachIndexed { index, quality ->
+            SettingOption(
+                title = quality.label,
+                detail = quality.detail,
+                selected = quality == selectedQuality,
+                onClick = { onQualitySelected(quality) },
+                modifier = if (index == 0) Modifier.focusRequester(firstFocus) else Modifier,
+            )
+        }
+
+        Text(
+            "AUDIO",
+            color = MinovaCyan,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 25.dp, bottom = 8.dp),
+        )
+        if (selectedQuality == PlaybackQuality.Original && audioTracks.isNotEmpty()) {
+            audioTracks.forEach { track ->
+                SettingOption(
+                    title = track.label,
+                    detail = audioDetail(
+                        track.language,
+                        track.codec,
+                        track.channels,
+                        track.passthroughSupported,
+                    ),
+                    selected = selectedAudioTrackId == track.id,
+                    onClick = { onAudioSelected(track) },
+                )
+            }
+        } else if (plexAudioStreams.isNotEmpty()) {
+            plexAudioStreams.forEach { stream ->
+                SettingOption(
+                    title = stream.label,
+                    detail = audioDetail(stream.language, stream.codec, stream.channels),
+                    selected = selectedPlexAudioId == stream.id,
+                    onClick = { onPlexAudioSelected(stream) },
+                )
+            }
+        } else {
+            Text(
+                "No selectable audio tracks were found.",
+                color = MinovaMuted,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
+        }
+
+        Text(
+            "SUBTITLES",
+            color = MinovaCyan,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 25.dp, bottom = 8.dp),
+        )
+        SettingOption(
+            title = "Off",
+            detail = "No subtitles",
+            selected = selectedSubtitleId == null &&
+                (selectedPlexSubtitleId == null || selectedPlexSubtitleId == 0L),
+            onClick = { onSubtitleSelected(null) },
+        )
+        if (subtitleTracks.isNotEmpty()) {
+            subtitleTracks.forEach { track ->
+                SettingOption(
+                    title = track.label,
+                    detail = track.language?.uppercase() ?: "Text track",
+                    selected = selectedSubtitleId == track.id,
+                    onClick = { onSubtitleSelected(track) },
+                )
+            }
+        } else {
+            plexSubtitles.forEach { stream ->
+                SettingOption(
+                    title = stream.label,
+                    detail = listOfNotNull(stream.language?.uppercase(), stream.codec?.uppercase())
+                        .joinToString("  •  "),
+                    selected = selectedPlexSubtitleId == stream.id,
+                    onClick = { onPlexSubtitleSelected(stream) },
+                )
+            }
+        }
+        if (subtitleTracks.isEmpty() && plexSubtitles.isEmpty()) {
+            Text(
+                "No selectable subtitle tracks were found.",
+                color = MinovaMuted,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+        SettingOption(
+            title = "Close",
+            detail = "Return to playback",
+            selected = false,
+            onClick = onClose,
+        )
+    }
+}
+
+@Composable
+private fun SettingOption(
+    title: String,
+    detail: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(7.dp)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .background(if (focused) MinovaSurface.copy(alpha = 0.78f) else MinovaSurface)
+            .border(
+                if (focused || selected) 2.dp else 1.dp,
+                when {
+                    focused -> Color.White
+                    selected -> MinovaCyan
+                    else -> Color.Transparent
+                },
+                shape,
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 15.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                title,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                detail,
+                color = if (focused) Color.White.copy(alpha = 0.78f) else MinovaMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (selected) Text("●", color = if (focused) Color.Black else MinovaCyan)
+    }
+}
+
+private fun audioDetail(
+    language: String?,
+    codec: String?,
+    channels: Int?,
+    passthroughSupported: Boolean = false,
+): String = buildList {
+    language?.takeIf { it.isNotBlank() }?.uppercase()?.let(::add)
+    codec?.takeIf { it.isNotBlank() }?.uppercase()?.let(::add)
+    channels?.let { add(if (it == 1) "Mono" else "$it channels") }
+    if (passthroughSupported) add("Direct HDMI")
+}.ifEmpty { listOf("Audio track") }.joinToString("  •  ")
+
+private fun fallbackQualityFor(
+    current: PlaybackQuality,
+    error: PlaybackException,
+): PlaybackQuality? {
+    val decoderFailure = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
+        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
+    if (!decoderFailure) return null
+    return when (current) {
+        PlaybackQuality.Original, PlaybackQuality.UltraHd -> PlaybackQuality.FullHd
+        PlaybackQuality.FullHd -> PlaybackQuality.Hd
+        PlaybackQuality.Hd -> PlaybackQuality.Sd
+        PlaybackQuality.Sd -> null
+    }
+}
+
+private fun formatPlayerTimeLeft(remainingMs: Long): String {
+    val totalMinutes = (remainingMs + 59_999L) / 60_000L
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+    return when {
+        hours > 0L && minutes > 0L -> "${hours}h ${minutes}m left"
+        hours > 0L -> "${hours}h left"
+        else -> "${minutes.coerceAtLeast(1L)} min left"
+    }
+}

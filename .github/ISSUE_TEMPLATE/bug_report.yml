@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible Minova Cinema problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Never include your Plex token. Redact private server information and personal library details."
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "2.2.0"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Android TV device and version
+      placeholder: "NVIDIA Shield TV, Android TV 14"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include the expected result and the actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. Open…\n2. Press…\n3. Observe…"
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Playback details, if relevant
+      description: Codec, resolution, HDR mode, audio format, subtitles, and whether Plex reports Direct Play or Transcode. Do not name private media if you prefer not to.
+  - type: checkboxes
+    id: sensitive
+    attributes:
+      label: Sensitive information
+      options:
+        - label: I removed Plex tokens, credentials, and unnecessary private server information.
+          required: true
