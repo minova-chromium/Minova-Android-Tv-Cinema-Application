@@ -135,6 +135,7 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var requestBottomFocus by remember { mutableStateOf(false) }
     var bottomControlsFocused by remember { mutableStateOf(false) }
+    var controlsInteractionId by remember { mutableStateOf(0L) }
     var selectedQuality by remember { mutableStateOf(PlaybackQuality.Original) }
     var settingsVisible by remember { mutableStateOf(false) }
     var subtitleTracks by remember { mutableStateOf<List<SubtitleTrackOption>>(emptyList()) }
@@ -148,6 +149,12 @@ fun PlayerScreen(
         mutableStateOf(playback.subtitles.firstOrNull { it.selected }?.id)
     }
     var playbackTimeLeftMs by remember(content.ratingKey) { mutableStateOf(content.timeLeftMs ?: 0L) }
+    var playbackPositionMs by remember(content.ratingKey) {
+        mutableStateOf(content.viewOffsetMs.coerceAtLeast(0L))
+    }
+    var playbackDurationMs by remember(content.ratingKey) {
+        mutableStateOf(content.durationMs?.coerceAtLeast(0L) ?: 0L)
+    }
     var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var nextEpisode by remember(content.ratingKey) { mutableStateOf<MediaContent?>(null) }
     var nextUpLoading by remember(content.ratingKey) { mutableStateOf(false) }
@@ -347,7 +354,10 @@ fun PlayerScreen(
         while (true) {
             delay(1_000)
             val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
-            playbackTimeLeftMs = (duration - player.currentPosition).coerceAtLeast(0L)
+            val position = player.currentPosition.coerceAtLeast(0L)
+            playbackPositionMs = position
+            playbackDurationMs = duration
+            playbackTimeLeftMs = (duration - position).coerceAtLeast(0L)
             secondsSinceReport += 1
             if (secondsSinceReport >= 10) {
                 latestProgress(
@@ -368,11 +378,39 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, bottomControlsFocused, settingsVisible) {
+    LaunchedEffect(
+        controlsVisible,
+        bottomControlsFocused,
+        settingsVisible,
+        controlsInteractionId,
+    ) {
         if (controlsVisible && !bottomControlsFocused && !settingsVisible) {
             delay(5_000)
             controlsVisible = false
         }
+    }
+
+    fun showControlsForInteraction() {
+        controlsVisible = true
+        // Incrementing this value restarts the auto-hide timer even when the
+        // controls were already visible. Holding Left/Right therefore keeps
+        // the timeline on screen until seeking has finished.
+        controlsInteractionId += 1L
+    }
+
+    fun seekBy(deltaMs: Long) {
+        val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
+        val current = player.currentPosition.coerceAtLeast(0L)
+        val target = if (duration > 0L) {
+            (current + deltaMs).coerceIn(0L, duration)
+        } else {
+            (current + deltaMs).coerceAtLeast(0L)
+        }
+        player.seekTo(target)
+        playbackPositionMs = target
+        playbackDurationMs = duration
+        playbackTimeLeftMs = (duration - target).coerceAtLeast(0L)
+        showControlsForInteraction()
     }
 
     // Pause when the app loses the foreground and release every decoder,
@@ -435,18 +473,16 @@ fun PlayerScreen(
                         KeyEvent.KEYCODE_SETTINGS,
                         KeyEvent.KEYCODE_DPAD_DOWN,
                         -> {
-                            controlsVisible = true
+                            showControlsForInteraction()
                             requestBottomFocus = true
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_LEFT -> {
-                            player.seekBack()
-                            controlsVisible = true
+                            seekBy(-player.seekBackIncrement)
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            player.seekForward()
-                            controlsVisible = true
+                            seekBy(player.seekForwardIncrement)
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_CENTER,
@@ -455,7 +491,7 @@ fun PlayerScreen(
                         -> {
                             if (event.nativeKeyEvent.repeatCount == 0) {
                                 if (player.isPlaying) player.pause() else resumeSynchronized()
-                                controlsVisible = true
+                                showControlsForInteraction()
                             }
                             true
                         }
@@ -490,6 +526,11 @@ fun PlayerScreen(
                     },
             ) {
                 Text(content.title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                PlaybackTimeline(
+                    positionMs = playbackPositionMs,
+                    durationMs = playbackDurationMs,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     playbackTimeLeftMs.takeIf { it > 0L }?.let {
                         Text(formatPlayerTimeLeft(it), color = MinovaTeal, style = MaterialTheme.typography.bodyMedium)
@@ -674,6 +715,67 @@ private fun NextUpOverlay(
             ) {
                 Text("Play next episode")
             }
+        }
+    }
+}
+
+/**
+ * Full-runtime playback timeline used by the TV transport overlay.
+ *
+ * The filled cyan/teal portion represents the absolute playback position,
+ * rather than the size of the latest seek jump. This makes a long press on
+ * Left/Right readable for both short episodes and multi-hour films.
+ */
+@Composable
+private fun PlaybackTimeline(
+    positionMs: Long,
+    durationMs: Long,
+    modifier: Modifier = Modifier,
+) {
+    val safeDuration = durationMs.coerceAtLeast(0L)
+    val safePosition = if (safeDuration > 0L) {
+        positionMs.coerceIn(0L, safeDuration)
+    } else {
+        positionMs.coerceAtLeast(0L)
+    }
+    val progress = if (safeDuration > 0L) {
+        safePosition.toFloat() / safeDuration.toFloat()
+    } else {
+        0f
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = formatPlayerTimestamp(safePosition),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = if (safeDuration > 0L) formatPlayerTimestamp(safeDuration) else "--:--",
+                color = MinovaMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp)
+                .height(7.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.22f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(
+                        Brush.horizontalGradient(listOf(MinovaCyan, MinovaTeal)),
+                    ),
+            )
         }
     }
 }
@@ -918,5 +1020,17 @@ private fun formatPlayerTimeLeft(remainingMs: Long): String {
         hours > 0L && minutes > 0L -> "${hours}h ${minutes}m left"
         hours > 0L -> "${hours}h left"
         else -> "${minutes.coerceAtLeast(1L)} min left"
+    }
+}
+
+private fun formatPlayerTimestamp(positionMs: Long): String {
+    val totalSeconds = positionMs.coerceAtLeast(0L) / 1_000L
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%d:%02d".format(minutes, seconds)
     }
 }

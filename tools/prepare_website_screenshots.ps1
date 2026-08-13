@@ -13,6 +13,8 @@ $captures = [ordered]@{
     'minova-seasons.png' = 'app-seasons.jpg'
     'minova-cast.png' = 'app-cast.jpg'
     'minova-playback-settings.png' = 'app-playback-settings.jpg'
+    'minova-movies-grid.png' = 'app-movies.jpg'
+    'minova-series-grid.png' = 'app-series.jpg'
 }
 
 $jpegEncoder = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() |
