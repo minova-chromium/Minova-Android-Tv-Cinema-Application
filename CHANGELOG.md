@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.1 — 2026-08-13
+
+### Improvements
+
+- Added a full-width playback timeline that appears while seeking with the TV remote.
+- Shows elapsed and total playback time while rewinding or fast-forwarding.
+- Keeps the seek overlay visible while Left or Right is held or pressed repeatedly.
+- Replaced website mockups and the previous collection collage with direct application captures.
+- Added dedicated Movies and Series website panels showing their separate Continue Watching shelves.
+
 ## 2.2.0 — 2026-08-13
 
 First public release candidate.

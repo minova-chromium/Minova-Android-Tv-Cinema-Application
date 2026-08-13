@@ -20,8 +20,8 @@ android {
         applicationId = "com.minova.cinema"
         minSdk = 23
         targetSdk = 37
-        versionCode = 22
-        versionName = "2.2.0"
+        versionCode = 23
+        versionName = "2.2.1"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
     }
