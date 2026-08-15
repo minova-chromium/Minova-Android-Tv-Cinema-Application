@@ -39,6 +39,13 @@ data class MediaCredit(
     val imageUrl: String?,
 )
 
+data class MediaMarker(
+    val type: String,
+    val startTimeOffsetMs: Long,
+    val endTimeOffsetMs: Long,
+    val isFinal: Boolean,
+)
+
 data class PlaybackSource(
     val partId: Long,
     val directUrl: String,
@@ -69,6 +76,7 @@ data class MediaContent(
     val grandparentRatingKey: String? = null,
     val isWatched: Boolean = false,
     val credits: List<MediaCredit> = emptyList(),
+    val markers: List<MediaMarker> = emptyList(),
     val playback: PlaybackSource? = null,
 ) {
     val progress: Float

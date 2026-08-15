@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.3.0/Minova-Cinema-2.3.0.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.4.0/Minova-Cinema-2.4.0.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -21,6 +21,9 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Plex-synced watched state, watchlist, Continue Watching progress, manual mark watched/unwatched, and dismiss-from-continue actions.
 - Show details with season artwork, episodes, cast and crew; movie details with trailers when Plex exposes them.
 - Next-up experience after an episode finishes.
+- Optional ten-second autoplay for the next episode, with a persistent TV setting.
+- Plex-powered Skip Credits when the server provides analyzed credit markers.
+- A configurable three-hour inactivity check that stops playback after an unanswered 30-second prompt.
 - Direct D-pad playback: OK toggles play/pause, Left/Right seek, Down opens the bottom controls.
 - Original-quality direct play plus Plex transcoding choices for 4K, 1080p, 720p, and 480p.
 - Audio and subtitle track selection with language, codec, and channel details.
@@ -32,11 +35,13 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 
 ## Install
 
-1. [Download the Minova Cinema 2.3.0 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.3.0/Minova-Cinema-2.3.0.apk).
+1. [Download the Minova Cinema 2.4.0 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.4.0/Minova-Cinema-2.4.0.apk).
 2. Transfer it to an Android TV device and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and enter the Plex server address and token during setup.
 
 The Plex server can be entered as `192.168.1.10:32400` or as a complete `http://`/`https://` URL. Keep the token private—it grants access to the server.
+
+Android does not allow a normal third-party application to power off the television. When the inactivity prompt expires, Minova Cinema stops playback, releases its keep-screen-on player, and returns to Android TV Home so the television's configured screen-saver and sleep policy can take over.
 
 ## Remote controls
 
@@ -101,6 +106,6 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) before publishing di
 
 ## Project status and source terms
 
-Version 2.3.0 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
+Version 2.4.0 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
 
 Plex is a trademark of Plex, Inc. Minova Cinema is not endorsed by or affiliated with Plex, Inc.

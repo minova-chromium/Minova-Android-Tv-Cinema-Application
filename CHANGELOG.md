@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.0 — 2026-08-15
+
+### Playback
+
+- Added an optional 10-second autoplay countdown to the Next Up screen.
+- Added persistent Autoplay and Continue Watching safety toggles in Settings.
+- Added a three-hour inactivity check with a 30-second response countdown.
+- Added Skip Credits when Plex supplies analyzed credits markers for an episode.
+
 ## 2.3.0 — 2026-08-15
 
 ### Automatic updates

@@ -11,6 +11,7 @@ import com.minova.cinema.domain.AudioStream
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.MediaCredit
+import com.minova.cinema.domain.MediaMarker
 import com.minova.cinema.domain.PlaybackSource
 import com.minova.cinema.domain.PlexLibrary
 import com.minova.cinema.domain.SubtitleStream
@@ -275,6 +276,19 @@ class PlexRepository(
                 else -> (metadata.viewCount ?: 0) > 0
             },
             credits = credits,
+            markers = metadata.markers
+                .filter { marker ->
+                    marker.type.isNotBlank() && marker.endTimeOffset > marker.startTimeOffset
+                }
+                .map { marker ->
+                    MediaMarker(
+                        type = marker.type,
+                        startTimeOffsetMs = marker.startTimeOffset.coerceAtLeast(0L),
+                        endTimeOffsetMs = marker.endTimeOffset.coerceAtLeast(0L),
+                        isFinal = marker.final == true,
+                    )
+                }
+                .sortedBy(MediaMarker::startTimeOffsetMs),
             playback = playback,
         )
     }

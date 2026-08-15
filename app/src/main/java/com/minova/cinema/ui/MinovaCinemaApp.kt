@@ -1,5 +1,7 @@
 package com.minova.cinema.ui
 
+import android.app.Activity
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -9,7 +11,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -17,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.CinemaCatalog
+import com.minova.cinema.data.local.PlaybackPreferences
 import com.minova.cinema.presentation.CinemaUiState
 import com.minova.cinema.presentation.CinemaViewModel
 import com.minova.cinema.presentation.ShowDetailUiState
@@ -93,10 +101,18 @@ fun MinovaCinemaApp(
 /** Existing Plex application destination hosted behind the launch intro. */
 @Composable
 private fun MainScreen(viewModel: CinemaViewModel) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
     val routes = rememberRoutes()
+    val playbackPreferences = remember(context.applicationContext) {
+        PlaybackPreferences(context.applicationContext)
+    }
+    var playbackSettings by remember { mutableStateOf(playbackPreferences.read()) }
+    var lastPlaybackInteractionAtMs by remember {
+        mutableLongStateOf(SystemClock.elapsedRealtime())
+    }
 
     LaunchedEffect(uiState::class) {
         if (uiState is CinemaUiState.Onboarding || uiState is CinemaUiState.Error) {
@@ -137,7 +153,10 @@ private fun MainScreen(viewModel: CinemaViewModel) {
 
             fun play(content: MediaContent) {
                 viewModel.resolvePlayable(content) { playable ->
-                    if (playable != null) routes.add(CinemaRoute.Player(playable))
+                    if (playable != null) {
+                        lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
+                        routes.add(CinemaRoute.Player(playable))
+                    }
                 }
             }
 
@@ -197,6 +216,25 @@ private fun MainScreen(viewModel: CinemaViewModel) {
                     is CinemaRoute.Player -> PlayerScreen(
                         content = route.content,
                         connection = state.connection,
+                        autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
+                        inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
+                        lastInteractionAtMs = lastPlaybackInteractionAtMs,
+                        onUserInteraction = {
+                            lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
+                        },
+                        onAutoplayNextEpisodeChanged = { enabled ->
+                            playbackSettings = playbackPreferences.setAutoplayNextEpisode(enabled)
+                        },
+                        onInactivityTimeout = {
+                            if (routes.lastOrNull() is CinemaRoute.Player) {
+                                routes.removeAt(routes.lastIndex)
+                                viewModel.refresh(silent = true)
+                            }
+                            // Third-party TV apps cannot power off the device.
+                            // Removing the keep-screen-on player and returning
+                            // Home lets Android TV's own sleep policy take over.
+                            (context as? Activity)?.moveTaskToBack(true)
+                        },
                         onProgress = { position, duration, playbackState ->
                             viewModel.reportPlayback(
                                 route.content,
@@ -228,12 +266,20 @@ private fun MainScreen(viewModel: CinemaViewModel) {
                     )
                     CinemaRoute.Settings -> SettingsScreen(
                         serverUrl = state.connection.baseUrl,
+                        autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
+                        inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
                         onRefresh = {
                             routes.clear()
                             routes.add(CinemaRoute.Browse)
                             viewModel.refresh(silent = true)
                         },
                         onChangeServer = viewModel::changeServer,
+                        onAutoplayNextEpisodeChanged = { enabled ->
+                            playbackSettings = playbackPreferences.setAutoplayNextEpisode(enabled)
+                        },
+                        onInactivityCheckChanged = { enabled ->
+                            playbackSettings = playbackPreferences.setInactivityCheckEnabled(enabled)
+                        },
                     )
                 }
             }

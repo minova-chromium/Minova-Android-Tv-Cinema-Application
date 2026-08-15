@@ -15,7 +15,10 @@ interface PlexApiService {
     suspend fun getContainer(@Url path: String): PlexLibraryResponse
 
     @GET("library/metadata/{ratingKey}")
-    suspend fun getMetadata(@Path("ratingKey") ratingKey: String): PlexLibraryResponse
+    suspend fun getMetadata(
+        @Path("ratingKey") ratingKey: String,
+        @Query("includeMarkers") includeMarkers: Int = 1,
+    ): PlexLibraryResponse
 
     @GET("library/metadata/{ratingKey}/children")
     suspend fun getChildren(@Path("ratingKey") ratingKey: String): PlexLibraryResponse

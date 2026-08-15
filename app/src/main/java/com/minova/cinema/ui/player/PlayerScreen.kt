@@ -1,5 +1,6 @@
 package com.minova.cinema.ui.player
 
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
@@ -23,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -72,6 +75,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Button
+import androidx.tv.material3.Icon
+import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.minova.cinema.data.remote.PlaybackQuality
@@ -79,6 +84,7 @@ import com.minova.cinema.data.remote.PlexConfig
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexUrlFactory
 import com.minova.cinema.domain.MediaContent
+import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.AudioStream
 import com.minova.cinema.domain.SubtitleStream
 import com.minova.cinema.ui.theme.MinovaCyan
@@ -88,6 +94,10 @@ import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaTeal
 import kotlinx.coroutines.delay
 import java.util.UUID
+
+private const val NEXT_EPISODE_COUNTDOWN_SECONDS = 10
+private const val INACTIVITY_PROMPT_SECONDS = 30
+private const val INACTIVITY_TIMEOUT_MS = 3L * 60L * 60L * 1_000L
 
 private data class SubtitleTrackOption(
     val id: String,
@@ -113,6 +123,12 @@ private data class AudioTrackOption(
 fun PlayerScreen(
     content: MediaContent,
     connection: PlexConnection,
+    autoplayNextEpisode: Boolean,
+    inactivityCheckEnabled: Boolean,
+    lastInteractionAtMs: Long,
+    onUserInteraction: () -> Unit,
+    onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
+    onInactivityTimeout: () -> Unit,
     onProgress: (positionMs: Long, durationMs: Long, state: String) -> Unit,
     onSubtitleStreamSelected: (subtitleStreamId: Long?, onComplete: () -> Unit) -> Unit,
     onAudioStreamSelected: (audioStreamId: Long, onComplete: () -> Unit) -> Unit,
@@ -160,9 +176,12 @@ fun PlayerScreen(
     var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var nextEpisode by remember(content.ratingKey) { mutableStateOf<MediaContent?>(null) }
     var nextUpLoading by remember(content.ratingKey) { mutableStateOf(false) }
+    var inactivityPromptVisible by remember { mutableStateOf(false) }
+    var resumeAfterInactivityPrompt by remember { mutableStateOf(false) }
     var endHandled by remember(content.ratingKey) { mutableStateOf(false) }
     var firstLoad by remember { mutableStateOf(true) }
     val settingsFocusRequester = remember { FocusRequester() }
+    val creditsFocusRequester = remember { FocusRequester() }
     val latestSelectedQuality by rememberUpdatedState(selectedQuality)
 
     // Movie/media attributes select Android's HDMI/optical media route and
@@ -361,7 +380,7 @@ fun PlayerScreen(
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     controlsVisible = false
-                    nextUpLoading = content.kind == com.minova.cinema.domain.MediaKind.Episode
+                    nextUpLoading = content.kind == MediaKind.Episode
                     latestPlaybackEnded { resolvedNext ->
                         nextUpLoading = false
                         nextEpisode = resolvedNext
@@ -411,6 +430,25 @@ fun PlayerScreen(
         if (controlsVisible && !bottomControlsFocused && !settingsVisible) {
             delay(5_000)
             controlsVisible = false
+        }
+    }
+
+    // The interaction timestamp lives above the player route, so autoplaying
+    // into another episode does not reset this three-hour binge-session timer.
+    LaunchedEffect(inactivityCheckEnabled, lastInteractionAtMs, content.ratingKey) {
+        if (!inactivityCheckEnabled) {
+            inactivityPromptVisible = false
+            return@LaunchedEffect
+        }
+        val elapsed = (SystemClock.elapsedRealtime() - lastInteractionAtMs).coerceAtLeast(0L)
+        val remaining = (INACTIVITY_TIMEOUT_MS - elapsed).coerceAtLeast(0L)
+        delay(remaining)
+        if (!inactivityPromptVisible) {
+            resumeAfterInactivityPrompt = player.isPlaying
+            player.pause()
+            controlsVisible = false
+            settingsVisible = false
+            inactivityPromptVisible = true
         }
     }
 
@@ -466,7 +504,39 @@ fun PlayerScreen(
         playerView?.requestFocus()
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    BackHandler(enabled = inactivityPromptVisible) {
+        onInactivityTimeout()
+    }
+
+    val activeCreditsMarker = content.markers.firstOrNull { marker ->
+        marker.type.equals("credits", ignoreCase = true) &&
+            playbackPositionMs >= marker.startTimeOffsetMs &&
+            playbackPositionMs < marker.endTimeOffsetMs
+    }
+
+    LaunchedEffect(
+        activeCreditsMarker?.startTimeOffsetMs,
+        controlsVisible,
+        settingsVisible,
+        inactivityPromptVisible,
+    ) {
+        if (activeCreditsMarker != null && !settingsVisible && !inactivityPromptVisible) {
+            delay(80)
+            runCatching { creditsFocusRequester.requestFocus() }
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                    onUserInteraction()
+                }
+                false
+            },
+    ) {
         AndroidView(
             factory = { viewContext ->
                 PlayerView(viewContext).apply {
@@ -606,9 +676,39 @@ fun PlayerScreen(
         nextEpisode?.let { episode ->
             NextUpOverlay(
                 episode = episode,
+                autoplayEnabled = autoplayNextEpisode,
+                countdownEnabled = !inactivityPromptVisible,
                 onPlay = { onPlayNext(episode) },
+                onAutoplayChanged = onAutoplayNextEpisodeChanged,
                 modifier = Modifier.align(Alignment.Center),
             )
+        }
+
+        if (
+            activeCreditsMarker != null &&
+            nextEpisode == null &&
+            !nextUpLoading &&
+            !settingsVisible &&
+            !inactivityPromptVisible
+        ) {
+            Button(
+                onClick = {
+                    val duration = player.duration.takeIf { it > 0 }
+                        ?: content.durationMs
+                        ?: activeCreditsMarker.endTimeOffsetMs
+                    val target = activeCreditsMarker.endTimeOffsetMs.coerceAtMost(duration)
+                    player.seekTo(target)
+                    playbackPositionMs = target
+                    onUserInteraction()
+                    playerView?.requestFocus()
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 48.dp, bottom = 150.dp)
+                    .focusRequester(creditsFocusRequester),
+            ) {
+                Text("Skip Credits")
+            }
         }
 
         // This panel is entered only through Playback settings at the bottom.
@@ -685,6 +785,19 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
+
+        if (inactivityPromptVisible) {
+            ContinueWatchingOverlay(
+                onContinue = {
+                    inactivityPromptVisible = false
+                    onUserInteraction()
+                    if (resumeAfterInactivityPrompt) resumeSynchronized()
+                    playerView?.requestFocus()
+                },
+                onTimeout = onInactivityTimeout,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
     }
 }
 
@@ -692,13 +805,30 @@ fun PlayerScreen(
 @Composable
 private fun NextUpOverlay(
     episode: MediaContent,
+    autoplayEnabled: Boolean,
+    countdownEnabled: Boolean,
     onPlay: () -> Unit,
+    onAutoplayChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val playFocus = remember { FocusRequester() }
+    var secondsRemaining by remember(episode.ratingKey) { mutableStateOf(NEXT_EPISODE_COUNTDOWN_SECONDS) }
+    var playRequested by remember(episode.ratingKey) { mutableStateOf(false) }
     LaunchedEffect(episode.ratingKey) {
         delay(80)
         playFocus.requestFocus()
+    }
+    LaunchedEffect(episode.ratingKey, autoplayEnabled, countdownEnabled) {
+        secondsRemaining = NEXT_EPISODE_COUNTDOWN_SECONDS
+        if (!autoplayEnabled || !countdownEnabled) return@LaunchedEffect
+        while (secondsRemaining > 0) {
+            delay(1_000)
+            secondsRemaining -= 1
+        }
+        if (!playRequested) {
+            playRequested = true
+            onPlay()
+        }
     }
     Row(
         modifier = modifier
@@ -720,7 +850,11 @@ private fun NextUpOverlay(
                 .clip(RoundedCornerShape(9.dp)),
         )
         Column(Modifier.weight(1f)) {
-            Text("NEXT UP", color = MinovaCyan, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (autoplayEnabled) "NEXT UP · PLAYING IN ${secondsRemaining}s" else "NEXT UP",
+                color = MinovaCyan,
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Text(
                 episode.secondaryTitle ?: episode.title,
                 color = Color.White,
@@ -736,11 +870,86 @@ private fun NextUpOverlay(
             episode.timeLeftLabel?.let {
                 Text(it, color = MinovaTeal, modifier = Modifier.padding(top = 5.dp))
             }
-            Button(
-                onClick = onPlay,
-                modifier = Modifier.padding(top = 16.dp).focusRequester(playFocus),
+            Row(
+                modifier = Modifier.padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Play next episode")
+                Button(
+                    onClick = {
+                        if (!playRequested) {
+                            playRequested = true
+                            onPlay()
+                        }
+                    },
+                    modifier = Modifier.focusRequester(playFocus),
+                ) {
+                    Text("Play now")
+                }
+                OutlinedButton(onClick = { onAutoplayChanged(!autoplayEnabled) }) {
+                    if (autoplayEnabled) {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 7.dp),
+                        )
+                    }
+                    Text("Autoplay")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContinueWatchingOverlay(
+    onContinue: () -> Unit,
+    onTimeout: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val continueFocusRequester = remember { FocusRequester() }
+    var secondsRemaining by remember { mutableStateOf(INACTIVITY_PROMPT_SECONDS) }
+
+    LaunchedEffect(Unit) {
+        delay(80)
+        continueFocusRequester.requestFocus()
+    }
+    LaunchedEffect(Unit) {
+        while (secondsRemaining > 0) {
+            delay(1_000)
+            secondsRemaining -= 1
+        }
+        onTimeout()
+    }
+
+    Column(
+        modifier = modifier
+            .width(620.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MinovaNightDeep.copy(alpha = 0.98f))
+            .border(2.dp, MinovaCyan, RoundedCornerShape(14.dp))
+            .padding(horizontal = 34.dp, vertical = 30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Continue watching?", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "Playback will stop and return Home in $secondsRemaining seconds because there has been no remote activity.",
+            color = MinovaMuted,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        Row(
+            modifier = Modifier.padding(top = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Button(
+                onClick = onContinue,
+                modifier = Modifier.focusRequester(continueFocusRequester),
+            ) {
+                Text("Continue watching")
+            }
+            OutlinedButton(onClick = onTimeout) {
+                Text("Stop playback")
             }
         }
     }

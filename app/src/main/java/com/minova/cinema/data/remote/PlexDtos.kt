@@ -68,7 +68,16 @@ data class Metadata(
     @SerializedName("Director") val directors: List<PersonTag> = emptyList(),
     @SerializedName("Writer") val writers: List<PersonTag> = emptyList(),
     @SerializedName("Producer") val producers: List<PersonTag> = emptyList(),
+    @SerializedName("Marker") val markers: List<Marker> = emptyList(),
     @SerializedName("Media") val media: List<Media> = emptyList(),
+)
+
+data class Marker(
+    @SerializedName("id") val id: Long? = null,
+    @SerializedName("type") val type: String = "",
+    @SerializedName("startTimeOffset") val startTimeOffset: Long = 0L,
+    @SerializedName("endTimeOffset") val endTimeOffset: Long = 0L,
+    @SerializedName("final") val final: Boolean? = null,
 )
 
 data class Tag(
