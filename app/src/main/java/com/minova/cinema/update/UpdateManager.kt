@@ -13,6 +13,21 @@ data class AppUpdate(
     val apkDownloadUrl: String,
 )
 
+internal enum class DownloadState {
+    Pending,
+    Running,
+    Paused,
+    Successful,
+    Failed,
+    Missing,
+}
+
+internal data class DownloadSnapshot(
+    val state: DownloadState,
+    val progressPercent: Int? = null,
+    val reason: Int? = null,
+)
+
 /**
  * Owns the two non-UI update operations: checking GitHub and enqueueing the APK.
  * The package installer still verifies that the APK package name and signing
@@ -79,8 +94,58 @@ class UpdateManager(
 
         val downloadManager = context.getSystemService(DownloadManager::class.java)
         val downloadId = downloadManager.enqueue(request)
-        UpdatePreferences(context).saveDownload(downloadId, apkFile)
+        UpdatePreferences(context).saveDownload(downloadId, apkFile, update.versionName)
         return downloadId
+    }
+
+    /**
+     * Reads DownloadManager instead of assuming that an enqueue succeeded.
+     * This lets the foreground UI launch Android's installer and lets a later
+     * app launch recover a download that completed while Minova Cinema was not
+     * on screen.
+     */
+    internal fun queryDownload(downloadId: Long): DownloadSnapshot {
+        if (downloadId == UpdatePreferences.NO_DOWNLOAD) {
+            return DownloadSnapshot(DownloadState.Missing)
+        }
+        val downloadManager = context.getSystemService(DownloadManager::class.java)
+        return runCatching {
+            downloadManager.query(DownloadManager.Query().setFilterById(downloadId)).use { cursor ->
+                if (!cursor.moveToFirst()) return@use DownloadSnapshot(DownloadState.Missing)
+
+                val status = cursor.getInt(
+                    cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS),
+                )
+                val downloaded = cursor.getLong(
+                    cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR),
+                )
+                val total = cursor.getLong(
+                    cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES),
+                )
+                val progress = if (total > 0L) {
+                    ((downloaded.coerceIn(0L, total) * 100L) / total).toInt()
+                } else {
+                    null
+                }
+                val state = when (status) {
+                    DownloadManager.STATUS_PENDING -> DownloadState.Pending
+                    DownloadManager.STATUS_RUNNING -> DownloadState.Running
+                    DownloadManager.STATUS_PAUSED -> DownloadState.Paused
+                    DownloadManager.STATUS_SUCCESSFUL -> DownloadState.Successful
+                    DownloadManager.STATUS_FAILED -> DownloadState.Failed
+                    else -> DownloadState.Missing
+                }
+                val reason = if (
+                    status == DownloadManager.STATUS_PAUSED ||
+                    status == DownloadManager.STATUS_FAILED
+                ) {
+                    cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                } else {
+                    null
+                }
+                DownloadSnapshot(state = state, progressPercent = progress, reason = reason)
+            }
+        }.getOrElse { DownloadSnapshot(DownloadState.Missing) }
     }
 
     private data class VersionName(private val components: List<Int>) : Comparable<VersionName> {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.1 — 2026-08-15
+
+### Automatic updates
+
+- Fixed the Android TV package installer not appearing after an APK download completed.
+- Moved install permission and package installer hand-offs into the foreground activity so Android cannot block them as background launches.
+- Added visible download progress, paused/error reporting, and recovery after the app process restarts.
+- Preserved pending downloads until the installer has actually opened successfully.
+
 ## 2.4.0 — 2026-08-15
 
 ### Playback

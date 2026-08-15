@@ -31,6 +31,7 @@ import com.minova.cinema.presentation.ShowDetailUiState
 import com.minova.cinema.presentation.MovieDetailUiState
 import com.minova.cinema.update.UpdateUiState
 import com.minova.cinema.update.UpdateViewModel
+import com.minova.cinema.update.UpdateInstaller
 import com.minova.cinema.ui.browse.BrowseScreen
 import com.minova.cinema.ui.common.ConnectionErrorScreen
 import com.minova.cinema.ui.common.LoadingScreen
@@ -40,6 +41,7 @@ import com.minova.cinema.ui.onboarding.OnboardingScreen
 import com.minova.cinema.ui.player.PlayerScreen
 import com.minova.cinema.ui.settings.SettingsScreen
 import com.minova.cinema.ui.update.UpdateAvailableDialog
+import com.minova.cinema.ui.update.UpdateDownloadDialog
 
 private sealed interface CinemaRoute {
     data object Browse : CinemaRoute
@@ -58,8 +60,18 @@ fun MinovaCinemaApp(
     viewModel: CinemaViewModel,
     updateViewModel: UpdateViewModel,
 ) {
+    val context = LocalContext.current
     val navController = rememberNavController()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+    val readyToInstall = updateState as? UpdateUiState.ReadyToInstall
+
+    // This runs while MainActivity is visibly in the foreground. Android TV
+    // blocks the old receiver-based background launch on some devices.
+    LaunchedEffect(readyToInstall?.downloadId) {
+        if (readyToInstall != null && UpdateInstaller.installDownloadedApk(context)) {
+            updateViewModel.installationHandoffStarted()
+        }
+    }
 
     // The intro is a real navigation destination, not an overlay. Removing it
     // inclusively ensures Back from the root Browse screen exits the activity.
@@ -93,6 +105,16 @@ fun MinovaCinemaApp(
                     onUpdateNow = updateViewModel::downloadUpdate,
                     onLater = updateViewModel::dismissUpdate,
                 )
+            }
+            (updateState as? UpdateUiState.Downloading)?.let { downloading ->
+                if (downloading.visible) {
+                    UpdateDownloadDialog(
+                        versionName = downloading.versionName,
+                        progressPercent = downloading.progressPercent,
+                        paused = downloading.paused,
+                        onHide = updateViewModel::hideDownloadProgress,
+                    )
+                }
             }
         }
     }

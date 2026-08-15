@@ -27,4 +27,4 @@ This checklist is mandatory for every public release. It exists because the in-a
    - `Minova-Cinema-<version>.aab`
 10. Confirm both GitHub Actions workflows pass, the website download resolves, and GitHub's `releases/latest` API returns the new tag and APK.
 
-Users must manually install version 2.3.0 once because earlier builds do not contain the updater. Starting with 2.3.0, the app checks GitHub automatically and offers each newer release. Android still requires user confirmation in the system package installer.
+Versions 2.3.0 and 2.4.0 can discover and download updates, but Android TV may block their background installer hand-off. Users on either build must manually install 2.4.1 once. Starting with 2.4.1, download completion and package installation are handed off from the foreground activity and future updates work normally. Android still requires user confirmation in the system package installer.

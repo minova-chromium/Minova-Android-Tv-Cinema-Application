@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -136,6 +137,80 @@ fun UpdateAvailableDialog(
                         Text("Later")
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Progress surface while DownloadManager owns the APK; Back hides it safely. */
+@Composable
+fun UpdateDownloadDialog(
+    versionName: String,
+    progressPercent: Int?,
+    paused: Boolean,
+    onHide: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onHide,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.82f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(min = 520.dp, max = 680.dp)
+                    .background(MinovaNightDeep, RoundedCornerShape(18.dp))
+                    .border(1.dp, MinovaCyan.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 38.dp, vertical = 32.dp),
+            ) {
+                Text(
+                    text = if (paused) "Download Paused" else "Downloading Update",
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                Text(
+                    text = "Minova Cinema $versionName",
+                    color = MinovaCyan,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 28.dp)
+                        .height(8.dp)
+                        .background(MinovaSurfaceRaised, RoundedCornerShape(4.dp)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((progressPercent ?: 4).coerceIn(1, 100) / 100f)
+                            .height(8.dp)
+                            .background(MinovaCyan, RoundedCornerShape(4.dp)),
+                    )
+                }
+                Text(
+                    text = when {
+                        paused -> "Waiting for Android Download Manager to continue"
+                        progressPercent != null -> "$progressPercent% complete"
+                        else -> "Preparing download..."
+                    },
+                    color = MinovaMuted,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
+                Text(
+                    text = "Press Back to hide this window. The download will continue.",
+                    color = MinovaMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             }
         }
     }

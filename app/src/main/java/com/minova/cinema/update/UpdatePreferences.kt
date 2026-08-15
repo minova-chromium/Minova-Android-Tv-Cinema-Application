@@ -16,10 +16,14 @@ internal class UpdatePreferences(context: Context) {
     val installationPending: Boolean
         get() = preferences.getBoolean(KEY_INSTALL_PENDING, false)
 
-    fun saveDownload(id: Long, file: File) {
+    val versionName: String
+        get() = preferences.getString(KEY_VERSION_NAME, null).orEmpty()
+
+    fun saveDownload(id: Long, file: File, versionName: String) {
         preferences.edit()
             .putLong(KEY_DOWNLOAD_ID, id)
             .putString(KEY_APK_PATH, file.absolutePath)
+            .putString(KEY_VERSION_NAME, versionName)
             .putBoolean(KEY_INSTALL_PENDING, false)
             .apply()
     }
@@ -38,5 +42,6 @@ internal class UpdatePreferences(context: Context) {
         private const val KEY_DOWNLOAD_ID = "download_id"
         private const val KEY_APK_PATH = "apk_path"
         private const val KEY_INSTALL_PENDING = "install_pending"
+        private const val KEY_VERSION_NAME = "version_name"
     }
 }
