@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.2 — 2026-08-15
+
+### Fixes and improvements
+
+- Restored D-pad navigation from a show's title into its season posters.
+- Fixed episode selection so choosing an episode starts playback directly.
+- Added the active rendered video resolution beside the remaining time during playback.
+
 ## 2.2.1 — 2026-08-13
 
 ### Improvements

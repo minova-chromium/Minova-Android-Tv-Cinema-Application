@@ -83,6 +83,7 @@ fun DetailScreen(
 ) {
     val detailListState = rememberLazyListState()
     val titleFocusRequester = remember(content.ratingKey) { FocusRequester() }
+    val firstSeasonFocusRequester = remember(content.ratingKey) { FocusRequester() }
 
     // Make the title the explicit initial TV focus anchor. This eliminates the
     // focus/scroll race entirely: a wrapped title remains at item zero, and one
@@ -128,6 +129,7 @@ fun DetailScreen(
                     isInContinueWatching = isInContinueWatching,
                     trailers = trailers,
                     titleFocusRequester = titleFocusRequester,
+                    firstSeasonFocusRequester = firstSeasonFocusRequester,
                     onPlay = onPlay,
                     onPlayTrailer = onPlayTrailer,
                     onWatchedChanged = onWatchedChanged,
@@ -139,6 +141,8 @@ fun DetailScreen(
                 item {
                     ShowBrowser(
                         state = showDetail,
+                        titleFocusRequester = titleFocusRequester,
+                        firstSeasonFocusRequester = firstSeasonFocusRequester,
                         onSeasonSelected = onSeasonSelected,
                         onOpenEpisode = onOpenEpisode,
                     )
@@ -159,6 +163,7 @@ private fun DetailHero(
     isInContinueWatching: Boolean,
     trailers: List<MediaContent>,
     titleFocusRequester: FocusRequester,
+    firstSeasonFocusRequester: FocusRequester,
     onPlay: (MediaContent) -> Unit,
     onPlayTrailer: (MediaContent) -> Unit,
     onWatchedChanged: (Boolean) -> Unit,
@@ -182,7 +187,13 @@ private fun DetailHero(
             style = MaterialTheme.typography.displayMedium,
             modifier = Modifier
                 .focusRequester(titleFocusRequester)
-                .focusProperties { down = primaryActionFocusRequester }
+                .focusProperties {
+                    down = if (content.kind == MediaKind.Show) {
+                        firstSeasonFocusRequester
+                    } else {
+                        primaryActionFocusRequester
+                    }
+                }
                 .focusable(),
         )
         if (content.metadataLine.isNotBlank()) {
@@ -270,6 +281,8 @@ private fun DetailHero(
 @Composable
 private fun ShowBrowser(
     state: ShowDetailUiState,
+    titleFocusRequester: FocusRequester,
+    firstSeasonFocusRequester: FocusRequester,
     onSeasonSelected: (MediaContent) -> Unit,
     onOpenEpisode: (MediaContent) -> Unit,
 ) {
@@ -290,10 +303,18 @@ private fun ShowBrowser(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     items(state.seasons, key = { it.ratingKey }) { season ->
+                        val firstSeasonModifier = if (season.ratingKey == state.seasons.firstOrNull()?.ratingKey) {
+                            Modifier
+                                .focusRequester(firstSeasonFocusRequester)
+                                .focusProperties { up = titleFocusRequester }
+                        } else {
+                            Modifier
+                        }
                         SeasonPosterCard(
                             season = season,
                             selected = season.ratingKey == state.selectedSeason?.ratingKey,
                             onClick = { onSeasonSelected(season) },
+                            modifier = firstSeasonModifier,
                         )
                     }
                 }
@@ -329,7 +350,12 @@ private fun ShowBrowser(
 }
 
 @Composable
-private fun SeasonPosterCard(season: MediaContent, selected: Boolean, onClick: () -> Unit) {
+private fun SeasonPosterCard(
+    season: MediaContent,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.045f else 1f,
@@ -339,7 +365,7 @@ private fun SeasonPosterCard(season: MediaContent, selected: Boolean, onClick: (
     val shape = RoundedCornerShape(8.dp)
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .width(156.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .zIndex(if (focused) 1f else 0f)

@@ -169,7 +169,10 @@ private fun MainScreen(viewModel: CinemaViewModel) {
                             onRemoveFromContinueWatching = {
                                 viewModel.removeFromContinueWatching(route.content)
                             },
-                            onOpenEpisode = ::open,
+                            // Episode cards are playback actions. Resolve the
+                            // full Plex metadata and enter the player directly
+                            // instead of opening a second detail screen.
+                            onOpenEpisode = ::play,
                             onSeasonSelected = viewModel::selectSeason,
                         )
                     }

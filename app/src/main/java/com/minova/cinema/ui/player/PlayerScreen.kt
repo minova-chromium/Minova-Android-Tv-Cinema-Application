@@ -60,6 +60,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -155,6 +156,7 @@ fun PlayerScreen(
     var playbackDurationMs by remember(content.ratingKey) {
         mutableStateOf(content.durationMs?.coerceAtLeast(0L) ?: 0L)
     }
+    var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var nextEpisode by remember(content.ratingKey) { mutableStateOf<MediaContent?>(null) }
     var nextUpLoading by remember(content.ratingKey) { mutableStateOf(false) }
@@ -280,6 +282,19 @@ fun PlayerScreen(
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
+                activeVideoResolution = tracks.groups
+                    .asSequence()
+                    .filter { it.type == C.TRACK_TYPE_VIDEO }
+                    .flatMap { group ->
+                        (0 until group.length)
+                            .asSequence()
+                            .filter(group::isTrackSelected)
+                            .map(group::getTrackFormat)
+                    }
+                    .mapNotNull { format ->
+                        videoResolutionLabel(format.width, format.height)
+                    }
+                    .firstOrNull()
                 selectedSubtitleId = null
                 subtitleTracks = tracks.groups.flatMapIndexed { groupIndex, group ->
                     if (group.type != C.TRACK_TYPE_TEXT) return@flatMapIndexed emptyList()
@@ -320,6 +335,15 @@ fun PlayerScreen(
                         }
                     }
                 }
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                // The rendered size is the most accurate value after Plex has
+                // switched quality or transcoded the source.
+                activeVideoResolution = videoResolutionLabel(
+                    width = videoSize.width,
+                    height = videoSize.height,
+                ) ?: activeVideoResolution
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -534,6 +558,9 @@ fun PlayerScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     playbackTimeLeftMs.takeIf { it > 0L }?.let {
                         Text(formatPlayerTimeLeft(it), color = MinovaTeal, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    activeVideoResolution?.let { resolution ->
+                        Text(resolution, color = MinovaCyan, style = MaterialTheme.typography.bodyMedium)
                     }
                     Text("Settings are available below", color = MinovaMuted, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -1032,5 +1059,19 @@ private fun formatPlayerTimestamp(positionMs: Long): String {
         "%d:%02d:%02d".format(hours, minutes, seconds)
     } else {
         "%d:%02d".format(minutes, seconds)
+    }
+}
+
+private fun videoResolutionLabel(width: Int, height: Int): String? {
+    val longEdge = maxOf(width, height)
+    val shortEdge = minOf(width, height)
+    if (longEdge <= 0 || shortEdge <= 0) return null
+    return when {
+        longEdge >= 3_800 || shortEdge >= 2_100 -> "4K UHD"
+        shortEdge >= 1_400 -> "1440p"
+        shortEdge >= 1_000 -> "1080p"
+        shortEdge >= 700 -> "720p"
+        shortEdge >= 470 -> "480p"
+        else -> "${shortEdge}p"
     }
 }
