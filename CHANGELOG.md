@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.0 — 2026-08-15
+
+### Ambient screensaver
+
+- Added an OLED-friendly ambient mode after five minutes without D-pad input.
+- Added smooth DVD-style Minova logo motion with exact edge bouncing and neon color changes.
+- Suppressed ambient mode while Media3 is actively playing video.
+- Made the first D-pad gesture dismiss ambient mode without activating the focused control underneath.
+
 ## 2.4.1 — 2026-08-15
 
 ### Automatic updates

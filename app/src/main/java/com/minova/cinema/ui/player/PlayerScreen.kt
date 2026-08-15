@@ -127,6 +127,7 @@ fun PlayerScreen(
     inactivityCheckEnabled: Boolean,
     lastInteractionAtMs: Long,
     onUserInteraction: () -> Unit,
+    onPlaybackActivityChanged: (Boolean) -> Unit,
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
     onInactivityTimeout: () -> Unit,
     onProgress: (positionMs: Long, durationMs: Long, state: String) -> Unit,
@@ -147,6 +148,7 @@ fun PlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestProgress by rememberUpdatedState(onProgress)
     val latestPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
+    val latestPlaybackActivityChanged by rememberUpdatedState(onPlaybackActivityChanged)
     val urlFactory = remember(connection) { PlexUrlFactory(connection) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
     var controlsVisible by remember { mutableStateOf(true) }
@@ -299,6 +301,12 @@ fun PlayerScreen(
     // period in an HLS stream. Rebuild the D-pad menu from Player.Tracks each
     // time so selection is always based on Media3's real active track groups.
     DisposableEffect(player) {
+        fun reportPlaybackActivity() {
+            latestPlaybackActivityChanged(
+                player.playbackState == Player.STATE_READY && player.isPlaying,
+            )
+        }
+
         val listener = object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
                 activeVideoResolution = tracks.groups
@@ -376,6 +384,7 @@ fun PlayerScreen(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                reportPlaybackActivity()
                 if (playbackState == Player.STATE_READY) playbackMessage = null
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
@@ -387,9 +396,17 @@ fun PlayerScreen(
                     }
                 }
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                reportPlaybackActivity()
+            }
         }
         player.addListener(listener)
-        onDispose { player.removeListener(listener) }
+        reportPlaybackActivity()
+        onDispose {
+            player.removeListener(listener)
+            latestPlaybackActivityChanged(false)
+        }
     }
 
     LaunchedEffect(player) {

@@ -33,6 +33,7 @@ import com.minova.cinema.update.UpdateUiState
 import com.minova.cinema.update.UpdateViewModel
 import com.minova.cinema.update.UpdateInstaller
 import com.minova.cinema.ui.browse.BrowseScreen
+import com.minova.cinema.ui.ambient.AmbientInactivityTracker
 import com.minova.cinema.ui.common.ConnectionErrorScreen
 import com.minova.cinema.ui.common.LoadingScreen
 import com.minova.cinema.ui.detail.DetailScreen
@@ -59,6 +60,7 @@ private object TopLevelRoute {
 fun MinovaCinemaApp(
     viewModel: CinemaViewModel,
     updateViewModel: UpdateViewModel,
+    ambientInactivityTracker: AmbientInactivityTracker,
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -97,7 +99,7 @@ fun MinovaCinemaApp(
             LaunchedEffect(Unit) {
                 updateViewModel.checkForUpdate()
             }
-            MainScreen(viewModel)
+            MainScreen(viewModel, ambientInactivityTracker)
 
             (updateState as? UpdateUiState.Available)?.let { available ->
                 UpdateAvailableDialog(
@@ -122,7 +124,10 @@ fun MinovaCinemaApp(
 
 /** Existing Plex application destination hosted behind the launch intro. */
 @Composable
-private fun MainScreen(viewModel: CinemaViewModel) {
+private fun MainScreen(
+    viewModel: CinemaViewModel,
+    ambientInactivityTracker: AmbientInactivityTracker,
+) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
@@ -244,6 +249,7 @@ private fun MainScreen(viewModel: CinemaViewModel) {
                         onUserInteraction = {
                             lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
                         },
+                        onPlaybackActivityChanged = ambientInactivityTracker::updatePlaybackActivity,
                         onAutoplayNextEpisodeChanged = { enabled ->
                             playbackSettings = playbackPreferences.setAutoplayNextEpisode(enabled)
                         },

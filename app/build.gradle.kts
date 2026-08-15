@@ -44,8 +44,8 @@ android {
         applicationId = "com.minova.cinema"
         minSdk = 23
         targetSdk = 37
-        versionCode = 27
-        versionName = "2.4.1"
+        versionCode = 28
+        versionName = "2.5.0"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
         buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")

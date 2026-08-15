@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.4.1/Minova-Cinema-2.4.1.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.5.0/Minova-Cinema-2.5.0.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -29,13 +29,14 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Audio and subtitle track selection with language, codec, and channel details.
 - Media3 frame-rate matching and supported surround-audio passthrough.
 - Automatic GitHub Release checks with a D-pad update dialog and secure APK installer hand-off.
+- OLED-friendly ambient mode with a bouncing, color-shifting Minova logo after five idle minutes.
 - Minova visual identity, launch sequence, TV banner, and round launcher mark.
 
 > Playback capability is determined by the Android TV device, connected audio equipment, network, source codecs, subtitle format, and Plex server transcoding capacity. “Original” does not guarantee that every file will direct play on every TV.
 
 ## Install
 
-1. [Download the Minova Cinema 2.4.1 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.4.1/Minova-Cinema-2.4.1.apk).
+1. [Download the Minova Cinema 2.5.0 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.5.0/Minova-Cinema-2.5.0.apk).
 2. Transfer it to an Android TV device and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and enter the Plex server address and token during setup.
 
@@ -108,6 +109,6 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) before publishing di
 
 ## Project status and source terms
 
-Version 2.4.1 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
+Version 2.5.0 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
 
 Plex is a trademark of Plex, Inc. Minova Cinema is not endorsed by or affiliated with Plex, Inc.
