@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0D121A">
+  <meta name="description" content="Report a Minova Cinema bug or request a feature for the Android TV application.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src https:; object-src 'none'; base-uri 'self'; form-action 'self' https://formsubmit.co">
+  <title>Feedback — Minova Cinema</title>
+  <link rel="icon" href="assets/minova-symbol-color.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="site-config.js"></script>
+  <script defer src="releases.js"></script>
+  <script defer src="script.js"></script>
+  <script defer src="feedback.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header scrolled" data-header>
+    <a class="brand" href="index.html" aria-label="Minova Cinema home"><img class="brand-symbol" src="assets/minova-symbol-color.svg" alt=""><img class="brand-lockup" src="assets/minova-cinema-wordmark.png" alt="Minova Cinema"></a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle><span></span><span></span><span></span><span class="sr-only">Menu</span></button>
+    <nav id="site-nav" class="site-nav" aria-label="Primary" data-nav>
+      <a href="https://minova-chromium.github.io/Minova-Main/">Minova home</a>
+      <a href="index.html">Cinema</a>
+      <a href="feedback.html" aria-current="page">Feedback</a>
+      <a class="nav-source" data-download-link href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.2.1/Minova-Cinema-2.2.1.apk">Download</a>
+    </nav>
+  </header>
+
+  <main class="feedback-page" id="main">
+    <section class="feedback-intro">
+      <p class="eyebrow"><span></span> Help shape Minova Cinema</p>
+      <h1>Feedback,<br><em>center stage.</em></h1>
+      <p>Report a bug from the sofa or suggest the feature that would make your library feel even more at home on the big screen.</p>
+    </section>
+
+    <section class="feedback-layout">
+      <div class="feedback-form-shell">
+        <div class="feedback-type" role="group" aria-label="Feedback type">
+          <button class="active" type="button" data-feedback-type="bug" aria-pressed="true">Report a bug</button>
+          <button type="button" data-feedback-type="feature" aria-pressed="false">Request a feature</button>
+        </div>
+        <form id="publicFeedbackForm" novalidate>
+          <input type="hidden" id="feedbackType" name="type" value="bug">
+          <div class="form-grid">
+            <label class="field"><span>Your name <small>(optional)</small></span><input type="text" name="name" maxlength="80" autocomplete="name"></label>
+            <label class="field"><span>Email address <small>(optional)</small></span><input type="email" name="email" maxlength="254" autocomplete="email"><small>Only needed if you would like a reply.</small></label>
+          </div>
+          <label class="field"><span>Subject</span><input id="feedbackSubject" type="text" name="subject" minlength="3" maxlength="120" placeholder="What went wrong?" required></label>
+          <label class="field"><span>Description</span><textarea id="feedbackDescription" name="description" minlength="20" maxlength="5000" placeholder="Tell us what happened, what you expected, and the steps that reproduce it." required></textarea><small class="field-meta"><span>Never include your Plex token.</span><span><output id="feedbackCount">0</output> / 5,000</span></small></label>
+          <div class="form-grid">
+            <label class="field"><span>Minova Cinema version</span><input type="text" name="appVersion" value="2.2.1" maxlength="40" data-release-version-input></label>
+            <label class="field"><span>Android TV device <small>(optional)</small></span><input type="text" name="device" maxlength="100" placeholder="Example: NVIDIA Shield TV"></label>
+          </div>
+          <label class="field"><span>Android TV version <small>(optional)</small></span><input type="text" name="androidVersion" maxlength="60" placeholder="Example: Android TV 11"></label>
+          <label class="honeypot" aria-hidden="true"><span>Website</span><input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+          <div class="form-footer">
+            <p class="form-status" id="feedbackStatus" aria-live="polite"></p>
+            <button class="button button-primary" id="feedbackSubmit" type="submit">Send feedback <span aria-hidden="true">→</span></button>
+          </div>
+        </form>
+      </div>
+
+      <aside class="feedback-aside" aria-label="Feedback guidance">
+        <section><span>01</span><h2>Sent to Minova</h2><p>Submissions go directly to the same Minova team inbox used by Chromium. Your contact email is optional.</p></section>
+        <section><span>02</span><h2>Useful bug reports</h2><p>Include the screen, remote action, media type, and what happened next. Device and Android TV details help isolate playback issues.</p></section>
+        <section><span>03</span><h2>Protect your server</h2><p>Do not include your Plex token, private server address, passwords, or personal media details.</p></section>
+        <section><span>04</span><h2>Prefer GitHub?</h2><p>Public issue templates remain available for reproducible reports and open development.</p><a class="text-link" href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues/new/choose">Open GitHub issues <span>↗</span></a></section>
+      </aside>
+    </section>
+  </main>
+
+  <footer>
+    <a class="brand footer-brand" href="index.html"><img src="assets/minova-symbol-color.svg" alt=""><img src="assets/minova-cinema-wordmark.png" alt="Minova Cinema"></a>
+    <p>Part of the Minova ecosystem.</p>
+    <nav aria-label="Footer"><a href="https://minova-chromium.github.io/Minova-Main/">Minova home</a><a href="https://minova-chromium.github.io/Minova-Chromium/">Chromium</a><a href="privacy.html">Privacy</a></nav>
+    <small>© <span data-year></span> Minova.</small>
+  </footer>
+</body>
+</html>

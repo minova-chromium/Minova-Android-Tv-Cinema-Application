@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/latest">Download</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.2.1/Minova-Cinema-2.2.1.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -31,7 +31,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 
 ## Install
 
-1. Download the latest APK from [GitHub Releases](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/latest).
+1. [Download the Minova Cinema 2.2.1 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.2.1/Minova-Cinema-2.2.1.apk).
 2. Transfer it to an Android TV device and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and enter the Plex server address and token during setup.
 
