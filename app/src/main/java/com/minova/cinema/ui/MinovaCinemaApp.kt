@@ -21,6 +21,8 @@ import com.minova.cinema.presentation.CinemaUiState
 import com.minova.cinema.presentation.CinemaViewModel
 import com.minova.cinema.presentation.ShowDetailUiState
 import com.minova.cinema.presentation.MovieDetailUiState
+import com.minova.cinema.update.UpdateUiState
+import com.minova.cinema.update.UpdateViewModel
 import com.minova.cinema.ui.browse.BrowseScreen
 import com.minova.cinema.ui.common.ConnectionErrorScreen
 import com.minova.cinema.ui.common.LoadingScreen
@@ -29,6 +31,7 @@ import com.minova.cinema.ui.intro.AnimatedIntroScreen
 import com.minova.cinema.ui.onboarding.OnboardingScreen
 import com.minova.cinema.ui.player.PlayerScreen
 import com.minova.cinema.ui.settings.SettingsScreen
+import com.minova.cinema.ui.update.UpdateAvailableDialog
 
 private sealed interface CinemaRoute {
     data object Browse : CinemaRoute
@@ -43,8 +46,12 @@ private object TopLevelRoute {
 }
 
 @Composable
-fun MinovaCinemaApp(viewModel: CinemaViewModel) {
+fun MinovaCinemaApp(
+    viewModel: CinemaViewModel,
+    updateViewModel: UpdateViewModel,
+) {
     val navController = rememberNavController()
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
 
     // The intro is a real navigation destination, not an overlay. Removing it
     // inclusively ensures Back from the root Browse screen exits the activity.
@@ -67,7 +74,18 @@ fun MinovaCinemaApp(viewModel: CinemaViewModel) {
             )
         }
         composable(TopLevelRoute.Main) {
+            LaunchedEffect(Unit) {
+                updateViewModel.checkForUpdate()
+            }
             MainScreen(viewModel)
+
+            (updateState as? UpdateUiState.Available)?.let { available ->
+                UpdateAvailableDialog(
+                    update = available.update,
+                    onUpdateNow = updateViewModel::downloadUpdate,
+                    onLater = updateViewModel::dismissUpdate,
+                )
+            }
         }
     }
 }

@@ -5,12 +5,36 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = Properties().apply {
-    if (keystorePropertiesFile.exists()) {
-        keystorePropertiesFile.inputStream().use(::load)
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties().apply {
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use(::load)
     }
 }
+
+// Migration fallback for existing Minova builds. New installations should put
+// these values in the ignored local.properties file (see README.md).
+val legacyKeystorePropertiesFile = rootProject.file("keystore.properties")
+val legacyKeystoreProperties = Properties().apply {
+    if (legacyKeystorePropertiesFile.exists()) {
+        legacyKeystorePropertiesFile.inputStream().use(::load)
+    }
+}
+
+fun releaseSigningProperty(localName: String, legacyName: String): String? =
+    localProperties.getProperty(localName)?.takeIf(String::isNotBlank)
+        ?: legacyKeystoreProperties.getProperty(legacyName)?.takeIf(String::isNotBlank)
+
+val releaseStoreFile = releaseSigningProperty("MINOVA_RELEASE_STORE_FILE", "storeFile")
+val releaseStorePassword = releaseSigningProperty("MINOVA_RELEASE_STORE_PASSWORD", "storePassword")
+val releaseKeyAlias = releaseSigningProperty("MINOVA_RELEASE_KEY_ALIAS", "keyAlias")
+val releaseKeyPassword = releaseSigningProperty("MINOVA_RELEASE_KEY_PASSWORD", "keyPassword")
+val releaseSigningIsConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.minova.cinema"
@@ -20,10 +44,16 @@ android {
         applicationId = "com.minova.cinema"
         minSdk = 23
         targetSdk = 37
-        versionCode = 24
-        versionName = "2.2.2"
+        versionCode = 25
+        versionName = "2.3.0"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
+        buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")
+        buildConfigField(
+            "String",
+            "UPDATE_GITHUB_REPOSITORY",
+            "\"Minova-Android-Tv-Cinema-Application\"",
+        )
     }
 
     buildFeatures {
@@ -37,19 +67,21 @@ android {
     }
 
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
-            create("release") {
-                storeFile = rootProject.file(requireNotNull(keystoreProperties.getProperty("storeFile")))
-                storePassword = requireNotNull(keystoreProperties.getProperty("storePassword"))
-                keyAlias = requireNotNull(keystoreProperties.getProperty("keyAlias"))
-                keyPassword = requireNotNull(keystoreProperties.getProperty("keyPassword"))
-            }
+        create("release") {
+            // A deliberately missing file keeps Android Studio debug sync usable,
+            // while validateSigningRelease prevents an unsigned release artifact.
+            storeFile = rootProject.file(
+                releaseStoreFile ?: "release-signing/RELEASE_KEYSTORE_NOT_CONFIGURED.jks",
+            )
+            storePassword = releaseStorePassword ?: "NOT_CONFIGURED"
+            keyAlias = releaseKeyAlias ?: "NOT_CONFIGURED"
+            keyPassword = releaseKeyPassword ?: "NOT_CONFIGURED"
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -63,6 +95,21 @@ android {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/DEPENDENCIES",
+        )
+    }
+}
+
+// Give command-line and CI builds a useful error before AGP's generic missing
+// keystore failure. The release build type above is always attached to the same
+// named signing configuration, so an unsigned release APK cannot be produced.
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any { task ->
+        task.project == project && task.name.contains("release", ignoreCase = true)
+    }
+    if (releaseRequested && !releaseSigningIsConfigured) {
+        throw GradleException(
+            "Release signing is not configured. Add the MINOVA_RELEASE_* values " +
+                "to the ignored local.properties file; see README.md.",
         )
     }
 }

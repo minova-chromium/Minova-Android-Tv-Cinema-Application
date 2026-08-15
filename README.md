@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.2.2/Minova-Cinema-2.2.2.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.3.0/Minova-Cinema-2.3.0.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -25,13 +25,14 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Original-quality direct play plus Plex transcoding choices for 4K, 1080p, 720p, and 480p.
 - Audio and subtitle track selection with language, codec, and channel details.
 - Media3 frame-rate matching and supported surround-audio passthrough.
+- Automatic GitHub Release checks with a D-pad update dialog and secure APK installer hand-off.
 - Minova visual identity, launch sequence, TV banner, and round launcher mark.
 
 > Playback capability is determined by the Android TV device, connected audio equipment, network, source codecs, subtitle format, and Plex server transcoding capacity. “Original” does not guarantee that every file will direct play on every TV.
 
 ## Install
 
-1. [Download the Minova Cinema 2.2.2 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.2.2/Minova-Cinema-2.2.2.apk).
+1. [Download the Minova Cinema 2.3.0 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.3.0/Minova-Cinema-2.3.0.apk).
 2. Transfer it to an Android TV device and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and enter the Plex server address and token during setup.
 
@@ -58,7 +59,16 @@ Requirements: Android Studio with JDK 17 and Android SDK 37.
 
 The debug APK is written to `app/build/outputs/apk/debug/`. Open the repository root in Android Studio to run it on a TV emulator or a physical Android TV device.
 
-Release builds read signing values from an ignored `keystore.properties` file. See [`keystore.properties.example`](keystore.properties.example). The release keystore and its passwords must be backed up; Android updates must be signed with the same key.
+Release builds read signing values from the ignored `local.properties` file. See [`local.properties.example`](local.properties.example), keep the existing release keystore, and add these entries below the normal `sdk.dir` value:
+
+```properties
+MINOVA_RELEASE_STORE_FILE=release-signing/minova-cinema-release.jks
+MINOVA_RELEASE_STORE_PASSWORD=replace_with_store_password
+MINOVA_RELEASE_KEY_ALIAS=minova-cinema
+MINOVA_RELEASE_KEY_PASSWORD=replace_with_key_password
+```
+
+Never commit `local.properties`, the keystore, or either password. Back up the release keystore and credentials securely: Android will reject an in-place update if it is signed by a different certificate. The previous ignored `keystore.properties` format remains a temporary migration fallback, but new environments should use `local.properties`.
 
 ## Architecture
 
@@ -67,12 +77,17 @@ PlexPreferences -> CinemaViewModel -> PlexRepository -> Plex API services
                          |
                          +-> Browse / Search / Detail / Settings
                          +-> PlayerScreen -> Media3 ExoPlayer
+
+GitHub releases/latest -> UpdateViewModel -> TV update dialog
+                                             |
+                                             +-> DownloadManager -> FileProvider -> Package Installer
 ```
 
 - `data/local` — on-device connection settings and dismissed Continue Watching IDs.
 - `data/remote` — Retrofit endpoints, Plex DTOs, authentication headers, and playback URL construction.
 - `data/PlexRepository.kt` — library, metadata, watch-state, watchlist, stream-selection, and playback mapping.
 - `presentation` — application state and coroutine-backed catalog/detail operations.
+- `update` — GitHub release checks, semantic version comparison, APK download, and installer hand-off.
 - `ui` — intro, onboarding, TV browsing, search, details, settings, and fullscreen playback.
 - `docs` — the static GitHub Pages product website.
 
@@ -86,6 +101,6 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) before publishing di
 
 ## Project status and source terms
 
-Version 2.2.2 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
+Version 2.3.0 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
 
 Plex is a trademark of Plex, Inc. Minova Cinema is not endorsed by or affiliated with Plex, Inc.

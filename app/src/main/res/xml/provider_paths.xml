@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- App-specific external storage: no READ/WRITE storage permission needed. -->
+    <external-files-path
+        name="minova_cinema_updates"
+        path="Download/updates/" />
+</paths>

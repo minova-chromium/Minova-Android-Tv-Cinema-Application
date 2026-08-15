@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.0 — 2026-08-15
+
+### Automatic updates
+
+- Added automatic version checks against the latest Minova Cinema GitHub Release.
+- Added a D-pad-native update dialog with release notes and Later/Update Now actions.
+- Added background APK downloads and secure FileProvider hand-off to Android's package installer.
+- Enforced the Minova release signing configuration for every release artifact.
+
 ## 2.2.2 — 2026-08-15
 
 ### Fixes and improvements

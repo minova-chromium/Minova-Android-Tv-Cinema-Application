@@ -8,11 +8,14 @@ import androidx.activity.viewModels
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.minova.cinema.presentation.CinemaViewModel
+import com.minova.cinema.update.UpdateInstaller
+import com.minova.cinema.update.UpdateViewModel
 import com.minova.cinema.ui.MinovaCinemaApp
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: CinemaViewModel by viewModels { CinemaViewModel.Factory(this) }
+    private val updateViewModel: UpdateViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,8 +28,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MinovaCinemaTheme {
-                MinovaCinemaApp(viewModel)
+                MinovaCinemaApp(viewModel, updateViewModel)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // If Android sent the user to "Install unknown apps", returning to
+        // Minova Cinema continues the pending installation automatically.
+        UpdateInstaller.resumePendingInstall(this)
     }
 }
