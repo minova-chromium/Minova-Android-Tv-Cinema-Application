@@ -20,6 +20,16 @@ interface PlexApiService {
         @Query("includeMarkers") includeMarkers: Int = 1,
     ): PlexLibraryResponse
 
+    /**
+     * Resolves Discover/Watchlist GUIDs to items that actually exist on this
+     * Plex Media Server. Plex's own clients send at most ten GUIDs per call.
+     */
+    @GET("library/metadata/{guids}")
+    suspend fun resolveMetadataGuids(
+        @Path(value = "guids", encoded = true) guids: String,
+        @Query("skipRefresh") skipRefresh: Int = 1,
+    ): PlexLibraryResponse
+
     @GET("library/metadata/{ratingKey}/children")
     suspend fun getChildren(@Path("ratingKey") ratingKey: String): PlexLibraryResponse
 

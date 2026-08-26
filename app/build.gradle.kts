@@ -44,8 +44,8 @@ android {
         applicationId = "com.minova.cinema"
         minSdk = 23
         targetSdk = 37
-        versionCode = 28
-        versionName = "2.5.0"
+        versionCode = 29
+        versionName = "2.5.1"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
         buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")
@@ -142,6 +142,8 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
     implementation("io.coil-kt.coil3:coil-svg:3.5.0")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

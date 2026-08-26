@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.1 — 2026-08-26
+
+### Plex Watchlist
+
+- Fixed Plex Watchlist titles not appearing even when they are available on the configured server.
+- Resolved account-wide Discover GUIDs through the local Plex Media Server, matching Plex's official client behavior.
+- Added pagination, external-ID fallback matching, and preserved Plex Watchlist order.
+- Added regression coverage for Watchlist resolution and encoded Plex GUID requests.
+
 ## 2.5.0 — 2026-08-15
 
 ### Ambient screensaver

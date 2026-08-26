@@ -57,6 +57,7 @@ data class PlaybackSource(
 data class MediaContent(
     val ratingKey: String,
     val plexGuid: String? = null,
+    val identityGuids: Set<String> = emptySet(),
     val title: String,
     val secondaryTitle: String?,
     val summary: String?,

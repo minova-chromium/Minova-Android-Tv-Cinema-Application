@@ -149,7 +149,7 @@ fun BrowseScreen(
             BrowseTab.Home -> "Your Plex library is empty."
             BrowseTab.Movies -> "No movies were found."
             BrowseTab.Series -> "No series were found."
-            BrowseTab.MyList -> "Your list is empty. Add a title from its details page."
+            BrowseTab.MyList -> "No titles from this Plex server are in your Watchlist."
             BrowseTab.Search -> "Search your Plex library."
         }
         if (tab == BrowseTab.Search) {

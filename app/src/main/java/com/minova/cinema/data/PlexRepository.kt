@@ -1,6 +1,5 @@
 package com.minova.cinema.data
 
-import androidx.core.net.toUri
 import com.minova.cinema.data.remote.Metadata
 import com.minova.cinema.data.remote.PlexApiService
 import com.minova.cinema.data.remote.PlexConnection
@@ -18,13 +17,17 @@ import com.minova.cinema.domain.SubtitleStream
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import java.net.URLEncoder
+import java.net.URI
+import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 class PlexRepository(
     private val connection: PlexConnection,
     private val api: PlexApiService,
     private val watchlistApi: PlexWatchlistApiService,
 ) {
-    private val urls = PlexUrlFactory(connection)
+    private val urls by lazy(LazyThreadSafetyMode.NONE) { PlexUrlFactory(connection) }
 
     suspend fun loadCatalog(): CinemaCatalog = coroutineScope {
         val sectionsResponse = api.getLibrarySections().mediaContainer
@@ -44,18 +47,19 @@ class PlexRepository(
 
         val movies = moviesDeferred.await()
         val shows = showsDeferred.await()
-        val watchlistGuids = runCatching {
-            watchlistApi.getWatchlist().mediaContainer.metadata
-                .mapNotNull { it.guid }
-                .toSet()
-        }.getOrDefault(emptySet())
+        val localMedia = movies + shows
+        val watchlist = runCatching {
+            loadWatchlist(localMedia)
+        }.getOrDefault(emptyList())
 
         CinemaCatalog(
-            serverName = connection.baseUrl.toUri().host ?: "Plex",
+            serverName = runCatching { URI(connection.baseUrl).host }
+                .getOrNull()
+                ?: "Plex",
             movies = movies,
             shows = shows,
             continueWatching = continueDeferred.await(),
-            myList = (movies + shows).filter { it.plexGuid in watchlistGuids },
+            myList = watchlist,
         )
     }
 
@@ -109,7 +113,10 @@ class PlexRepository(
     }
 
     suspend fun setWatchlisted(content: MediaContent, watchlisted: Boolean) {
-        val providerRatingKey = content.plexGuid
+        val providerRatingKey = content.identityGuids
+            .asSequence()
+            .plus(content.plexGuid.orEmpty())
+            .firstOrNull { it.startsWith("plex://movie/") || it.startsWith("plex://show/") }
             ?.substringAfterLast('/')
             ?.takeIf { it.isNotBlank() }
             ?: error("This item has no Plex GUID and cannot be synced to Watchlist.")
@@ -156,6 +163,76 @@ class PlexRepository(
             api.getOnDeck().mediaContainer.metadata
         }
         return metadata.map(::toContent)
+    }
+
+    /**
+     * Plex Watchlist is account-wide and hosted by Discover. A Discover GUID
+     * is not guaranteed to equal the GUID returned in a local library list,
+     * so ask the PMS to resolve those GUIDs just like Plex's official clients.
+     */
+    private suspend fun loadWatchlist(localMedia: List<MediaContent>): List<MediaContent> {
+        val watchlistMetadata = loadAllWatchlistMetadata()
+        if (watchlistMetadata.isEmpty() || localMedia.isEmpty()) return emptyList()
+
+        val discoverGuids = watchlistMetadata
+            .mapNotNull { it.guid ?: it.primaryGuid }
+            .mapNotNull(::normalizeGuid)
+            .distinct()
+
+        val resolvedRatingKeys = discoverGuids
+            .chunked(WATCHLIST_GUID_BATCH_SIZE)
+            .flatMap { batch ->
+                runCatching {
+                    api.resolveMetadataGuids(batch.joinToString(",") { it.encodePathSegment() })
+                        .mediaContainer
+                        .metadata
+                }.getOrDefault(emptyList())
+            }
+            .map { it.ratingKey }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        // Older PMS/agent combinations may not support GUID resolution. The
+        // expanded identity set still lets modern Plex, IMDb, TMDB, and TVDB
+        // identifiers match without falling back to ambiguous title matching.
+        val discoverIdentities = watchlistMetadata
+            .flatMapTo(mutableSetOf(), Metadata::watchlistIdentityKeys)
+
+        val localByRatingKey = localMedia.associateBy { it.ratingKey }
+        val resolvedItems = resolvedRatingKeys.mapNotNull(localByRatingKey::get)
+        val resolvedKeySet = resolvedItems.mapTo(mutableSetOf()) { it.ratingKey }
+        val fallbackItems = localMedia.filter { item ->
+            item.ratingKey !in resolvedKeySet && (
+                item.identityGuids.any { it in discoverIdentities } ||
+                    normalizeGuid(item.plexGuid)?.let { it in discoverIdentities } == true
+                )
+        }
+        return resolvedItems + fallbackItems
+    }
+
+    private suspend fun loadAllWatchlistMetadata(): List<Metadata> {
+        val results = mutableListOf<Metadata>()
+        var start = 0
+
+        repeat(MAX_WATCHLIST_PAGES) {
+            val container = watchlistApi.getWatchlist(
+                start = start,
+                size = WATCHLIST_PAGE_SIZE,
+            ).mediaContainer
+            val page = container.metadata.ifEmpty {
+                container.hubs.flatMap { it.metadata }
+            }
+            if (page.isEmpty()) return results
+
+            results += page
+            val nextStart = start + page.size
+            val totalSize = container.totalSize
+            if (totalSize != null && nextStart >= totalSize) return results
+            if (totalSize == null && page.size < WATCHLIST_PAGE_SIZE) return results
+            if (nextStart <= start) return results
+            start = nextStart
+        }
+        return results
     }
 
     private fun toContent(metadata: Metadata): MediaContent {
@@ -251,6 +328,7 @@ class PlexRepository(
         return MediaContent(
             ratingKey = metadata.ratingKey,
             plexGuid = metadata.guid,
+            identityGuids = metadata.identityKeys(),
             title = metadata.title,
             secondaryTitle = secondaryTitle,
             summary = metadata.summary,
@@ -293,3 +371,30 @@ class PlexRepository(
         )
     }
 }
+
+private const val WATCHLIST_PAGE_SIZE = 200
+private const val MAX_WATCHLIST_PAGES = 50
+private const val WATCHLIST_GUID_BATCH_SIZE = 10
+
+private fun Metadata.identityKeys(): Set<String> = buildSet {
+    listOfNotNull(guid, primaryGuid).mapNotNullTo(this, ::normalizeGuid)
+    guids.mapNotNullTo(this) { normalizeGuid(it.id) }
+}
+
+private fun Metadata.watchlistIdentityKeys(): Set<String> = buildSet {
+    addAll(identityKeys())
+    // Discover commonly uses the Plex GUID suffix as its provider ratingKey.
+    // Adding this alias also covers responses where `guid` is omitted.
+    if ((type == "movie" || type == "show") && ratingKey.isNotBlank()) {
+        normalizeGuid("plex://$type/$ratingKey")?.let(::add)
+    }
+}
+
+private fun normalizeGuid(value: String?): String? = value
+    ?.trim()
+    ?.trimEnd('/')
+    ?.takeIf { it.isNotBlank() }
+    ?.lowercase(Locale.ROOT)
+
+private fun String.encodePathSegment(): String =
+    URLEncoder.encode(this, StandardCharsets.UTF_8.name()).replace("+", "%20")

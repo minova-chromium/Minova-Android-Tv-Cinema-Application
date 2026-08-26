@@ -9,6 +9,8 @@ data class PlexLibraryResponse(
 
 data class MediaContainer(
     @SerializedName("size") val size: Int = 0,
+    @SerializedName("offset") val offset: Int? = null,
+    @SerializedName("totalSize") val totalSize: Int? = null,
     @SerializedName("title1") val title: String? = null,
     @SerializedName("friendlyName") val friendlyName: String? = null,
     @SerializedName("Directory") val directories: List<Directory> = emptyList(),
@@ -34,6 +36,7 @@ data class Directory(
 data class Metadata(
     @SerializedName("ratingKey") val ratingKey: String = "",
     @SerializedName("guid") val guid: String? = null,
+    @SerializedName("primaryGuid") val primaryGuid: String? = null,
     @SerializedName("key") val key: String? = null,
     @SerializedName("type") val type: String? = null,
     @SerializedName("subtype") val subtype: String? = null,
@@ -63,6 +66,7 @@ data class Metadata(
     @SerializedName("leafCount") val leafCount: Int? = null,
     @SerializedName("viewedLeafCount") val viewedLeafCount: Int? = null,
     @SerializedName("OnDeck") val onDeck: Metadata? = null,
+    @SerializedName("Guid") val guids: List<GuidTag> = emptyList(),
     @SerializedName("Genre") val genres: List<Tag> = emptyList(),
     @SerializedName("Role") val roles: List<PersonTag> = emptyList(),
     @SerializedName("Director") val directors: List<PersonTag> = emptyList(),
@@ -70,6 +74,10 @@ data class Metadata(
     @SerializedName("Producer") val producers: List<PersonTag> = emptyList(),
     @SerializedName("Marker") val markers: List<Marker> = emptyList(),
     @SerializedName("Media") val media: List<Media> = emptyList(),
+)
+
+data class GuidTag(
+    @SerializedName("id") val id: String = "",
 )
 
 data class Marker(
