@@ -52,8 +52,8 @@ android {
         // intentionally use API 29 as the public platform baseline.
         minSdk = 29
         targetSdk = 37
-        versionCode = 31
-        versionName = "2.6.1"
+        versionCode = 32
+        versionName = "2.6.2"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
         buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")
@@ -108,7 +108,10 @@ android {
     }
 
     if (homeSdkEnabled) {
-        sourceSets.getByName("main").java.directories.add("src/homeApi/java")
+        // AGP 9's built-in Kotlin compiler only discovers additional Kotlin
+        // directories through AndroidSourceSet.kotlin. Registering this as a
+        // Java directory silently omitted the Home controller from v2.6.1.
+        sourceSets.getByName("main").kotlin.directories.add("src/homeApi/java")
     }
 }
 

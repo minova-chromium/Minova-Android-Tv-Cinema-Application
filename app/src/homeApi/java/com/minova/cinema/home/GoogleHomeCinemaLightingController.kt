@@ -12,8 +12,9 @@ import com.google.home.HomeDevice
 import com.google.home.PermissionsResultStatus
 import com.google.home.PermissionsState
 import com.google.home.annotation.HomeExperimentalApi
-import com.google.home.automation.CommandCandidate
+import com.google.home.matter.standard.ColorTemperatureLightDevice
 import com.google.home.matter.standard.DimmableLightDevice
+import com.google.home.matter.standard.ExtendedColorLightDevice
 import com.google.home.matter.standard.LevelControl
 import com.google.home.matter.standard.LevelControlTrait
 import com.google.home.matter.standard.OnOff
@@ -81,7 +82,10 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
             val result = runCatching {
                 client.requestPermissions(ForcePermissionFlow.FORCE_LAUNCH)
             }.getOrElse { error ->
-                _state.value = _state.value.copy(loading = false, message = error.message)
+                _state.value = _state.value.copy(
+                    loading = false,
+                    message = userFacingHomeError(error),
+                )
                 return@launch
             }
             _state.value = _state.value.copy(
@@ -122,7 +126,11 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
         scope.cancel()
     }
 
-    /** Structure API supplies devices/rooms; Discovery verifies automation command support. */
+    /**
+     * Structure/Device APIs supply the homes, rooms, and lights that the user
+     * granted to Minova Cinema. A Cinema assignment is deliberately stored per
+     * device ID, so playback can never affect an unselected light.
+     */
     private suspend fun discoverLights() {
         if (!_state.value.permissionGranted) return
         _state.value = _state.value.copy(loading = true, message = null)
@@ -133,16 +141,16 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
                 val roomNames = structure.rooms().list().associate { room -> room.id.id to room.name }
                 for (device in structure.devices().list()) {
                     val types = device.types().first()
-                    val supportsDimming = types.any { it.factory == DimmableLightDevice }
+                    // Google Home represents common bulbs using four different
+                    // Matter device types. Color bulbs still expose LevelControl
+                    // and must therefore be treated as dimmable lights too.
+                    val supportsDimming = types.any {
+                        it.factory == DimmableLightDevice ||
+                            it.factory == ColorTemperatureLightDevice ||
+                            it.factory == ExtendedColorLightDevice
+                    }
                     val isLight = supportsDimming || types.any { it.factory == OnOffLightDevice }
                     if (!isLight) continue
-
-                    // Discovery API is intentionally sampled once per refresh;
-                    // Google caches calls made more often than once a minute.
-                    val hasControllableCommand = runCatching {
-                        device.candidates().first().any { it is CommandCandidate }
-                    }.getOrDefault(false)
-                    if (!hasControllableCommand) continue
 
                     val id = device.id.id
                     latestDevices[id] = device
@@ -163,7 +171,27 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
                 message = if (discovered.isEmpty()) "No compatible Google Home lights were found." else null,
             )
         }.onFailure { error ->
-            _state.value = _state.value.copy(loading = false, message = error.message)
+            _state.value = _state.value.copy(
+                loading = false,
+                message = userFacingHomeError(error),
+            )
+        }
+    }
+
+    private fun userFacingHomeError(error: Throwable): String {
+        val details = generateSequence(error) { it.cause }
+            .mapNotNull(Throwable::message)
+            .joinToString(" ")
+        return if (
+            details.contains("API_UNAVAILABLE", ignoreCase = true) ||
+            details.contains("error: 17", ignoreCase = true) ||
+            details.contains("Permissions.API is not available", ignoreCase = true)
+        ) {
+            "Google Home is unavailable on this device. Android Studio TV emulators often do not " +
+                "provide the Home Permissions service; test Cinema lights on a Google-certified " +
+                "Android TV 10+ device with current Google Play services."
+        } else {
+            error.message ?: "Google Home could not complete this request."
         }
     }
 
@@ -177,8 +205,22 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
     }
 
     private suspend fun fadeLight(id: String, device: HomeDevice, targetPercent: Int) {
-        val onOff = runCatching { device.trait(OnOff).first() }.getOrNull() ?: return
-        val levelControl = runCatching { device.trait(LevelControl).first() }.getOrNull()
+        // Home SDK 1.10 exposes standard traits through each device type. The
+        // older HomeDevice.trait() shortcut was removed in Home SDK 1.4.
+        val types = device.types().first()
+        val dimmable = types.filterIsInstance<DimmableLightDevice>().firstOrNull()
+        val colorTemperature = types.filterIsInstance<ColorTemperatureLightDevice>().firstOrNull()
+        val extendedColor = types.filterIsInstance<ExtendedColorLightDevice>().firstOrNull()
+        val onOffLight = types.filterIsInstance<OnOffLightDevice>().firstOrNull()
+        val onOff = dimmable?.standardTraits?.onOff
+            ?: colorTemperature?.standardTraits?.onOff
+            ?: extendedColor?.standardTraits?.onOff
+            ?: onOffLight?.standardTraits?.onOff
+            ?: return
+        val levelControl = dimmable?.standardTraits?.levelControl
+            ?: colorTemperature?.standardTraits?.levelControl
+            ?: extendedColor?.standardTraits?.levelControl
+            ?: onOffLight?.standardTraits?.levelControl
         val wasOn = onOff.onOff == true
         if (targetPercent == 0 && !wasOn) return
         if (targetPercent == 0) cinemaDimmedIds += id
@@ -228,7 +270,12 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
                     coroutineContext = Dispatchers.IO,
                     factoryRegistry = FactoryRegistry(
                         traits = listOf(OnOff, LevelControl),
-                        types = listOf(DimmableLightDevice, OnOffLightDevice),
+                        types = listOf(
+                            DimmableLightDevice,
+                            ColorTemperatureLightDevice,
+                            ExtendedColorLightDevice,
+                            OnOffLightDevice,
+                        ),
                     ),
                 ),
             ).also { singletonClient = it }

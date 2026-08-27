@@ -73,13 +73,25 @@ fun SettingsScreen(
                 contentDescription = "Minova Prism M",
                 modifier = Modifier.size(48.dp),
             )
-            Text("Settings", style = MaterialTheme.typography.displayMedium, modifier = Modifier.padding(start = 15.dp))
+            Text(
+                "Settings",
+                style = MaterialTheme.typography.displayMedium,
+                color = Color.White,
+                modifier = Modifier.padding(start = 15.dp),
+            )
         }
         Text(
             "Plex connection and library",
             style = MaterialTheme.typography.bodyLarge,
             color = MinovaMuted,
             modifier = Modifier.padding(top = 8.dp),
+        )
+        Spacer(Modifier.height(34.dp))
+        TheaterLightsSection(
+            lightingState = lightingState,
+            onRequestHomePermission = onRequestHomePermission,
+            onRefreshLights = onRefreshLights,
+            onLightAssignmentChanged = onLightAssignmentChanged,
         )
         Spacer(Modifier.height(54.dp))
         Text("CONNECTED SERVER", style = MaterialTheme.typography.bodyMedium, color = MinovaMuted)
@@ -195,64 +207,96 @@ fun SettingsScreen(
                 Text("Clear local bumper")
             }
         }
-        Spacer(Modifier.height(40.dp))
-        Text("THEATER LIGHTS", style = MaterialTheme.typography.bodyMedium, color = MinovaMuted)
-        Text(
-            "Google Home lights fade out over four seconds and return to 15% when playback pauses.",
-            style = MaterialTheme.typography.bodyMedium,
+        Spacer(Modifier.height(48.dp))
+    }
+}
+
+@Composable
+private fun TheaterLightsSection(
+    lightingState: LightingUiState,
+    onRequestHomePermission: () -> Unit,
+    onRefreshLights: () -> Unit,
+    onLightAssignmentChanged: (String, Boolean) -> Unit,
+) {
+    val selectedCount = lightingState.lights.count { it.isAssigned }
+    Text("GOOGLE HOME · CINEMA LIGHTS", style = MaterialTheme.typography.bodyMedium, color = MinovaMuted)
+    Text(
+        "Connect a Google Home, then check only the lights Cinema Mode may control.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MinovaMuted,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+    when {
+        !lightingState.sdkAvailable -> Text(
+            lightingState.message ?: "Google Home is not available in this build.",
             color = MinovaMuted,
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = 16.dp),
         )
-        when {
-            !lightingState.sdkAvailable -> Text(
-                lightingState.message ?: "Google Home is not available in this build.",
-                color = MinovaMuted,
-                modifier = Modifier.padding(top = 16.dp),
-            )
-            !lightingState.permissionGranted -> Button(
+        !lightingState.permissionGranted -> {
+            Button(
                 onClick = onRequestHomePermission,
+                enabled = !lightingState.loading,
                 modifier = Modifier.padding(top = 16.dp),
             ) {
                 Text(if (lightingState.loading) "Connecting…" else "Connect Google Home")
             }
-            else -> {
+            lightingState.message?.let {
+                Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 10.dp))
+            }
+        }
+        else -> {
+            Text(
+                "Connected · $selectedCount selected",
+                style = MaterialTheme.typography.titleMedium,
+                color = MinovaCyan,
+                modifier = Modifier.padding(top = 14.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(onClick = onRequestHomePermission) { Text("Change home access") }
+                OutlinedButton(onClick = onRefreshLights, enabled = !lightingState.loading) {
+                    Text(if (lightingState.loading) "Refreshing…" else "Refresh lights")
+                }
+            }
+            lightingState.message?.let {
+                Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 10.dp))
+            }
+            lightingState.lights.chunked(2).forEach { rowLights ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
-                    OutlinedButton(onClick = onRefreshLights) { Text("Refresh lights") }
-                    lightingState.message?.let { Text(it, color = MinovaMuted) }
-                }
-                lightingState.lights.chunked(2).forEach { rowLights ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                    ) {
-                        rowLights.forEach { light ->
-                            PlaybackToggleButton(
-                                title = light.name,
-                                description = buildString {
-                                    append(light.roomName ?: "Google Home")
-                                    append(if (light.supportsDimming) " · Dimmable" else " · On/off")
-                                },
-                                checked = light.isAssigned,
-                                onClick = {
-                                    onLightAssignmentChanged(light.id, !light.isAssigned)
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        if (rowLights.size == 1) Spacer(Modifier.weight(1f))
+                    rowLights.forEach { light ->
+                        PlaybackToggleButton(
+                            title = light.name,
+                            description = buildString {
+                                append(light.roomName ?: "Google Home")
+                                append(if (light.supportsDimming) " · Dimmable" else " · On/off")
+                            },
+                            checked = light.isAssigned,
+                            onClick = {
+                                onLightAssignmentChanged(light.id, !light.isAssigned)
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
+                    if (rowLights.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
+            Text(
+                "Only selected lights fade during Cinema Mode. Other Google Home devices are untouched.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MinovaMuted,
+                modifier = Modifier.padding(top = 12.dp),
+            )
         }
-        Spacer(Modifier.height(48.dp))
     }
 }
 
@@ -270,7 +314,7 @@ private fun ValueButton(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
                 Text(value, style = MaterialTheme.typography.titleMedium, color = MinovaCyan)
             }
             Text(
@@ -332,7 +376,7 @@ private fun PlaybackToggleButton(
                 }
             }
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
                 Text(
                     description,
                     style = MaterialTheme.typography.bodyMedium,

@@ -1,6 +1,7 @@
 package com.minova.cinema.home
 
 import android.content.Context
+import android.util.Log
 import androidx.activity.ComponentActivity
 import com.minova.cinema.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,18 +46,29 @@ object CinemaLightingProvider {
                 Class.forName("com.minova.cinema.home.GoogleHomeCinemaLightingController")
                     .getConstructor(Context::class.java)
                     .newInstance(context.applicationContext) as CinemaLightingController
-            }.getOrNull()
-            if (implementation != null) return implementation
+            }.onFailure { error ->
+                Log.e("MinovaCinemaHome", "Unable to initialize Google Home", error)
+            }
+            implementation.getOrNull()?.let { return it }
+            return UnavailableCinemaLightingController(
+                "Google Home could not start. Update Google Play services and restart Minova Cinema.",
+            )
         }
-        return UnavailableCinemaLightingController()
+        return UnavailableCinemaLightingController(
+            if (android.os.Build.VERSION.SDK_INT < 29) {
+                "Google Home requires Android TV 10 or newer."
+            } else {
+                "Google Home is not included in this build."
+            },
+        )
     }
 }
 
-private class UnavailableCinemaLightingController : CinemaLightingController {
+private class UnavailableCinemaLightingController(message: String) : CinemaLightingController {
     override val state: StateFlow<LightingUiState> = MutableStateFlow(
         LightingUiState(
             sdkAvailable = false,
-            message = "Google Home support needs the official Home SDK and OAuth setup.",
+            message = message,
         ),
     )
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.6.2 — 2026-08-27
+
+### Google Home availability and Settings
+
+- Fixed the AGP 9 source-set configuration that accidentally omitted the Google Home controller from the v2.6.1 APK.
+- Updated light control to the Google Home SDK 1.10 device-type trait API.
+- Added dimmable, color-temperature, extended-color, and on/off light discovery with persistent per-light Cinema assignments.
+- Moved Google Home setup to the top of Settings and added change-home and refresh actions.
+- Made Settings headings and option labels explicitly white with gray supporting text.
+- Replaced the raw Home Permissions API error shown on unsupported Android Studio TV emulators with actionable device guidance.
+- Added Google Home privacy disclosures and public terms in preparation for OAuth verification.
+
 ## 2.6.1 — 2026-08-27
 
 ### Google Home theater lighting
