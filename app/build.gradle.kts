@@ -48,12 +48,12 @@ android {
 
     defaultConfig {
         applicationId = "com.minova.cinema"
-        // The Google Home SDK requires Android 10. Standard Plex-only builds
-        // retain support for older Android TV devices.
-        minSdk = if (homeSdkEnabled) 29 else 23
+        // Google Home APIs require Android 10. Minova Cinema 2.6.1 and newer
+        // intentionally use API 29 as the public platform baseline.
+        minSdk = 29
         targetSdk = 37
-        versionCode = 30
-        versionName = "2.6.0"
+        versionCode = 31
+        versionName = "2.6.1"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
         buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")

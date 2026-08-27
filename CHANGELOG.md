@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.1 — 2026-08-27
+
+### Google Home theater lighting
+
+- Enabled the native Google Home Cinema Mode integration in the signed production build.
+- Added the Android OAuth production identity for `com.minova.cinema` using the established Minova Cinema release certificate.
+- Added Google Play services Home module delivery metadata and Android 11+ package visibility declarations.
+- Added OAuth branding, privacy links, and tester authorization for the initial Home APIs rollout.
+- Raised the minimum supported platform to Android TV 10 (API 29), as required by the Google Home APIs SDK.
+
 ## 2.6.0 — 2026-08-27
 
 ### Cinema Mode and timers
