@@ -96,6 +96,7 @@ fun BrowseScreen(
     catalog: CinemaCatalog,
     onOpen: (MediaContent) -> Unit,
     onSettings: () -> Unit,
+    onWatchlistRefresh: () -> Unit,
 ) {
     var tab by remember { mutableStateOf(BrowseTab.Home) }
     var layout by remember { mutableStateOf(BrowseLayout.Rows) }
@@ -130,6 +131,10 @@ fun BrowseScreen(
         if (selectedGenre != null && gridGenres.none { it.equals(selectedGenre, ignoreCase = true) }) {
             selectedGenre = null
         }
+    }
+
+    LaunchedEffect(tab) {
+        if (tab == BrowseTab.MyList) onWatchlistRefresh()
     }
 
     Box(Modifier.fillMaxSize().background(MinovaNightDeep)) {

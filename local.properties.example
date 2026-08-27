@@ -6,3 +6,7 @@ MINOVA_RELEASE_STORE_FILE=release-signing/minova-cinema-release.jks
 MINOVA_RELEASE_STORE_PASSWORD=CHANGE_ME
 MINOVA_RELEASE_KEY_ALIAS=minova-cinema
 MINOVA_RELEASE_KEY_PASSWORD=CHANGE_ME
+
+# Optional Google Home Cinema Mode build. Install the official Home APIs SDK
+# into mavenLocal() first; this build variant requires Android 10 or newer.
+MINOVA_HOME_SDK_ENABLED=false

@@ -35,6 +35,12 @@ val releaseSigningIsConfigured = listOf(
     releaseKeyAlias,
     releaseKeyPassword,
 ).all { !it.isNullOrBlank() }
+val homeSdkEnabled = (
+    providers.gradleProperty("MINOVA_HOME_SDK_ENABLED").orNull
+        ?: localProperties.getProperty("MINOVA_HOME_SDK_ENABLED")
+    )
+    ?.toBooleanStrictOrNull()
+    ?: false
 
 android {
     namespace = "com.minova.cinema"
@@ -42,10 +48,12 @@ android {
 
     defaultConfig {
         applicationId = "com.minova.cinema"
-        minSdk = 23
+        // The Google Home SDK requires Android 10. Standard Plex-only builds
+        // retain support for older Android TV devices.
+        minSdk = if (homeSdkEnabled) 29 else 23
         targetSdk = 37
-        versionCode = 29
-        versionName = "2.5.1"
+        versionCode = 30
+        versionName = "2.6.0"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
         buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")
@@ -54,6 +62,7 @@ android {
             "UPDATE_GITHUB_REPOSITORY",
             "\"Minova-Android-Tv-Cinema-Application\"",
         )
+        buildConfigField("boolean", "GOOGLE_HOME_SDK_ENABLED", homeSdkEnabled.toString())
     }
 
     buildFeatures {
@@ -97,6 +106,10 @@ android {
             "/META-INF/DEPENDENCIES",
         )
     }
+
+    if (homeSdkEnabled) {
+        sourceSets.getByName("main").java.directories.add("src/homeApi/java")
+    }
 }
 
 // Give command-line and CI builds a useful error before AGP's generic missing
@@ -134,6 +147,14 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-ui:1.10.1")
+
+    // Google requires the Home SDK to be downloaded into mavenLocal() from its
+    // signed-in developer portal. Keep ordinary contributors/builds working
+    // until that private SDK is configured locally.
+    if (homeSdkEnabled) {
+        implementation("com.google.android.gms:play-services-home:17.1.0")
+        implementation("com.google.android.gms:play-services-home-types:17.1.0")
+    }
 
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")

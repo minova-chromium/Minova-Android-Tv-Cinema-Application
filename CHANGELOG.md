@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.0 — 2026-08-27
+
+### Cinema Mode and timers
+
+- Added a preloaded Media3 sequence with up to two random trailers from unwatched Plex movies, an optional local 4K/Atmos bumper, and the main feature.
+- Added a separate Cinema Mode switch for disabling Plex trailers while retaining the local bumper and theater-light behavior.
+- Fixed existing Plex Watchlist imports by using reliable small-page pagination, retrying transient Discover failures, requesting local GUIDs, and safely matching legacy title/year entries.
+- Added optional native Google Home light discovery, theater-light assignment, and four-second fades to 0%/15% in Home SDK builds.
+- Added user-adjustable ambient screensaver and Continue Watching safety timers in Settings.
+
 ## 2.5.1 — 2026-08-26
 
 ### Plex Watchlist

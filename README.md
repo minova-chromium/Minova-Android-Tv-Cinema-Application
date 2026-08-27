@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.5.1/Minova-Cinema-2.5.1.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.6.0/Minova-Cinema-2.6.0.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -30,13 +30,16 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Media3 frame-rate matching and supported surround-audio passthrough.
 - Automatic GitHub Release checks with a D-pad update dialog and secure APK installer hand-off.
 - OLED-friendly ambient mode with a bouncing, color-shifting Minova logo after five idle minutes.
+- Optional Cinema Mode queues user-toggleable unwatched-library trailers, a user-selected local 4K/Atmos bumper, and the feature in one preloaded Media3 playlist.
+- Adjustable ambient screensaver and Continue Watching safety timers.
+- Optional native Google Home theater-light assignment and four-second dim/restore fades (Home SDK build).
 - Minova visual identity, launch sequence, TV banner, and round launcher mark.
 
 > Playback capability is determined by the Android TV device, connected audio equipment, network, source codecs, subtitle format, and Plex server transcoding capacity. “Original” does not guarantee that every file will direct play on every TV.
 
 ## Install
 
-1. [Download the Minova Cinema 2.5.1 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.5.1/Minova-Cinema-2.5.1.apk).
+1. [Download the Minova Cinema 2.6.0 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.6.0/Minova-Cinema-2.6.0.apk).
 2. Transfer it to an Android TV device and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and enter the Plex server address and token during setup.
 
@@ -78,6 +81,23 @@ MINOVA_RELEASE_KEY_PASSWORD=replace_with_key_password
 
 Never commit `local.properties`, the keystore, or either password. Back up the release keystore and credentials securely: Android will reject an in-place update if it is signed by a different certificate. The previous ignored `keystore.properties` format remains a temporary migration fallback, but new environments should use `local.properties`.
 
+### Optional Google Home build
+
+Google distributes the Home APIs Android SDK through its signed-in developer portal rather than public Maven. Download SDK 1.10.0, extract its `com` directory into `%USERPROFILE%/.m2/repository`, and configure an Android OAuth client with:
+
+- Package: `com.minova.cinema`
+- Release certificate SHA-1: `2B:A1:EB:AA:B6:8D:34:8A:92:43:4A:66:A6:76:EC:8A:87:C1:51:ED`
+
+Then add this to the ignored `local.properties` file:
+
+```properties
+MINOVA_HOME_SDK_ENABLED=true
+```
+
+For a one-off command-line build, the same switch can be supplied as `-PMINOVA_HOME_SDK_ENABLED=true`.
+
+The Home-enabled build requires Android 10 or newer. Without that property, the app still builds and Cinema Mode still provides Plex trailers, the local bumper, and Media3 preloading; the theater-light panel explains that Google Home is unavailable. Production use also requires Google Home Developer Console approval and explicit per-home permission from each user.
+
 ## Architecture
 
 ```text
@@ -85,6 +105,8 @@ PlexPreferences -> CinemaViewModel -> PlexRepository -> Plex API services
                          |
                          +-> Browse / Search / Detail / Settings
                          +-> PlayerScreen -> Media3 ExoPlayer
+                         +-> Cinema Mode -> Plex extras / local bumper
+                                        -> optional Google Home lights
 
 GitHub releases/latest -> UpdateViewModel -> TV update dialog
                                              |
@@ -109,6 +131,6 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) before publishing di
 
 ## Project status and source terms
 
-Version 2.5.1 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
+Version 2.6.0 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
 
 Plex is a trademark of Plex, Inc. Minova Cinema is not endorsed by or affiliated with Plex, Inc.

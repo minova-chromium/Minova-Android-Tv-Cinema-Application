@@ -1,6 +1,7 @@
 package com.minova.cinema.data
 
 import com.minova.cinema.data.remote.Metadata
+import com.minova.cinema.data.remote.MediaContainer
 import com.minova.cinema.data.remote.PlexApiService
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexUrlFactory
@@ -16,7 +17,9 @@ import com.minova.cinema.domain.PlexLibrary
 import com.minova.cinema.domain.SubtitleStream
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.net.URI
 import java.nio.charset.StandardCharsets
@@ -76,6 +79,58 @@ class PlexRepository(
             .filter { it.subtype.equals("trailer", ignoreCase = true) || it.extraType == 1 }
             .map(::toContent)
             .filter { it.canPlay }
+    }
+
+    /**
+     * Finds trailers belonging to two different unwatched movies. Plex server
+     * versions disagree on whether `/unwatched` is exposed, so the documented
+     * section query is retained as a compatibility fallback.
+     */
+    suspend fun loadCinemaTrailers(
+        mainFeatureRatingKey: String,
+        count: Int = 2,
+    ): List<MediaContent> {
+        if (count <= 0) return emptyList()
+        val movieSections = api.getLibrarySections().mediaContainer.directories
+            .filter { it.type == "movie" }
+        val candidates = movieSections.flatMap { section ->
+            runCatching { api.getUnwatchedMovies(section.key).mediaContainer.metadata }
+                .getOrElse {
+                    api.getContainer(
+                        "library/sections/${section.key}/all?unwatched=1&sort=titleSort:asc",
+                    ).mediaContainer.metadata
+                }
+        }.asSequence()
+            .filter { it.ratingKey != mainFeatureRatingKey }
+            .filter { (it.viewCount ?: 0) == 0 }
+            .distinctBy { it.ratingKey }
+            .toList()
+            .shuffled()
+            .asSequence()
+            .take(MAX_CINEMA_TRAILER_CANDIDATES)
+
+        val trailers = mutableListOf<MediaContent>()
+        for (candidate in candidates) {
+            val response = runCatching {
+                api.getMetadataWithExtras(candidate.ratingKey)
+            }.getOrNull()
+            val includedExtras = response?.mediaContainer?.metadata
+                ?.firstOrNull()
+                ?.extras
+                ?.metadata
+                .orEmpty()
+            val metadata = includedExtras.ifEmpty {
+                runCatching { api.getExtras(candidate.ratingKey).mediaContainer.metadata }
+                    .getOrDefault(emptyList())
+            }
+            val trailer = metadata
+                .firstOrNull { it.subtype.equals("trailer", true) || it.extraType == 1 }
+                ?.let(::toContent)
+                ?.takeIf(MediaContent::canPlay)
+            if (trailer != null) trailers += trailer
+            if (trailers.size == count) break
+        }
+        return trailers
     }
 
     suspend fun reportTimeline(
@@ -142,7 +197,9 @@ class PlexRepository(
     }
 
     private suspend fun loadLibrary(library: PlexLibrary): List<MediaContent> {
-        val path = "library/sections/${library.key}/all?sort=titleSort:asc"
+        // includeGuids makes older Watchlist entries resolvable even when the
+        // local Plex agent and Discover use different primary identifiers.
+        val path = "library/sections/${library.key}/all?sort=titleSort:asc&includeGuids=1"
         return api.getContainer(path).mediaContainer.metadata.map(::toContent)
     }
 
@@ -170,7 +227,7 @@ class PlexRepository(
      * is not guaranteed to equal the GUID returned in a local library list,
      * so ask the PMS to resolve those GUIDs just like Plex's official clients.
      */
-    private suspend fun loadWatchlist(localMedia: List<MediaContent>): List<MediaContent> {
+    suspend fun loadWatchlist(localMedia: List<MediaContent>): List<MediaContent> {
         val watchlistMetadata = loadAllWatchlistMetadata()
         if (watchlistMetadata.isEmpty() || localMedia.isEmpty()) return emptyList()
 
@@ -207,7 +264,28 @@ class PlexRepository(
                     normalizeGuid(item.plexGuid)?.let { it in discoverIdentities } == true
                 )
         }
-        return resolvedItems + fallbackItems
+        val matchedKeys = (resolvedItems + fallbackItems)
+            .mapTo(mutableSetOf(), MediaContent::ratingKey)
+
+        // Some long-lived Watchlist rows predate Plex's current GUID model.
+        // Use title/year only when it identifies exactly one local item, so a
+        // legacy entry is recovered without guessing between remakes.
+        val localByTitleYear = localMedia
+            .filter { it.year != null && it.kind in setOf(MediaKind.Movie, MediaKind.Show) }
+            .groupBy { Triple(it.kind, it.title.watchlistTitleKey(), it.year) }
+            .filterValues { it.size == 1 }
+            .mapValues { (_, values) -> values.single() }
+        val legacyItems = watchlistMetadata.mapNotNull { metadata ->
+            val kind = when (metadata.type) {
+                "movie" -> MediaKind.Movie
+                "show" -> MediaKind.Show
+                else -> null
+            } ?: return@mapNotNull null
+            val year = metadata.year ?: return@mapNotNull null
+            localByTitleYear[Triple(kind, metadata.title.watchlistTitleKey(), year)]
+        }.filter { it.ratingKey !in matchedKeys }
+
+        return (resolvedItems + fallbackItems + legacyItems).distinctBy(MediaContent::ratingKey)
     }
 
     private suspend fun loadAllWatchlistMetadata(): List<Metadata> {
@@ -215,10 +293,7 @@ class PlexRepository(
         var start = 0
 
         repeat(MAX_WATCHLIST_PAGES) {
-            val container = watchlistApi.getWatchlist(
-                start = start,
-                size = WATCHLIST_PAGE_SIZE,
-            ).mediaContainer
+            val container = loadWatchlistPage(start)
             val page = container.metadata.ifEmpty {
                 container.hubs.flatMap { it.metadata }
             }
@@ -233,6 +308,25 @@ class PlexRepository(
             start = nextStart
         }
         return results
+    }
+
+    private suspend fun loadWatchlistPage(start: Int): MediaContainer {
+        var lastFailure: Throwable? = null
+        repeat(WATCHLIST_PAGE_ATTEMPTS) { attempt ->
+            try {
+                return watchlistApi.getWatchlist(
+                    start = start,
+                    size = WATCHLIST_PAGE_SIZE,
+                ).mediaContainer
+            } catch (failure: Throwable) {
+                if (failure is CancellationException) throw failure
+                lastFailure = failure
+                if (attempt + 1 < WATCHLIST_PAGE_ATTEMPTS) {
+                    delay(WATCHLIST_RETRY_DELAY_MS * (attempt + 1))
+                }
+            }
+        }
+        throw requireNotNull(lastFailure)
     }
 
     private fun toContent(metadata: Metadata): MediaContent {
@@ -372,9 +466,14 @@ class PlexRepository(
     }
 }
 
-private const val WATCHLIST_PAGE_SIZE = 200
-private const val MAX_WATCHLIST_PAGES = 50
+// Plex Discover has rejected or silently capped larger page sizes for some
+// accounts. Ten is the stable size used by affected official Plex clients.
+private const val WATCHLIST_PAGE_SIZE = 10
+private const val MAX_WATCHLIST_PAGES = 500
+private const val WATCHLIST_PAGE_ATTEMPTS = 3
+private const val WATCHLIST_RETRY_DELAY_MS = 250L
 private const val WATCHLIST_GUID_BATCH_SIZE = 10
+private const val MAX_CINEMA_TRAILER_CANDIDATES = 16
 
 private fun Metadata.identityKeys(): Set<String> = buildSet {
     listOfNotNull(guid, primaryGuid).mapNotNullTo(this, ::normalizeGuid)
@@ -398,3 +497,7 @@ private fun normalizeGuid(value: String?): String? = value
 
 private fun String.encodePathSegment(): String =
     URLEncoder.encode(this, StandardCharsets.UTF_8.name()).replace("+", "%20")
+
+private fun String.watchlistTitleKey(): String = trim()
+    .lowercase(Locale.ROOT)
+    .replace(Regex("\\s+"), " ")

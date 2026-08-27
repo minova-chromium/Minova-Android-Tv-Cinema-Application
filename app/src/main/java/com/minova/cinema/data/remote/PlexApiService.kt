@@ -20,6 +20,18 @@ interface PlexApiService {
         @Query("includeMarkers") includeMarkers: Int = 1,
     ): PlexLibraryResponse
 
+    @GET("library/metadata/{ratingKey}")
+    suspend fun getMetadataWithExtras(
+        @Path("ratingKey") ratingKey: String,
+        @Query("includeExtras") includeExtras: Int = 1,
+        @Query("includeMarkers") includeMarkers: Int = 1,
+    ): PlexLibraryResponse
+
+    @GET("library/sections/{sectionId}/unwatched")
+    suspend fun getUnwatchedMovies(
+        @Path("sectionId") sectionId: String,
+    ): PlexLibraryResponse
+
     /**
      * Resolves Discover/Watchlist GUIDs to items that actually exist on this
      * Plex Media Server. Plex's own clients send at most ten GUIDs per call.

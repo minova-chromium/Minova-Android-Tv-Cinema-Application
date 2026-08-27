@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -31,21 +33,38 @@ import com.minova.cinema.R
 import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
+import com.minova.cinema.home.LightingUiState
 
 @Composable
 fun SettingsScreen(
     serverUrl: String,
     autoplayNextEpisode: Boolean,
     inactivityCheckEnabled: Boolean,
+    inactivityTimeoutMs: Long,
+    screensaverTimeoutMs: Long,
+    cinemaModeEnabled: Boolean,
+    cinemaTrailersEnabled: Boolean,
+    cinemaBumperConfigured: Boolean,
+    lightingState: LightingUiState,
     onRefresh: () -> Unit,
     onChangeServer: () -> Unit,
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
     onInactivityCheckChanged: (Boolean) -> Unit,
+    onInactivityTimeoutChanged: (Long) -> Unit,
+    onScreensaverTimeoutChanged: (Long) -> Unit,
+    onCinemaModeChanged: (Boolean) -> Unit,
+    onCinemaTrailersChanged: (Boolean) -> Unit,
+    onChooseCinemaBumper: () -> Unit,
+    onClearCinemaBumper: () -> Unit,
+    onRequestHomePermission: () -> Unit,
+    onRefreshLights: () -> Unit,
+    onLightAssignmentChanged: (String, Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MinovaNightDeep)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 64.dp, vertical = 48.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -98,13 +117,185 @@ fun SettingsScreen(
             )
             PlaybackToggleButton(
                 title = "Continue watching check",
-                description = "Ask after three hours without remote activity",
+                description = "Ask after ${formatHours(inactivityTimeoutMs)} without remote activity",
                 checked = inactivityCheckEnabled,
                 onClick = { onInactivityCheckChanged(!inactivityCheckEnabled) },
                 modifier = Modifier.weight(1f),
             )
         }
+        Spacer(Modifier.height(34.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            ValueButton(
+                title = "Screensaver timer",
+                value = formatMinutes(screensaverTimeoutMs),
+                description = "Press to cycle: 1, 5, 10, 15 or 30 minutes",
+                onClick = {
+                    onScreensaverTimeoutChanged(nextPreset(screensaverTimeoutMs, SCREENSAVER_PRESETS))
+                },
+                modifier = Modifier.weight(1f),
+            )
+            ValueButton(
+                title = "Continue-watching timer",
+                value = formatHours(inactivityTimeoutMs),
+                description = "Press to cycle: 30 minutes, 1, 2, 3, 4 or 6 hours",
+                onClick = {
+                    onInactivityTimeoutChanged(nextPreset(inactivityTimeoutMs, SLEEP_PRESETS))
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(40.dp))
+        Text("CINEMA MODE", style = MaterialTheme.typography.bodyMedium, color = MinovaMuted)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlaybackToggleButton(
+                title = "Cinema Mode",
+                description = "Use your local bumper and assigned theater lights",
+                checked = cinemaModeEnabled,
+                onClick = { onCinemaModeChanged(!cinemaModeEnabled) },
+                modifier = Modifier.weight(1f),
+            )
+            PlaybackToggleButton(
+                title = "Play trailers",
+                description = "Play two random trailers from unwatched Plex movies",
+                checked = cinemaTrailersEnabled,
+                onClick = { onCinemaTrailersChanged(!cinemaTrailersEnabled) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ValueButton(
+                title = "Local Atmos bumper",
+                value = if (cinemaBumperConfigured) "Selected" else "Not selected",
+                description = "Choose a local video file; 4K/Atmos is passed through when supported",
+                onClick = onChooseCinemaBumper,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.weight(1f))
+        }
+        if (cinemaBumperConfigured) {
+            OutlinedButton(
+                onClick = onClearCinemaBumper,
+                modifier = Modifier.padding(top = 14.dp),
+            ) {
+                Text("Clear local bumper")
+            }
+        }
+        Spacer(Modifier.height(40.dp))
+        Text("THEATER LIGHTS", style = MaterialTheme.typography.bodyMedium, color = MinovaMuted)
+        Text(
+            "Google Home lights fade out over four seconds and return to 15% when playback pauses.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MinovaMuted,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        when {
+            !lightingState.sdkAvailable -> Text(
+                lightingState.message ?: "Google Home is not available in this build.",
+                color = MinovaMuted,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            !lightingState.permissionGranted -> Button(
+                onClick = onRequestHomePermission,
+                modifier = Modifier.padding(top = 16.dp),
+            ) {
+                Text(if (lightingState.loading) "Connecting…" else "Connect Google Home")
+            }
+            else -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(onClick = onRefreshLights) { Text("Refresh lights") }
+                    lightingState.message?.let { Text(it, color = MinovaMuted) }
+                }
+                lightingState.lights.chunked(2).forEach { rowLights ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    ) {
+                        rowLights.forEach { light ->
+                            PlaybackToggleButton(
+                                title = light.name,
+                                description = buildString {
+                                    append(light.roomName ?: "Google Home")
+                                    append(if (light.supportsDimming) " · Dimmable" else " · On/off")
+                                },
+                                checked = light.isAssigned,
+                                onClick = {
+                                    onLightAssignmentChanged(light.id, !light.isAssigned)
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (rowLights.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(48.dp))
     }
+}
+
+@Composable
+private fun ValueButton(
+    title: String,
+    value: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(onClick = onClick, modifier = modifier.height(92.dp)) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(value, style = MaterialTheme.typography.titleMedium, color = MinovaCyan)
+            }
+            Text(
+                description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MinovaMuted,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+private val SCREENSAVER_PRESETS = listOf(1L, 5L, 10L, 15L, 30L).map { it * 60_000L }
+private val SLEEP_PRESETS = listOf(30L * 60_000L, 60L * 60_000L, 2L * 60L * 60_000L,
+    3L * 60L * 60_000L, 4L * 60L * 60_000L, 6L * 60L * 60_000L)
+
+private fun nextPreset(current: Long, presets: List<Long>): Long =
+    presets.firstOrNull { it > current } ?: presets.first()
+
+private fun formatMinutes(value: Long): String = "${value / 60_000L} min"
+
+private fun formatHours(value: Long): String = if (value < 60L * 60_000L) {
+    "${value / 60_000L} min"
+} else {
+    "${value / (60L * 60_000L)} hr"
 }
 
 @Composable

@@ -11,6 +11,8 @@ import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexServiceFactory
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.CinemaCatalog
+import com.minova.cinema.domain.CinemaPlaybackPlan
+import com.minova.cinema.domain.MediaKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +36,7 @@ class CinemaViewModel(
     private var repository: PlexRepository? = null
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
+    private var watchlistJob: Job? = null
 
     init {
         val saved = preferences.readConnection()
@@ -68,6 +71,7 @@ class CinemaViewModel(
     fun changeServer() {
         catalogJob?.cancel()
         detailJob?.cancel()
+        watchlistJob?.cancel()
         preferences.clearConnection()
         connection = null
         repository = null
@@ -80,6 +84,7 @@ class CinemaViewModel(
         val currentConnection = connection ?: return
         val currentRepository = repository ?: return
         catalogJob?.cancel()
+        watchlistJob?.cancel()
         catalogJob = viewModelScope.launch {
             val previous = _uiState.value as? CinemaUiState.Ready
             if (silent && previous != null) _uiState.value = previous.copy(refreshing = true)
@@ -93,6 +98,23 @@ class CinemaViewModel(
                 if (silent && previous != null) _uiState.value = previous.copy(refreshing = false)
                 else _uiState.value = CinemaUiState.Error(error.userMessage())
             }
+        }
+    }
+
+    /** Re-syncs account-wide Plex Watchlist data when its tab is opened. */
+    fun refreshWatchlist() {
+        val currentRepository = repository ?: return
+        val ready = _uiState.value as? CinemaUiState.Ready ?: return
+        watchlistJob?.cancel()
+        watchlistJob = viewModelScope.launch {
+            val localMedia = ready.catalog.movies + ready.catalog.shows
+            runCatching { currentRepository.loadWatchlist(localMedia) }
+                .onSuccess { watchlist ->
+                    val latest = _uiState.value as? CinemaUiState.Ready ?: return@onSuccess
+                    _uiState.value = latest.copy(
+                        catalog = latest.catalog.copy(myList = watchlist),
+                    )
+                }
         }
     }
 
@@ -169,6 +191,40 @@ class CinemaViewModel(
         viewModelScope.launch {
             val detailed = runCatching { currentRepository.loadPlayable(content.ratingKey) }.getOrNull()
             onReady(detailed ?: content.takeIf { it.canPlay })
+        }
+    }
+
+    /** Resolves the feature and builds its optional theatrical pre-roll off the UI thread. */
+    fun resolvePlaybackPlan(
+        content: MediaContent,
+        cinemaModeEnabled: Boolean,
+        cinemaTrailersEnabled: Boolean,
+        bumperUri: String?,
+        onReady: (CinemaPlaybackPlan?) -> Unit,
+    ) {
+        val currentRepository = repository ?: return onReady(null)
+        viewModelScope.launch {
+            val playable = runCatching {
+                currentRepository.loadPlayable(content.ratingKey)
+            }.getOrNull() ?: content.takeIf(MediaContent::canPlay)
+            if (playable == null) return@launch onReady(null)
+
+            val shouldUseCinemaMode = cinemaModeEnabled && playable.kind == MediaKind.Movie
+            val trailers = if (shouldUseCinemaMode && cinemaTrailersEnabled) {
+                runCatching {
+                    currentRepository.loadCinemaTrailers(playable.ratingKey)
+                }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+            onReady(
+                CinemaPlaybackPlan(
+                    mainFeature = playable,
+                    trailers = trailers,
+                    bumperUri = bumperUri?.takeIf { shouldUseCinemaMode && it.isNotBlank() },
+                    cinemaModeActive = shouldUseCinemaMode,
+                ),
+            )
         }
     }
 
@@ -318,6 +374,7 @@ class CinemaViewModel(
         onboarding: Boolean,
     ) {
         catalogJob?.cancel()
+        watchlistJob?.cancel()
         catalogJob = viewModelScope.launch {
             _uiState.value = if (onboarding) CinemaUiState.Onboarding(connecting = true)
             else CinemaUiState.Loading

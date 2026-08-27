@@ -33,7 +33,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.random.Random
 
-private const val AMBIENT_TIMEOUT_MS = 300_000L
+private const val DEFAULT_AMBIENT_TIMEOUT_MS = 300_000L
 
 /**
  * Activity-level state holder so D-pad activity is observed even when focus is
@@ -48,6 +48,9 @@ class AmbientInactivityTracker {
         private set
 
     var screensaverVisible by mutableStateOf(false)
+        private set
+
+    var timeoutMs by mutableLongStateOf(DEFAULT_AMBIENT_TIMEOUT_MS)
         private set
 
     // Consuming only ACTION_DOWN is not enough: Compose TV buttons commonly
@@ -79,6 +82,13 @@ class AmbientInactivityTracker {
         resetTimer()
     }
 
+    fun updateTimeout(timeoutMs: Long) {
+        val normalized = timeoutMs.coerceAtLeast(1_000L)
+        if (this.timeoutMs == normalized) return
+        this.timeoutMs = normalized
+        resetTimer()
+    }
+
     internal fun showIfStillIdle(expectedInteractionAtMs: Long) {
         if (!playbackActive && lastInteractionAtMs == expectedInteractionAtMs) {
             screensaverVisible = true
@@ -99,11 +109,12 @@ fun AmbientScreensaverHost(
 ) {
     val lastInteractionAtMs = tracker.lastInteractionAtMs
     val playbackActive = tracker.playbackActive
+    val timeoutMs = tracker.timeoutMs
 
-    LaunchedEffect(lastInteractionAtMs, playbackActive) {
+    LaunchedEffect(lastInteractionAtMs, playbackActive, timeoutMs) {
         if (playbackActive) return@LaunchedEffect
         val elapsed = (SystemClock.elapsedRealtime() - lastInteractionAtMs).coerceAtLeast(0L)
-        delay((AMBIENT_TIMEOUT_MS - elapsed).coerceAtLeast(0L))
+        delay((timeoutMs - elapsed).coerceAtLeast(0L))
         tracker.showIfStillIdle(lastInteractionAtMs)
     }
 

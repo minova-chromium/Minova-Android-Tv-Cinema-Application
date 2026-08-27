@@ -11,3 +11,4 @@ keystore.properties
 release-signing/
 *.jks
 *.keystore
+home.android.sdk_*.zip

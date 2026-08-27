@@ -131,3 +131,11 @@ data class CinemaCatalog(
     val continueWatching: List<MediaContent>,
     val myList: List<MediaContent> = emptyList(),
 )
+
+/** A single Media3 session: trailers, optional local bumper, then the feature. */
+data class CinemaPlaybackPlan(
+    val mainFeature: MediaContent,
+    val trailers: List<MediaContent> = emptyList(),
+    val bumperUri: String? = null,
+    val cinemaModeActive: Boolean = false,
+)

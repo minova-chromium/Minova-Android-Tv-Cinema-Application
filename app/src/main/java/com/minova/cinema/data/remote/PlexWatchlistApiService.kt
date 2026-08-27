@@ -12,7 +12,7 @@ interface PlexWatchlistApiService {
         @Query("includeCollections") includeCollections: Int = 1,
         @Query("includeExternalMedia") includeExternalMedia: Int = 1,
         @Query("X-Plex-Container-Start") start: Int = 0,
-        @Query("X-Plex-Container-Size") size: Int = 1_000,
+        @Query("X-Plex-Container-Size") size: Int = 10,
     ): PlexLibraryResponse
 
     @PUT("actions/addToWatchlist")

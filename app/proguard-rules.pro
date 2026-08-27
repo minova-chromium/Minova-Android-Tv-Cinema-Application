@@ -3,3 +3,5 @@
 -keepattributes Signature,*Annotation*
 -keep class com.minova.cinema.data.remote.** { *; }
 
+# Loaded reflectively only when the developer-only Google Home SDK is enabled.
+-keep class com.minova.cinema.home.GoogleHomeCinemaLightingController { *; }

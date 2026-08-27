@@ -97,7 +97,7 @@ import java.util.UUID
 
 private const val NEXT_EPISODE_COUNTDOWN_SECONDS = 10
 private const val INACTIVITY_PROMPT_SECONDS = 30
-private const val INACTIVITY_TIMEOUT_MS = 3L * 60L * 60L * 1_000L
+private const val PLAYLIST_PRELOAD_DURATION_US = 30L * 1_000_000L
 
 private data class SubtitleTrackOption(
     val id: String,
@@ -122,12 +122,17 @@ private data class AudioTrackOption(
 @Composable
 fun PlayerScreen(
     content: MediaContent,
+    preRollTrailers: List<MediaContent>,
+    bumperUri: String?,
+    cinemaModeActive: Boolean,
     connection: PlexConnection,
     autoplayNextEpisode: Boolean,
     inactivityCheckEnabled: Boolean,
+    inactivityTimeoutMs: Long,
     lastInteractionAtMs: Long,
     onUserInteraction: () -> Unit,
     onPlaybackActivityChanged: (Boolean) -> Unit,
+    onCinemaPlaybackChanged: (Boolean) -> Unit,
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
     onInactivityTimeout: () -> Unit,
     onProgress: (positionMs: Long, durationMs: Long, state: String) -> Unit,
@@ -181,10 +186,20 @@ fun PlayerScreen(
     var inactivityPromptVisible by remember { mutableStateOf(false) }
     var resumeAfterInactivityPrompt by remember { mutableStateOf(false) }
     var endHandled by remember(content.ratingKey) { mutableStateOf(false) }
-    var firstLoad by remember { mutableStateOf(true) }
+    var playlistInitialized by remember(content.ratingKey) { mutableStateOf(false) }
+    var mainResumeApplied by remember(content.ratingKey) { mutableStateOf(false) }
+    var activePlaylistIndex by remember(content.ratingKey) { mutableStateOf(0) }
+    var activePlaylistTitle by remember(content.ratingKey) { mutableStateOf(content.title) }
+    var lastAppliedSourceKey by remember(content.ratingKey) { mutableStateOf("") }
     val settingsFocusRequester = remember { FocusRequester() }
     val creditsFocusRequester = remember { FocusRequester() }
     val latestSelectedQuality by rememberUpdatedState(selectedQuality)
+    val playableTrailers = remember(preRollTrailers) {
+        preRollTrailers.filter { it.playback != null }.take(2)
+    }
+    val localBumperUri = remember(bumperUri) { bumperUri?.takeIf(String::isNotBlank) }
+    val mainFeatureIndex = playableTrailers.size + if (localBumperUri != null) 1 else 0
+    val isMainFeatureActive = activePlaylistIndex == mainFeatureIndex
 
     // Movie/media attributes select Android's HDMI/optical media route and
     // request audio focus. Avoiding AudioProcessors keeps encoded passthrough
@@ -250,10 +265,15 @@ fun PlayerScreen(
             .apply {
                 repeatMode = Player.REPEAT_MODE_OFF
                 playWhenReady = true
+                // Media3 1.10 preloads the next playlist period while the
+                // current trailer/bumper is playing.
+                preloadConfiguration = ExoPlayer.PreloadConfiguration(
+                    PLAYLIST_PRELOAD_DURATION_US,
+                )
             }
     }
 
-    fun mediaItemFor(quality: PlaybackQuality): MediaItem {
+    fun mainFeatureMediaItem(quality: PlaybackQuality): MediaItem {
         val uri = if (quality == PlaybackQuality.Original) {
             playback.directUrl
         } else {
@@ -269,26 +289,65 @@ fun PlayerScreen(
         }
         return MediaItem.Builder()
             .setUri(uri)
-            .setMediaId(content.ratingKey)
+            .setMediaId("feature:${content.ratingKey}")
             .setMediaMetadata(MediaMetadata.Builder().setTitle(content.title).build())
             .setSubtitleConfigurations(playback.subtitles.mapNotNull(::subtitleConfiguration))
             .build()
     }
 
+    fun trailerMediaItem(trailer: MediaContent): MediaItem = MediaItem.Builder()
+        .setUri(requireNotNull(trailer.playback).directUrl)
+        .setMediaId("trailer:${trailer.ratingKey}")
+        .setMediaMetadata(
+            MediaMetadata.Builder().setTitle("Trailer · ${trailer.title}").build(),
+        )
+        .build()
+
+    fun bumperMediaItem(uri: String): MediaItem = MediaItem.Builder()
+        .setUri(uri)
+        .setMediaId("bumper")
+        .setMediaMetadata(MediaMetadata.Builder().setTitle("Minova Cinema").build())
+        .build()
+
+    fun activeSourceKey(): String = if (selectedQuality == PlaybackQuality.Original) {
+        selectedQuality.name
+    } else {
+        "${selectedQuality.name}:$selectedPlexSubtitleId:$selectedPlexAudioId"
+    }
+
     LaunchedEffect(
-        selectedQuality,
-        selectedPlexSubtitleId.takeIf { selectedQuality != PlaybackQuality.Original },
-        selectedPlexAudioId.takeIf { selectedQuality != PlaybackQuality.Original },
         player,
         content.ratingKey,
+        playableTrailers,
+        localBumperUri,
     ) {
-        val existingPosition = if (firstLoad) content.viewOffsetMs else player.currentPosition
-        val shouldPlay = firstLoad || player.playWhenReady
-        player.setMediaItem(mediaItemFor(selectedQuality))
+        val items = buildList {
+            playableTrailers.forEach { add(trailerMediaItem(it)) }
+            localBumperUri?.let { add(bumperMediaItem(it)) }
+            add(mainFeatureMediaItem(selectedQuality))
+        }
+        player.setMediaItems(items)
+        activePlaylistIndex = 0
+        activePlaylistTitle = items.firstOrNull()?.mediaMetadata?.title?.toString() ?: content.title
+        if (mainFeatureIndex == 0 && content.viewOffsetMs > 0L) {
+            player.seekTo(0, content.viewOffsetMs)
+            mainResumeApplied = true
+        }
         player.prepare()
-        if (existingPosition > 0L) player.seekTo(existingPosition)
-        player.playWhenReady = shouldPlay
-        firstLoad = false
+        player.playWhenReady = true
+        lastAppliedSourceKey = activeSourceKey()
+        playlistInitialized = true
+    }
+
+    LaunchedEffect(selectedQuality, selectedPlexSubtitleId, selectedPlexAudioId, player) {
+        if (!playlistInitialized) return@LaunchedEffect
+        val sourceKey = activeSourceKey()
+        if (sourceKey == lastAppliedSourceKey) return@LaunchedEffect
+        val position = player.currentPosition.coerceAtLeast(0L)
+        val currentIndex = player.currentMediaItemIndex
+        player.replaceMediaItem(mainFeatureIndex, mainFeatureMediaItem(selectedQuality))
+        if (currentIndex == mainFeatureIndex) player.seekTo(mainFeatureIndex, position)
+        lastAppliedSourceKey = sourceKey
     }
 
     fun resumeSynchronized() {
@@ -302,12 +361,37 @@ fun PlayerScreen(
     // time so selection is always based on Media3's real active track groups.
     DisposableEffect(player) {
         fun reportPlaybackActivity() {
-            latestPlaybackActivityChanged(
-                player.playbackState == Player.STATE_READY && player.isPlaying,
-            )
+            val activelyPlaying = player.playbackState == Player.STATE_READY && player.isPlaying
+            latestPlaybackActivityChanged(activelyPlaying)
+            if (cinemaModeActive) {
+                when {
+                    activelyPlaying -> onCinemaPlaybackChanged(true)
+                    !player.playWhenReady ||
+                        player.playbackState == Player.STATE_ENDED ||
+                        player.playbackState == Player.STATE_IDLE -> onCinemaPlaybackChanged(false)
+                    // Keep the lights dark during a short buffer between
+                    // preloaded items instead of pulsing them up and down.
+                    else -> Unit
+                }
+            }
         }
 
         val listener = object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                activePlaylistIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+                activePlaylistTitle = mediaItem?.mediaMetadata?.title?.toString()
+                    ?: content.title
+                endHandled = false
+                if (
+                    activePlaylistIndex == mainFeatureIndex &&
+                    !mainResumeApplied &&
+                    content.viewOffsetMs > 0L
+                ) {
+                    mainResumeApplied = true
+                    player.seekTo(activePlaylistIndex, content.viewOffsetMs)
+                }
+            }
+
             override fun onTracksChanged(tracks: Tracks) {
                 activeVideoResolution = tracks.groups
                     .asSequence()
@@ -374,6 +458,14 @@ fun PlayerScreen(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (player.currentMediaItemIndex < mainFeatureIndex && player.hasNextMediaItem()) {
+                    // A missing/incompatible trailer or user-provided bumper
+                    // must never prevent the paid-for main feature from starting.
+                    player.seekToNextMediaItem()
+                    player.prepare()
+                    player.play()
+                    return
+                }
                 val fallback = fallbackQualityFor(latestSelectedQuality, error)
                 if (fallback != null) {
                     playbackMessage = "${latestSelectedQuality.label} is not supported by this TV. Switching to ${fallback.label}…"
@@ -406,6 +498,7 @@ fun PlayerScreen(
         onDispose {
             player.removeListener(listener)
             latestPlaybackActivityChanged(false)
+            if (cinemaModeActive) onCinemaPlaybackChanged(false)
         }
     }
 
@@ -415,11 +508,12 @@ fun PlayerScreen(
             delay(1_000)
             val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
             val position = player.currentPosition.coerceAtLeast(0L)
+            val currentIsFeature = player.currentMediaItemIndex == mainFeatureIndex
             playbackPositionMs = position
-            playbackDurationMs = duration
-            playbackTimeLeftMs = (duration - position).coerceAtLeast(0L)
+            playbackDurationMs = if (currentIsFeature) duration else player.duration.coerceAtLeast(0L)
+            playbackTimeLeftMs = (playbackDurationMs - position).coerceAtLeast(0L)
             secondsSinceReport += 1
-            if (secondsSinceReport >= 10) {
+            if (secondsSinceReport >= 10 && currentIsFeature) {
                 latestProgress(
                     player.currentPosition,
                     duration,
@@ -451,14 +545,19 @@ fun PlayerScreen(
     }
 
     // The interaction timestamp lives above the player route, so autoplaying
-    // into another episode does not reset this three-hour binge-session timer.
-    LaunchedEffect(inactivityCheckEnabled, lastInteractionAtMs, content.ratingKey) {
+    // into another episode does not reset the configured binge-session timer.
+    LaunchedEffect(
+        inactivityCheckEnabled,
+        inactivityTimeoutMs,
+        lastInteractionAtMs,
+        content.ratingKey,
+    ) {
         if (!inactivityCheckEnabled) {
             inactivityPromptVisible = false
             return@LaunchedEffect
         }
         val elapsed = (SystemClock.elapsedRealtime() - lastInteractionAtMs).coerceAtLeast(0L)
-        val remaining = (INACTIVITY_TIMEOUT_MS - elapsed).coerceAtLeast(0L)
+        val remaining = (inactivityTimeoutMs - elapsed).coerceAtLeast(0L)
         delay(remaining)
         if (!inactivityPromptVisible) {
             resumeAfterInactivityPrompt = player.isPlaying
@@ -478,7 +577,9 @@ fun PlayerScreen(
     }
 
     fun seekBy(deltaMs: Long) {
-        val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
+        val duration = player.duration.takeIf { it > 0 }
+            ?: content.durationMs?.takeIf { isMainFeatureActive }
+            ?: 0L
         val current = player.currentPosition.coerceAtLeast(0L)
         val target = if (duration > 0L) {
             (current + deltaMs).coerceIn(0L, duration)
@@ -508,8 +609,10 @@ fun PlayerScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
-            latestProgress(player.currentPosition, duration, "stopped")
+            if (player.currentMediaItemIndex == mainFeatureIndex) {
+                val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
+                latestProgress(player.currentPosition, duration, "stopped")
+            }
             lifecycleOwner.lifecycle.removeObserver(observer)
             playerView?.player = null
             player.release()
@@ -526,6 +629,7 @@ fun PlayerScreen(
     }
 
     val activeCreditsMarker = content.markers.firstOrNull { marker ->
+        isMainFeatureActive &&
         marker.type.equals("credits", ignoreCase = true) &&
             playbackPositionMs >= marker.startTimeOffsetMs &&
             playbackPositionMs < marker.endTimeOffsetMs
@@ -562,12 +666,14 @@ fun PlayerScreen(
                     // play/pause instead of merely revealing PlayerView chrome.
                     useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    // Preloading handles normal transitions; keep the cinema
+                    // presentation clean instead of flashing a spinner between items.
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     setKeepContentOnPlayerReset(true)
                     keepScreenOn = true
                     isFocusable = true
                     isFocusableInTouchMode = true
-                    contentDescription = "Playing ${content.title}"
+                    contentDescription = "Playing $activePlaylistTitle"
                     requestFocus()
                     playerView = this
                 }
@@ -636,7 +742,7 @@ fun PlayerScreen(
                         } else false
                     },
             ) {
-                Text(content.title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Text(activePlaylistTitle, color = Color.White, style = MaterialTheme.typography.titleMedium)
                 PlaybackTimeline(
                     positionMs = playbackPositionMs,
                     durationMs = playbackDurationMs,

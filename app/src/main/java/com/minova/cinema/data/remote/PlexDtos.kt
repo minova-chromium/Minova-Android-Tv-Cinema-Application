@@ -74,6 +74,7 @@ data class Metadata(
     @SerializedName("Producer") val producers: List<PersonTag> = emptyList(),
     @SerializedName("Marker") val markers: List<Marker> = emptyList(),
     @SerializedName("Media") val media: List<Media> = emptyList(),
+    @SerializedName("Extras") val extras: Hub? = null,
 )
 
 data class GuidTag(

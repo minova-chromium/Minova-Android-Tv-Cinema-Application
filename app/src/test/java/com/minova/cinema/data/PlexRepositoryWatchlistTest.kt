@@ -35,8 +35,14 @@ class PlexRepositoryWatchlistTest {
             guid = "plex://movie/discover-fallback",
             externalGuid = "imdb://tt0000103",
         )
+        val legacy = movie(
+            ratingKey = "104",
+            title = "Legacy Film",
+            guid = "plex://movie/server-legacy",
+            year = 1999,
+        )
         val localApi = FakePlexApi(
-            libraryItems = listOf(first, second, fallback),
+            libraryItems = listOf(first, second, fallback, legacy),
             resolvedItems = mapOf(
                 "plex://movie/discover-first" to first,
                 "plex://movie/discover-second" to second,
@@ -60,9 +66,15 @@ class PlexRepositoryWatchlistTest {
                         guid = null,
                         externalGuid = "imdb://tt0000103",
                     ),
+                    movie(
+                        "discover-legacy",
+                        "Legacy Film",
+                        guid = null,
+                        year = 1999,
+                    ),
                 ),
             ),
-            totalSize = 3,
+            totalSize = 4,
         )
         val repository = PlexRepository(
             connection = PlexConnection("http://127.0.0.1:32400/", "test-token"),
@@ -72,10 +84,44 @@ class PlexRepositoryWatchlistTest {
 
         val catalog = repository.loadCatalog()
 
-        assertEquals(listOf("101", "102", "103"), catalog.myList.map { it.ratingKey })
+        assertEquals(listOf("101", "102", "103", "104"), catalog.myList.map { it.ratingKey })
         assertEquals(listOf(0, 2), watchlistApi.requestedStarts)
+        assertEquals(listOf(10, 10), watchlistApi.requestedSizes)
         assertEquals(1, localApi.resolveRequests.size)
         assertTrue(localApi.resolveRequests.single().contains("%3A%2F%2F"))
+    }
+
+    @Test
+    fun watchlistContinuesPastAFullPageWhenDiscoverOmitsTotalSize() = runBlocking {
+        val localItems = (1..12).map { index ->
+            movie("local-$index", "Movie $index", "plex://movie/item-$index")
+        }
+        val watchlistItems = (1..12).map { index ->
+            movie("item-$index", "Movie $index", "plex://movie/item-$index")
+        }
+        val localApi = FakePlexApi(
+            libraryItems = localItems,
+            resolvedItems = watchlistItems.associate { discover ->
+                requireNotNull(discover.guid) to requireNotNull(
+                    localItems.firstOrNull { it.title == discover.title },
+                )
+            },
+        )
+        val watchlistApi = FakeWatchlistApi(
+            pages = mapOf(0 to watchlistItems.take(10), 10 to watchlistItems.drop(10)),
+            totalSize = null,
+        )
+        val repository = PlexRepository(
+            connection = PlexConnection("http://127.0.0.1:32400/", "test-token"),
+            api = localApi,
+            watchlistApi = watchlistApi,
+        )
+
+        val catalog = repository.loadCatalog()
+
+        assertEquals(12, catalog.myList.size)
+        assertEquals(listOf(0, 10), watchlistApi.requestedStarts)
+        assertEquals(listOf(10, 10), watchlistApi.requestedSizes)
     }
 
     private fun movie(
@@ -84,21 +130,24 @@ class PlexRepositoryWatchlistTest {
         guid: String?,
         primaryGuid: String? = null,
         externalGuid: String? = null,
+        year: Int? = null,
     ): Metadata = Metadata(
         ratingKey = ratingKey,
         guid = guid,
         primaryGuid = primaryGuid,
         title = title,
         type = "movie",
+        year = year,
         guids = externalGuid?.let { listOf(GuidTag(it)) }.orEmpty(),
     )
 }
 
 private class FakeWatchlistApi(
     private val pages: Map<Int, List<Metadata>>,
-    private val totalSize: Int,
+    private val totalSize: Int?,
 ) : PlexWatchlistApiService {
     val requestedStarts = mutableListOf<Int>()
+    val requestedSizes = mutableListOf<Int>()
 
     override suspend fun getWatchlist(
         includeCollections: Int,
@@ -107,6 +156,7 @@ private class FakeWatchlistApi(
         size: Int,
     ): PlexLibraryResponse {
         requestedStarts += start
+        requestedSizes += size
         val metadata = pages[start].orEmpty()
         return PlexLibraryResponse(
             MediaContainer(
@@ -156,6 +206,12 @@ private class FakePlexApi(
     override suspend fun getOnDeck(): PlexLibraryResponse = PlexLibraryResponse()
 
     override suspend fun getMetadata(ratingKey: String, includeMarkers: Int) = unused()
+    override suspend fun getMetadataWithExtras(
+        ratingKey: String,
+        includeExtras: Int,
+        includeMarkers: Int,
+    ) = unused()
+    override suspend fun getUnwatchedMovies(sectionId: String) = unused()
     override suspend fun getChildren(ratingKey: String) = unused()
     override suspend fun getExtras(ratingKey: String) = unused()
     override suspend fun markWatched(ratingKey: String, identifier: String) = Response.success(Unit)

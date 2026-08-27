@@ -1,7 +1,10 @@
 package com.minova.cinema.ui
 
 import android.app.Activity
+import android.content.Intent
 import android.os.SystemClock
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -24,6 +27,7 @@ import androidx.navigation.compose.rememberNavController
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.CinemaCatalog
+import com.minova.cinema.domain.CinemaPlaybackPlan
 import com.minova.cinema.data.local.PlaybackPreferences
 import com.minova.cinema.presentation.CinemaUiState
 import com.minova.cinema.presentation.CinemaViewModel
@@ -43,11 +47,12 @@ import com.minova.cinema.ui.player.PlayerScreen
 import com.minova.cinema.ui.settings.SettingsScreen
 import com.minova.cinema.ui.update.UpdateAvailableDialog
 import com.minova.cinema.ui.update.UpdateDownloadDialog
+import com.minova.cinema.home.CinemaLightingController
 
 private sealed interface CinemaRoute {
     data object Browse : CinemaRoute
     data class Detail(val content: MediaContent) : CinemaRoute
-    data class Player(val content: MediaContent) : CinemaRoute
+    data class Player(val plan: CinemaPlaybackPlan) : CinemaRoute
     data object Settings : CinemaRoute
 }
 
@@ -61,6 +66,7 @@ fun MinovaCinemaApp(
     viewModel: CinemaViewModel,
     updateViewModel: UpdateViewModel,
     ambientInactivityTracker: AmbientInactivityTracker,
+    cinemaLightingController: CinemaLightingController,
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -99,7 +105,7 @@ fun MinovaCinemaApp(
             LaunchedEffect(Unit) {
                 updateViewModel.checkForUpdate()
             }
-            MainScreen(viewModel, ambientInactivityTracker)
+            MainScreen(viewModel, ambientInactivityTracker, cinemaLightingController)
 
             (updateState as? UpdateUiState.Available)?.let { available ->
                 UpdateAvailableDialog(
@@ -127,11 +133,13 @@ fun MinovaCinemaApp(
 private fun MainScreen(
     viewModel: CinemaViewModel,
     ambientInactivityTracker: AmbientInactivityTracker,
+    cinemaLightingController: CinemaLightingController,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
+    val lightingState by cinemaLightingController.state.collectAsStateWithLifecycle()
     val routes = rememberRoutes()
     val playbackPreferences = remember(context.applicationContext) {
         PlaybackPreferences(context.applicationContext)
@@ -139,6 +147,21 @@ private fun MainScreen(
     var playbackSettings by remember { mutableStateOf(playbackPreferences.read()) }
     var lastPlaybackInteractionAtMs by remember {
         mutableLongStateOf(SystemClock.elapsedRealtime())
+    }
+    val bumperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            playbackSettings = playbackPreferences.setCinemaBumperUri(uri.toString())
+        }
+    }
+
+    LaunchedEffect(playbackSettings.screensaverTimeoutMs) {
+        ambientInactivityTracker.updateTimeout(playbackSettings.screensaverTimeoutMs)
     }
 
     LaunchedEffect(uiState::class) {
@@ -179,10 +202,15 @@ private fun MainScreen(
             }
 
             fun play(content: MediaContent) {
-                viewModel.resolvePlayable(content) { playable ->
-                    if (playable != null) {
+                viewModel.resolvePlaybackPlan(
+                    content = content,
+                    cinemaModeEnabled = playbackSettings.cinemaModeEnabled,
+                    cinemaTrailersEnabled = playbackSettings.cinemaTrailersEnabled,
+                    bumperUri = playbackSettings.cinemaBumperUri,
+                ) { plan ->
+                    if (plan != null) {
                         lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
-                        routes.add(CinemaRoute.Player(playable))
+                        routes.add(CinemaRoute.Player(plan))
                     }
                 }
             }
@@ -190,7 +218,9 @@ private fun MainScreen(
             fun playNext(content: MediaContent) {
                 viewModel.resolvePlayable(content) { playable ->
                     if (playable != null) {
-                        routes[routes.lastIndex] = CinemaRoute.Player(playable)
+                        routes[routes.lastIndex] = CinemaRoute.Player(
+                            CinemaPlaybackPlan(mainFeature = playable),
+                        )
                     }
                 }
             }
@@ -205,6 +235,7 @@ private fun MainScreen(
                         catalog = state.catalog,
                         onOpen = ::open,
                         onSettings = { routes.add(CinemaRoute.Settings) },
+                        onWatchlistRefresh = viewModel::refreshWatchlist,
                     )
                     is CinemaRoute.Detail -> {
                         val detailedMovie = (movieDetail as? MovieDetailUiState.Ready)
@@ -241,15 +272,20 @@ private fun MainScreen(
                         )
                     }
                     is CinemaRoute.Player -> PlayerScreen(
-                        content = route.content,
+                        content = route.plan.mainFeature,
+                        preRollTrailers = route.plan.trailers,
+                        bumperUri = route.plan.bumperUri,
+                        cinemaModeActive = route.plan.cinemaModeActive,
                         connection = state.connection,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
                         inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
+                        inactivityTimeoutMs = playbackSettings.inactivityTimeoutMs,
                         lastInteractionAtMs = lastPlaybackInteractionAtMs,
                         onUserInteraction = {
                             lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
                         },
                         onPlaybackActivityChanged = ambientInactivityTracker::updatePlaybackActivity,
+                        onCinemaPlaybackChanged = cinemaLightingController::onCinemaPlaybackChanged,
                         onAutoplayNextEpisodeChanged = { enabled ->
                             playbackSettings = playbackPreferences.setAutoplayNextEpisode(enabled)
                         },
@@ -265,20 +301,20 @@ private fun MainScreen(
                         },
                         onProgress = { position, duration, playbackState ->
                             viewModel.reportPlayback(
-                                route.content,
+                                route.plan.mainFeature,
                                 position,
                                 duration,
                                 playbackState,
                             )
                         },
                         onSubtitleStreamSelected = { subtitleId, onComplete ->
-                            viewModel.selectSubtitle(route.content, subtitleId, onComplete)
+                            viewModel.selectSubtitle(route.plan.mainFeature, subtitleId, onComplete)
                         },
                         onAudioStreamSelected = { audioId, onComplete ->
-                            viewModel.selectAudio(route.content, audioId, onComplete)
+                            viewModel.selectAudio(route.plan.mainFeature, audioId, onComplete)
                         },
                         onPlaybackEnded = { onReady ->
-                            if (route.content.kind == MediaKind.Extra) {
+                            if (route.plan.mainFeature.kind == MediaKind.Extra) {
                                 // A trailer behaves like Plex's preview player:
                                 // completion returns to the movie rather than
                                 // leaving an empty fullscreen player behind.
@@ -287,7 +323,7 @@ private fun MainScreen(
                                 }
                                 onReady(null)
                             } else {
-                                viewModel.finishPlaybackAndLoadNext(route.content, onReady)
+                                viewModel.finishPlaybackAndLoadNext(route.plan.mainFeature, onReady)
                             }
                         },
                         onPlayNext = ::playNext,
@@ -296,6 +332,12 @@ private fun MainScreen(
                         serverUrl = state.connection.baseUrl,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
                         inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
+                        inactivityTimeoutMs = playbackSettings.inactivityTimeoutMs,
+                        screensaverTimeoutMs = playbackSettings.screensaverTimeoutMs,
+                        cinemaModeEnabled = playbackSettings.cinemaModeEnabled,
+                        cinemaTrailersEnabled = playbackSettings.cinemaTrailersEnabled,
+                        cinemaBumperConfigured = !playbackSettings.cinemaBumperUri.isNullOrBlank(),
+                        lightingState = lightingState,
                         onRefresh = {
                             routes.clear()
                             routes.add(CinemaRoute.Browse)
@@ -308,6 +350,27 @@ private fun MainScreen(
                         onInactivityCheckChanged = { enabled ->
                             playbackSettings = playbackPreferences.setInactivityCheckEnabled(enabled)
                         },
+                        onInactivityTimeoutChanged = { timeout ->
+                            playbackSettings = playbackPreferences.setInactivityTimeoutMs(timeout)
+                        },
+                        onScreensaverTimeoutChanged = { timeout ->
+                            playbackSettings = playbackPreferences.setScreensaverTimeoutMs(timeout)
+                        },
+                        onCinemaModeChanged = { enabled ->
+                            playbackSettings = playbackPreferences.setCinemaModeEnabled(enabled)
+                        },
+                        onCinemaTrailersChanged = { enabled ->
+                            playbackSettings = playbackPreferences.setCinemaTrailersEnabled(enabled)
+                        },
+                        onChooseCinemaBumper = {
+                            bumperPicker.launch(arrayOf("video/*"))
+                        },
+                        onClearCinemaBumper = {
+                            playbackSettings = playbackPreferences.setCinemaBumperUri(null)
+                        },
+                        onRequestHomePermission = cinemaLightingController::requestPermissions,
+                        onRefreshLights = cinemaLightingController::refreshLights,
+                        onLightAssignmentChanged = cinemaLightingController::setAssigned,
                     )
                 }
             }

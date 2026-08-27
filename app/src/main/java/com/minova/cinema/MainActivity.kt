@@ -16,14 +16,19 @@ import com.minova.cinema.ui.MinovaCinemaApp
 import com.minova.cinema.ui.ambient.AmbientInactivityTracker
 import com.minova.cinema.ui.ambient.AmbientScreensaverHost
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
+import com.minova.cinema.home.CinemaLightingController
+import com.minova.cinema.home.CinemaLightingProvider
 
 class MainActivity : ComponentActivity() {
     private val viewModel: CinemaViewModel by viewModels { CinemaViewModel.Factory(this) }
     private val updateViewModel: UpdateViewModel by viewModels()
     private val ambientInactivityTracker = AmbientInactivityTracker()
+    private lateinit var cinemaLightingController: CinemaLightingController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        cinemaLightingController = CinemaLightingProvider.create(applicationContext)
+        cinemaLightingController.registerPermissionCaller(this)
         enableEdgeToEdge()
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -34,7 +39,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             MinovaCinemaTheme {
                 AmbientScreensaverHost(ambientInactivityTracker) {
-                    MinovaCinemaApp(viewModel, updateViewModel, ambientInactivityTracker)
+                    MinovaCinemaApp(
+                        viewModel,
+                        updateViewModel,
+                        ambientInactivityTracker,
+                        cinemaLightingController,
+                    )
                 }
             }
         }
@@ -50,6 +60,11 @@ class MainActivity : ComponentActivity() {
         // If Android sent the user to "Install unknown apps", returning to
         // Minova Cinema continues the pending installation automatically.
         UpdateInstaller.resumePendingInstall(this)
+    }
+
+    override fun onDestroy() {
+        cinemaLightingController.release()
+        super.onDestroy()
     }
 
     private class AmbientWindowCallback(
