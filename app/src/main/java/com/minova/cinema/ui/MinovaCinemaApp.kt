@@ -33,6 +33,7 @@ import com.minova.cinema.presentation.CinemaUiState
 import com.minova.cinema.presentation.CinemaViewModel
 import com.minova.cinema.presentation.ShowDetailUiState
 import com.minova.cinema.presentation.MovieDetailUiState
+import com.minova.cinema.presentation.TapoLightsViewModel
 import com.minova.cinema.update.UpdateUiState
 import com.minova.cinema.update.UpdateViewModel
 import com.minova.cinema.update.UpdateInstaller
@@ -67,6 +68,7 @@ fun MinovaCinemaApp(
     updateViewModel: UpdateViewModel,
     ambientInactivityTracker: AmbientInactivityTracker,
     cinemaLightingController: CinemaLightingController,
+    tapoLightsViewModel: TapoLightsViewModel,
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -105,7 +107,12 @@ fun MinovaCinemaApp(
             LaunchedEffect(Unit) {
                 updateViewModel.checkForUpdate()
             }
-            MainScreen(viewModel, ambientInactivityTracker, cinemaLightingController)
+            MainScreen(
+                viewModel,
+                ambientInactivityTracker,
+                cinemaLightingController,
+                tapoLightsViewModel,
+            )
 
             (updateState as? UpdateUiState.Available)?.let { available ->
                 UpdateAvailableDialog(
@@ -134,12 +141,14 @@ private fun MainScreen(
     viewModel: CinemaViewModel,
     ambientInactivityTracker: AmbientInactivityTracker,
     cinemaLightingController: CinemaLightingController,
+    tapoLightsViewModel: TapoLightsViewModel,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
     val lightingState by cinemaLightingController.state.collectAsStateWithLifecycle()
+    val tapoLightsState by tapoLightsViewModel.state.collectAsStateWithLifecycle()
     val routes = rememberRoutes()
     val playbackPreferences = remember(context.applicationContext) {
         PlaybackPreferences(context.applicationContext)
@@ -285,7 +294,10 @@ private fun MainScreen(
                             lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
                         },
                         onPlaybackActivityChanged = ambientInactivityTracker::updatePlaybackActivity,
-                        onCinemaPlaybackChanged = cinemaLightingController::onCinemaPlaybackChanged,
+                        onCinemaPlaybackChanged = { playing ->
+                            cinemaLightingController.onCinemaPlaybackChanged(playing)
+                            tapoLightsViewModel.onPlaybackChanged(playing)
+                        },
                         onAutoplayNextEpisodeChanged = { enabled ->
                             playbackSettings = playbackPreferences.setAutoplayNextEpisode(enabled)
                         },
@@ -338,6 +350,7 @@ private fun MainScreen(
                         cinemaTrailersEnabled = playbackSettings.cinemaTrailersEnabled,
                         cinemaBumperConfigured = !playbackSettings.cinemaBumperUri.isNullOrBlank(),
                         lightingState = lightingState,
+                        tapoLightsState = tapoLightsState,
                         onRefresh = {
                             routes.clear()
                             routes.add(CinemaRoute.Browse)
@@ -371,6 +384,10 @@ private fun MainScreen(
                         onRequestHomePermission = cinemaLightingController::requestPermissions,
                         onRefreshLights = cinemaLightingController::refreshLights,
                         onLightAssignmentChanged = cinemaLightingController::setAssigned,
+                        onSaveTapoCredentials = tapoLightsViewModel::saveCredentials,
+                        onClearTapoCredentials = tapoLightsViewModel::clearCredentials,
+                        onDiscoverTapoLights = tapoLightsViewModel::discover,
+                        onTapoLightAssignmentChanged = tapoLightsViewModel::setAssigned,
                     )
                 }
             }

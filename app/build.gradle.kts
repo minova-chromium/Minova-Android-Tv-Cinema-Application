@@ -52,8 +52,8 @@ android {
         // intentionally use API 29 as the public platform baseline.
         minSdk = 29
         targetSdk = 37
-        versionCode = 32
-        versionName = "2.6.2"
+        versionCode = 33
+        versionName = "2.6.3"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
         buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")
@@ -138,10 +138,14 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("androidx.navigation:navigation-compose:2.9.8")
+    implementation("androidx.datastore:datastore-preferences:1.2.0")
+    implementation("androidx.security:security-crypto:1.1.0")
 
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -155,6 +159,10 @@ dependencies {
     // signed-in developer portal. Keep ordinary contributors/builds working
     // until that private SDK is configured locally.
     if (homeSdkEnabled) {
+        // Home is delivered as an optional Google Play services module. A
+        // direct current base dependency provides ModuleInstallClient so a
+        // sideloaded TV build can request that module before authorization.
+        implementation("com.google.android.gms:play-services-base:18.10.1")
         implementation("com.google.android.gms:play-services-home:17.1.0")
         implementation("com.google.android.gms:play-services-home-types:17.1.0")
     }

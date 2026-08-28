@@ -10,6 +10,7 @@ import androidx.activity.viewModels
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.minova.cinema.presentation.CinemaViewModel
+import com.minova.cinema.presentation.TapoLightsViewModel
 import com.minova.cinema.update.UpdateInstaller
 import com.minova.cinema.update.UpdateViewModel
 import com.minova.cinema.ui.MinovaCinemaApp
@@ -22,6 +23,9 @@ import com.minova.cinema.home.CinemaLightingProvider
 class MainActivity : ComponentActivity() {
     private val viewModel: CinemaViewModel by viewModels { CinemaViewModel.Factory(this) }
     private val updateViewModel: UpdateViewModel by viewModels()
+    private val tapoLightsViewModel: TapoLightsViewModel by viewModels {
+        TapoLightsViewModel.Factory(application)
+    }
     private val ambientInactivityTracker = AmbientInactivityTracker()
     private lateinit var cinemaLightingController: CinemaLightingController
 
@@ -44,6 +48,7 @@ class MainActivity : ComponentActivity() {
                         updateViewModel,
                         ambientInactivityTracker,
                         cinemaLightingController,
+                        tapoLightsViewModel,
                     )
                 }
             }

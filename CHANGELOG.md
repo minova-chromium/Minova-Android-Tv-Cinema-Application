@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.6.3 — 2026-08-28
+
+### Tapo Cinema Lights and Google Home recovery
+
+- Added local TP-Link Tapo Cinema Lights as a fallback for televisions that do not expose the Google Home Permissions API.
+- Added encrypted Tapo credential storage backed by Android Keystore, local UDP discovery, and authenticated friendly light names.
+- Added persistent per-light Cinema Room assignment with synchronized four-second dimming and restoration to each light's previous brightness.
+- Added automatic Tapo rediscovery after app restarts and a fully D-pad-accessible setup flow in Settings.
+- Added explicit Google Play services Home module availability checks and installation requests before Google Home permission setup.
+- Improved Google Home diagnostics to report the installed Google Play services version when TV firmware does not provide the required service.
+- Updated the privacy policy and terms for local smart-light discovery and control.
+
+> Tapo control currently supports compatible KLAP v1/v2 bulbs and light strips on the same local network.
+
 ## 2.6.2 — 2026-08-27
 
 ### Google Home availability and Settings

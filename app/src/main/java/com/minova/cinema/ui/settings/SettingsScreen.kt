@@ -34,6 +34,7 @@ import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
 import com.minova.cinema.home.LightingUiState
+import com.minova.cinema.tapo.TapoLightsUiState
 
 @Composable
 fun SettingsScreen(
@@ -46,6 +47,7 @@ fun SettingsScreen(
     cinemaTrailersEnabled: Boolean,
     cinemaBumperConfigured: Boolean,
     lightingState: LightingUiState,
+    tapoLightsState: TapoLightsUiState,
     onRefresh: () -> Unit,
     onChangeServer: () -> Unit,
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
@@ -59,6 +61,10 @@ fun SettingsScreen(
     onRequestHomePermission: () -> Unit,
     onRefreshLights: () -> Unit,
     onLightAssignmentChanged: (String, Boolean) -> Unit,
+    onSaveTapoCredentials: (String, String) -> Unit,
+    onClearTapoCredentials: () -> Unit,
+    onDiscoverTapoLights: () -> Unit,
+    onTapoLightAssignmentChanged: (String, Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -92,6 +98,14 @@ fun SettingsScreen(
             onRequestHomePermission = onRequestHomePermission,
             onRefreshLights = onRefreshLights,
             onLightAssignmentChanged = onLightAssignmentChanged,
+        )
+        Spacer(Modifier.height(38.dp))
+        TapoCinemaLightsSection(
+            state = tapoLightsState,
+            onSaveCredentials = onSaveTapoCredentials,
+            onClearCredentials = onClearTapoCredentials,
+            onDiscover = onDiscoverTapoLights,
+            onAssignmentChanged = onTapoLightAssignmentChanged,
         )
         Spacer(Modifier.height(54.dp))
         Text("CONNECTED SERVER", style = MaterialTheme.typography.bodyMedium, color = MinovaMuted)

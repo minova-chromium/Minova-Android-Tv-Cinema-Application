@@ -3,6 +3,8 @@ package com.minova.cinema.home
 import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.core.content.edit
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.home.FactoryRegistry
 import com.google.home.ForcePermissionFlow
 import com.google.home.Home
@@ -29,8 +31,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.tasks.await
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -55,6 +61,7 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
     private var permissionObserver: Job? = null
     private var fadeJob: Job? = null
     private var lastPlaybackState: Boolean? = null
+    private val moduleInstallMutex = Mutex()
     // Only lights that Cinema Mode actually dimmed are restored. A light that
     // was already off must stay off when playback pauses or ends.
     private val cinemaDimmedIds = ConcurrentHashMap.newKeySet<String>()
@@ -63,14 +70,15 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
         if (registered) return
         registered = true
         client.registerActivityResultCallerForPermissions(activity)
-        permissionObserver = scope.launch {
-            client.hasPermissions().collect { permission ->
-                val granted = permission == PermissionsState.GRANTED
+        scope.launch {
+            if (isHomeModuleAvailable()) {
+                observePermissions()
+            } else {
                 _state.value = _state.value.copy(
-                    permissionGranted = granted,
-                    message = if (granted) null else "Allow access to a Google Home to choose theater lights.",
+                    loading = false,
+                    message = "The Google Home service is not installed yet. Select Connect Google Home " +
+                        "to ask Google Play services to install it.",
                 )
-                if (granted) discoverLights()
             }
         }
     }
@@ -79,6 +87,8 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
         if (!registered) return
         scope.launch {
             _state.value = _state.value.copy(loading = true, message = null)
+            if (!ensureHomeModuleInstalled()) return@launch
+            observePermissions()
             val result = runCatching {
                 client.requestPermissions(ForcePermissionFlow.FORCE_LAUNCH)
             }.getOrElse { error ->
@@ -94,6 +104,80 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
                 else result.errorMessage ?: "Google Home permission was not granted.",
             )
             if (result.status == PermissionsResultStatus.SUCCESS) discoverLights()
+        }
+    }
+
+    /**
+     * The Home service is an optional Google Play services module. Manifest
+     * delivery normally installs it automatically, but sideloaded TV apps do
+     * not always receive optional modules during package installation. Check
+     * and request the module explicitly before invoking the Permissions API.
+     */
+    private suspend fun ensureHomeModuleInstalled(): Boolean = moduleInstallMutex.withLock {
+        if (isHomeModuleAvailable()) return@withLock true
+
+        _state.value = _state.value.copy(
+            loading = true,
+            message = "Installing the Google Home service…",
+        )
+        val installResult = runCatching {
+            val request = ModuleInstallRequest.newBuilder()
+                .addApi(Home)
+                .build()
+            ModuleInstall.getClient(appContext).installModules(request).await()
+
+            // The install task confirms that the request was accepted, not
+            // necessarily that the module has finished loading. Poll briefly
+            // before opening the Google Home permission screen.
+            repeat(MODULE_INSTALL_CHECKS) {
+                if (isHomeModuleAvailable()) return@runCatching true
+                delay(MODULE_INSTALL_CHECK_DELAY_MS)
+            }
+            false
+        }
+
+        val installed = installResult.getOrElse { error ->
+            _state.value = _state.value.copy(
+                loading = false,
+                message = unavailableModuleMessage(error),
+            )
+            return@withLock false
+        }
+        if (!installed) {
+            _state.value = _state.value.copy(
+                loading = false,
+                message = unavailableModuleMessage(),
+            )
+        }
+        installed
+    }
+
+    private suspend fun isHomeModuleAvailable(): Boolean = runCatching {
+        ModuleInstall.getClient(appContext)
+            .areModulesAvailable(Home)
+            .await()
+            .areModulesAvailable()
+    }.getOrDefault(false)
+
+    private fun observePermissions() {
+        if (permissionObserver?.isActive == true) return
+        permissionObserver = scope.launch {
+            client.hasPermissions()
+                .catch { error ->
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        message = userFacingHomeError(error),
+                    )
+                }
+                .collect { permission ->
+                    val granted = permission == PermissionsState.GRANTED
+                    _state.value = _state.value.copy(
+                        permissionGranted = granted,
+                        message = if (granted) null
+                        else "Allow access to a Google Home to choose theater lights.",
+                    )
+                    if (granted) discoverLights()
+                }
         }
     }
 
@@ -187,13 +271,32 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
             details.contains("error: 17", ignoreCase = true) ||
             details.contains("Permissions.API is not available", ignoreCase = true)
         ) {
-            "Google Home is unavailable on this device. Android Studio TV emulators often do not " +
-                "provide the Home Permissions service; test Cinema lights on a Google-certified " +
-                "Android TV 10+ device with current Google Play services."
+            unavailableModuleMessage(error)
         } else {
             error.message ?: "Google Home could not complete this request."
         }
     }
+
+    private fun unavailableModuleMessage(error: Throwable? = null): String {
+        val errorCode = generateSequence(error) { it.cause }
+            .mapNotNull(Throwable::message)
+            .firstOrNull()
+            ?.let { " Error: $it" }
+            .orEmpty()
+        return "This TV's Google Play services does not currently provide the Google Home " +
+            "Permissions service required by Cinema Lights. Minova requested the optional Home " +
+            "module, but the TV firmware did not supply it. Google Play services: " +
+            "${playServicesVersion()}. Update Google Play services and the TV firmware, then retry." +
+            errorCode
+    }
+
+    private fun playServicesVersion(): String = runCatching {
+        appContext.packageManager
+            .getPackageInfo(GOOGLE_PLAY_SERVICES_PACKAGE, 0)
+            .versionName
+            .orEmpty()
+            .ifBlank { "unknown" }
+    }.getOrDefault("not installed")
 
     private suspend fun fadeAssignedLights(targetPercent: Int) = coroutineScope {
         val targetIds = if (targetPercent == 0) assignedIds.toSet() else cinemaDimmedIds.toSet()
@@ -260,6 +363,9 @@ class GoogleHomeCinemaLightingController(context: Context) : CinemaLightingContr
         const val RESTORE_PERCENT = 15
         const val FADE_STEPS = 20
         const val FADE_DURATION_MS = 4_000L
+        const val MODULE_INSTALL_CHECKS = 20
+        const val MODULE_INSTALL_CHECK_DELAY_MS = 500L
+        const val GOOGLE_PLAY_SERVICES_PACKAGE = "com.google.android.gms"
 
         @Volatile private var singletonClient: HomeClient? = null
 
