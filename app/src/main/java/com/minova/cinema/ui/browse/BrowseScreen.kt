@@ -27,6 +27,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,10 +41,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -52,11 +57,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -76,6 +87,9 @@ import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
 import com.minova.cinema.ui.theme.MinovaWhite
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 private enum class BrowseTab(val label: String) {
     Home("Home"), Movies("Movies"), Series("Series"), MyList("Watchlist"), Search("Search"),
@@ -83,6 +97,9 @@ private enum class BrowseTab(val label: String) {
 
 private enum class BrowseLayout { Rows, Grid }
 private enum class ShelfStyle { Landscape, Poster }
+
+private const val GridColumnCount = 6
+private val AlphabetBuckets = listOf("#") + ('A'..'Z').map(Char::toString)
 
 private data class BrowseShelf(
     val key: String,
@@ -126,6 +143,12 @@ fun BrowseScreen(
             }
         } ?: gridItems
     }
+    val heroCandidates = remember(shelves) {
+        shelves.flatMap(BrowseShelf::items).distinctBy(MediaContent::ratingKey)
+    }
+    var highlightedContent by remember(tab) {
+        mutableStateOf(heroCandidates.firstOrNull())
+    }
 
     LaunchedEffect(gridGenres, selectedGenre) {
         if (selectedGenre != null && gridGenres.none { it.equals(selectedGenre, ignoreCase = true) }) {
@@ -135,6 +158,12 @@ fun BrowseScreen(
 
     LaunchedEffect(tab) {
         if (tab == BrowseTab.MyList) onWatchlistRefresh()
+    }
+
+    LaunchedEffect(heroCandidates) {
+        if (highlightedContent?.ratingKey !in heroCandidates.map(MediaContent::ratingKey)) {
+            highlightedContent = heroCandidates.firstOrNull()
+        }
     }
 
     Box(Modifier.fillMaxSize().background(MinovaNightDeep)) {
@@ -164,9 +193,19 @@ fun BrowseScreen(
                 onOpen = onOpen,
             )
         } else if (tab != BrowseTab.Home && layout == BrowseLayout.Grid) {
-            CatalogGrid(filteredGridItems, emptyMessage, onOpen)
+            CatalogGrid(
+                media = filteredGridItems,
+                emptyMessage = emptyMessage,
+                onOpen = onOpen,
+            )
         } else {
-            ShelfBrowser(shelves, emptyMessage, onOpen)
+            ShelfBrowser(
+                shelves = shelves,
+                hero = highlightedContent,
+                emptyMessage = emptyMessage,
+                onOpen = onOpen,
+                onHighlighted = { highlightedContent = it },
+            )
         }
 
         if (filterOpen) {
@@ -275,8 +314,9 @@ private fun Header(
             .zIndex(10f)
             .fillMaxWidth()
             .height(76.dp)
-            .background(MinovaBlack)
-            .padding(horizontal = 42.dp)
+            .background(MinovaBlack.copy(alpha = 0.97f))
+            .border(0.5.dp, MinovaSurfaceRaised.copy(alpha = 0.7f))
+            .padding(horizontal = 38.dp)
             .focusGroup(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -290,8 +330,8 @@ private fun Header(
             contentDescription = "Minova Cinema",
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .padding(start = 12.dp, end = 28.dp)
-                .width(126.dp)
+                .padding(start = 12.dp, end = 30.dp)
+                .width(140.dp)
                 .height(52.dp),
         )
         BrowseTab.entries.forEach { item ->
@@ -505,39 +545,202 @@ private fun HeaderItem(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun ShelfBrowser(
     shelves: List<BrowseShelf>,
+    hero: MediaContent?,
     emptyMessage: String,
     onOpen: (MediaContent) -> Unit,
+    onHighlighted: (MediaContent) -> Unit,
 ) {
     if (shelves.isEmpty()) return EmptyMessage(emptyMessage)
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(top = 76.dp),
-        contentPadding = PaddingValues(top = 22.dp, bottom = 52.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
+        contentPadding = PaddingValues(bottom = 58.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
+        hero?.let { content ->
+            item(key = "featured-${content.ratingKey}") {
+                FeaturedHero(content = content, onOpen = onOpen)
+            }
+        }
         items(shelves, key = { it.key }) { shelf ->
             Column {
-                Text(
-                    shelf.title,
-                    color = MinovaWhite,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 48.dp, bottom = 10.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Text(
+                        shelf.title,
+                        color = MinovaWhite,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "${shelf.items.size} titles",
+                        color = MinovaMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 LazyRow(
                     modifier = Modifier.focusGroup(),
-                    contentPadding = PaddingValues(horizontal = 48.dp, vertical = 5.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(horizontal = 48.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     items(shelf.items, key = { "${shelf.key}-${it.ratingKey}" }) { content ->
                         if (shelf.style == ShelfStyle.Landscape) {
-                            ContinueCard(content, onOpen)
+                            ContinueCard(content, onOpen, onHighlighted)
                         } else {
-                            PosterCard(content, Modifier.width(148.dp), onOpen)
+                            PosterCard(
+                                content = content,
+                                modifier = Modifier.width(148.dp),
+                                onOpen = onOpen,
+                                onFocused = onHighlighted,
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FeaturedHero(
+    content: MediaContent,
+    onOpen: (MediaContent) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(336.dp)
+            .background(MinovaBlack),
+    ) {
+        AsyncImage(
+            model = content.backdropUrl ?: content.posterUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        0f to MinovaNightDeep,
+                        0.48f to MinovaNightDeep.copy(alpha = 0.82f),
+                        0.78f to MinovaNightDeep.copy(alpha = 0.22f),
+                        1f to Color.Transparent,
+                    ),
+                ),
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.72f to Color.Transparent,
+                        1f to MinovaNightDeep,
+                    ),
+                ),
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .width(500.dp)
+                .padding(start = 48.dp, top = 20.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = content.title,
+                color = MinovaWhite,
+                fontSize = 38.sp,
+                lineHeight = 42.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val details = buildList {
+                if (content.metadataLine.isNotBlank()) add(content.metadataLine)
+                if (content.genres.isNotEmpty()) add(content.genres.take(3).joinToString("  •  "))
+            }.joinToString("    ")
+            if (details.isNotBlank()) {
+                Text(
+                    text = details,
+                    color = MinovaMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
+            content.summary?.takeIf(String::isNotBlank)?.let { summary ->
+                Text(
+                    text = summary,
+                    color = MinovaWhite.copy(alpha = 0.88f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+            Row(
+                modifier = Modifier.padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HeroAction(
+                    label = if (content.viewOffsetMs > 0L) "Resume details" else "View details",
+                    primary = true,
+                    onClick = { onOpen(content) },
+                )
+                content.remainingTimeLabel?.let { remaining ->
+                    Text(
+                        text = remaining,
+                        color = MinovaCyan,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroAction(
+    label: String,
+    primary: Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(9.dp)
+    Box(
+        modifier = Modifier
+            .height(48.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .border(
+                width = if (focused) 3.dp else 1.dp,
+                color = if (focused) MinovaCyan else Color.Transparent,
+                shape = shape,
+            )
+            .clip(shape)
+            .background(
+                when {
+                    primary && focused -> MinovaWhite
+                    primary -> MinovaWhite.copy(alpha = 0.94f)
+                    focused -> MinovaSurfaceRaised
+                    else -> MinovaSurface.copy(alpha = 0.92f)
+                },
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = if (primary) MinovaBlack else MinovaWhite,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -548,29 +751,213 @@ private fun CatalogGrid(
     onOpen: (MediaContent) -> Unit,
 ) {
     if (media.isEmpty()) return EmptyMessage(emptyMessage)
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(148.dp),
-        modifier = Modifier.fillMaxSize().padding(top = 76.dp).focusGroup(),
-        contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 26.dp, bottom = 48.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
+    val sortedMedia = remember(media) {
+        media.sortedWith(
+            compareBy<MediaContent> { it.title.lowercase(Locale.ROOT) }
+                .thenBy(MediaContent::ratingKey),
+        )
+    }
+    val firstIndexByBucket = remember(sortedMedia) {
+        buildMap<String, Int> {
+            sortedMedia.forEachIndexed { index, content ->
+                putIfAbsent(content.alphabetBucket(), index)
+            }
+        }
+    }
+    val gridState = rememberLazyGridState()
+    val alphabetState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val cardFocusRequesters = remember(sortedMedia) {
+        sortedMedia.associate { it.ratingKey to FocusRequester() }
+    }
+    val bucketFocusRequesters = remember(sortedMedia) {
+        AlphabetBuckets.associateWith { FocusRequester() }
+    }
+    var returnIndex by remember(sortedMedia) { mutableStateOf(0) }
+
+    fun requestCardFocus(index: Int) {
+        val safeIndex = index.coerceIn(sortedMedia.indices)
+        returnIndex = safeIndex
+        scope.launch {
+            // Alphabet jumps can span hundreds of Plex items. An animated
+            // scroll would visibly fly through the catalog and keep focus on
+            // the rail for several seconds, so land on the indexed row first.
+            gridState.scrollToItem(safeIndex)
+            delay(120)
+            cardFocusRequesters[sortedMedia[safeIndex].ratingKey]?.requestFocus()
+        }
+    }
+
+    fun requestAlphabetFocus(index: Int) {
+        val safeIndex = index.coerceIn(sortedMedia.indices)
+        returnIndex = safeIndex
+        val bucket = sortedMedia[safeIndex].alphabetBucket()
+        val bucketIndex = AlphabetBuckets.indexOf(bucket).coerceAtLeast(0)
+        scope.launch {
+            alphabetState.scrollToItem(bucketIndex)
+            delay(60)
+            bucketFocusRequesters[bucket]?.requestFocus()
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 76.dp)
+            .background(MinovaNightDeep),
     ) {
-        items(media, key = { it.ratingKey }) { content ->
-            PosterCard(content, Modifier.fillMaxWidth(), onOpen)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(GridColumnCount),
+            state = gridState,
+            modifier = Modifier.weight(1f).fillMaxHeight().focusGroup(),
+            contentPadding = PaddingValues(start = 44.dp, end = 16.dp, top = 26.dp, bottom = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
+        ) {
+            itemsIndexed(sortedMedia, key = { _, content -> content.ratingKey }) { index, content ->
+                val atRightEdge = index % GridColumnCount == GridColumnCount - 1 || index == sortedMedia.lastIndex
+                PosterCard(
+                    content = content,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(cardFocusRequesters.getValue(content.ratingKey))
+                        .onPreviewKeyEvent { event ->
+                            if (
+                                event.type == KeyEventType.KeyDown &&
+                                event.key == Key.DirectionRight &&
+                                atRightEdge
+                            ) {
+                                requestAlphabetFocus(index)
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                    onOpen = onOpen,
+                    onFocused = { returnIndex = index },
+                )
+            }
+        }
+        AlphabetRail(
+            firstIndexByBucket = firstIndexByBucket,
+            listState = alphabetState,
+            focusRequesters = bucketFocusRequesters,
+            onSelectBucket = { bucket ->
+                firstIndexByBucket[bucket]?.let(::requestCardFocus)
+            },
+            onReturnToGrid = { requestCardFocus(returnIndex) },
+        )
+    }
+}
+
+@Composable
+private fun AlphabetRail(
+    firstIndexByBucket: Map<String, Int>,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    focusRequesters: Map<String, FocusRequester>,
+    onSelectBucket: (String) -> Unit,
+    onReturnToGrid: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(52.dp)
+            .fillMaxHeight()
+            .background(MinovaBlack.copy(alpha = 0.86f)),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "A–Z",
+            color = MinovaMuted,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+        )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f).focusGroup(),
+            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            items(AlphabetBuckets, key = { it }) { bucket ->
+                AlphabetChoice(
+                    bucket = bucket,
+                    enabled = bucket in firstIndexByBucket,
+                    modifier = Modifier.focusRequester(focusRequesters.getValue(bucket)),
+                    onClick = { onSelectBucket(bucket) },
+                    onLeft = onReturnToGrid,
+                )
+            }
         }
     }
 }
 
 @Composable
-internal fun PosterCard(content: MediaContent, modifier: Modifier, onOpen: (MediaContent) -> Unit) {
+private fun AlphabetChoice(
+    bucket: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    onLeft: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.035f else 1f, tween(90), label = "poster_focus")
+    val shape = RoundedCornerShape(7.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .alpha(if (enabled) 1f else 0.28f)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft) {
+                    onLeft()
+                    true
+                } else {
+                    false
+                }
+            }
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) MinovaCyan else Color.Transparent,
+                shape = shape,
+            )
+            .clip(shape)
+            .background(if (focused) MinovaSurfaceRaised else Color.Transparent)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = bucket,
+            color = if (focused) MinovaWhite else MinovaMuted,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
+        )
+    }
+}
+
+private fun MediaContent.alphabetBucket(): String {
+    val first = title.trim().firstOrNull()?.uppercaseChar()
+    return if (first != null && first in 'A'..'Z') first.toString() else "#"
+}
+
+@Composable
+internal fun PosterCard(
+    content: MediaContent,
+    modifier: Modifier,
+    onOpen: (MediaContent) -> Unit,
+    onFocused: ((MediaContent) -> Unit)? = null,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.045f else 1f, tween(110), label = "poster_focus")
     val shape = RoundedCornerShape(9.dp)
     Column(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .zIndex(if (focused) 1f else 0f)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused?.invoke(content)
+            }
             .border(if (focused) 3.dp else 1.dp, if (focused) MinovaCyan else MinovaSurfaceRaised, shape)
             .clip(shape)
             .background(MinovaSurface)
@@ -613,23 +1000,30 @@ internal fun PosterCard(content: MediaContent, modifier: Modifier, onOpen: (Medi
 }
 
 @Composable
-private fun ContinueCard(content: MediaContent, onOpen: (MediaContent) -> Unit) {
+private fun ContinueCard(
+    content: MediaContent,
+    onOpen: (MediaContent) -> Unit,
+    onFocused: (MediaContent) -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.03f else 1f, tween(90), label = "continue_focus")
+    val scale by animateFloatAsState(if (focused) 1.04f else 1f, tween(110), label = "continue_focus")
     val shape = RoundedCornerShape(9.dp)
     Column(
         modifier = Modifier
-            .width(286.dp)
-            .height(196.dp)
+            .width(300.dp)
+            .height(200.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .zIndex(if (focused) 1f else 0f)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused(content)
+            }
             .border(if (focused) 3.dp else 1.dp, if (focused) MinovaCyan else MinovaSurfaceRaised, shape)
             .clip(shape)
             .background(MinovaSurface)
             .clickable(role = Role.Button) { onOpen(content) },
     ) {
-        Box(Modifier.fillMaxWidth().height(145.dp).background(MinovaBlack)) {
+        Box(Modifier.fillMaxWidth().height(148.dp).background(MinovaBlack)) {
             AsyncImage(
                 model = content.backdropUrl ?: content.posterUrl,
                 contentDescription = content.title,
