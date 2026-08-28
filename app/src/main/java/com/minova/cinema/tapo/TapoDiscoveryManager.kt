@@ -14,7 +14,9 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.KeyPairGenerator
@@ -30,10 +32,15 @@ internal data class DiscoveredTapoLight(
 )
 
 class TapoDiscoveryManager(private val context: Context) {
-    internal suspend fun discover(credentials: TapoCredentials): List<DiscoveredTapoLight> {
-        val addresses = discoverIpAddresses()
+    internal suspend fun discover(credentials: TapoCredentials): TapoDiscoveryResult {
+        val broadcastAddresses = discoverIpAddresses()
+        // Some routers do not reliably forward UDP broadcast replies between a
+        // wired/5 GHz TV and 2.4 GHz bulbs. Probe only the TV's local /24 as a
+        // bounded fallback, then authenticate candidates before showing them.
+        val subnetAddresses = discoverLocalHttpEndpoints()
+        val addresses = broadcastAddresses + subnetAddresses
         val semaphore = Semaphore(MAX_PARALLEL_AUTHENTICATIONS)
-        return coroutineScope {
+        val lights = coroutineScope {
             addresses.map { address ->
                 async(Dispatchers.IO) {
                     semaphore.withPermit {
@@ -56,6 +63,10 @@ class TapoDiscoveryManager(private val context: Context) {
                 }
             }.awaitAll().filterNotNull().sortedBy { it.light.nickname }
         }
+        return TapoDiscoveryResult(
+            lights = lights,
+            fallbackLightCount = lights.count { it.light.ipAddress !in broadcastAddresses },
+        )
     }
 
     private suspend fun discoverIpAddresses(): Set<String> = withContext(Dispatchers.IO) {
@@ -140,11 +151,62 @@ class TapoDiscoveryManager(private val context: Context) {
         return addresses
     }
 
+    /**
+     * Finds HTTP endpoints on the same /24 segments as this TV. The scan is
+     * deliberately bounded to private, directly connected IPv4 networks and
+     * port 80. A device is never presented as Tapo until authenticated
+     * get_device_info succeeds with the user's locally stored credentials.
+     */
+    private suspend fun discoverLocalHttpEndpoints(): Set<String> = coroutineScope {
+        val localAddresses = localSiteAddresses()
+        val localAddressStrings = localAddresses.mapNotNull(InetAddress::getHostAddress).toSet()
+        val candidates = localAddresses
+            .mapNotNull(InetAddress::getHostAddress)
+            .mapNotNull(::slash24Prefix)
+            .distinct()
+            .take(MAX_LOCAL_SUBNETS)
+            .flatMap { prefix -> (1..254).map { host -> "$prefix.$host" } }
+            .filterNot { it in localAddressStrings }
+            .distinct()
+
+        val semaphore = Semaphore(MAX_PARALLEL_TCP_PROBES)
+        candidates.map { address ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    runCatching {
+                        Socket().use { socket ->
+                            socket.connect(
+                                InetSocketAddress(address, TAPO_HTTP_PORT),
+                                TCP_PROBE_TIMEOUT_MS,
+                            )
+                        }
+                        address
+                    }.getOrNull()
+                }
+            }
+        }.awaitAll().filterNotNull().toSet()
+    }
+
+    private fun localSiteAddresses(): List<Inet4Address> = runCatching {
+        Collections.list(NetworkInterface.getNetworkInterfaces())
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { Collections.list(it.inetAddresses) }
+            .filterIsInstance<Inet4Address>()
+            .filter { !it.isLoopbackAddress && it.isSiteLocalAddress }
+    }.getOrDefault(emptyList())
+
+    private fun slash24Prefix(address: String): String? {
+        val octets = address.split('.')
+        if (octets.size != 4 || octets.any { it.toIntOrNull() !in 0..255 }) return null
+        return octets.take(3).joinToString(".")
+    }
+
     private fun secureRandomInt(): Int = java.security.SecureRandom().nextInt()
 
     private companion object {
         val gson = Gson()
         const val TAPO_DISCOVERY_PORT = 20002
+        const val TAPO_HTTP_PORT = 80
         const val TDP_HEADER_SIZE = 16
         const val TDP_INITIAL_CRC = 0x5A6B7C8D
         const val DISCOVERY_ROUNDS = 3
@@ -153,5 +215,8 @@ class TapoDiscoveryManager(private val context: Context) {
         const val RECEIVE_TIMEOUT_MS = 350
         const val MAX_PACKET_SIZE = 8_192
         const val MAX_PARALLEL_AUTHENTICATIONS = 6
+        const val MAX_PARALLEL_TCP_PROBES = 48
+        const val TCP_PROBE_TIMEOUT_MS = 220
+        const val MAX_LOCAL_SUBNETS = 2
     }
 }

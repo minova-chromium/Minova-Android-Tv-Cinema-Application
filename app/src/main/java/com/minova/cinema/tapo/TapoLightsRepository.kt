@@ -84,10 +84,10 @@ class TapoLightsRepository(
         scope.launch {
             _state.value = _state.value.copy(discovering = true, message = null)
             runCatching { discoveryManager.discover(credentials) }
-                .onSuccess { discovered ->
+                .onSuccess { discovery ->
                     clients.clear()
-                    discovered.forEach { clients[it.light.ipAddress] = it.client }
-                    val lights = discovered.map { result ->
+                    discovery.lights.forEach { clients[it.light.ipAddress] = it.client }
+                    val lights = discovery.lights.map { result ->
                         result.light.copy(isAssigned = result.light.ipAddress in assignedIps)
                     }
                     _state.value = _state.value.copy(
@@ -95,10 +95,20 @@ class TapoLightsRepository(
                         discovering = false,
                         lights = lights,
                         message = if (lights.isEmpty()) {
-                            "No compatible Tapo KLAP lights answered on UDP port 20002. " +
+                            "No compatible Tapo KLAP lights were found by broadcast or local network scan. " +
                                 "Confirm the TV and lights are on the same LAN, the Tapo login is correct, " +
                                 "and client isolation is disabled."
-                        } else null,
+                        } else {
+                            val suffix = if (lights.size == 1) "light" else "lights"
+                            buildString {
+                                append("Found ${lights.size} compatible Tapo $suffix.")
+                                if (discovery.fallbackLightCount > 0) {
+                                    append(" The local fallback scan found ")
+                                    append(discovery.fallbackLightCount)
+                                    append(" that did not answer the broadcast.")
+                                }
+                            }
+                        },
                     )
                 }
                 .onFailure { error ->

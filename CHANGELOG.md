@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.6.4 — 2026-08-29
+
+### Settings polish and more reliable Tapo discovery
+
+- Rebuilt Settings into clean TV-sized cards with consistent white, gray, and cyan text hierarchy.
+- Added D-pad sliders for the ambient screensaver delay and playback inactivity timer.
+- Fixed the Tapo Cinema Room panel being clipped by using a true full-screen TV dialog with balanced controls.
+- Added a larger, smoothly scrollable light list with compatible-light counts and clear D-pad guidance.
+- Added a bounded same-network fallback scan for compatible Tapo lights that do not answer UDP discovery broadcasts.
+- Improved discovery results so the app reports how many compatible lights were found and how many required fallback discovery.
+
+> Local control remains limited to compatible KLAP v1/v2 Tapo bulbs and light strips on the same network.
+
 ## 2.6.3 — 2026-08-28
 
 ### Tapo Cinema Lights and Google Home recovery

@@ -13,7 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Button
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -133,16 +135,24 @@ fun CinemaLightsSettingsScreen(
     onAssignmentChanged: (String, Boolean) -> Unit,
 ) {
     val firstFocus = remember { FocusRequester() }
+    val listState = rememberLazyListState()
     LaunchedEffect(Unit) { firstFocus.requestFocus() }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MinovaNightDeep)
-                .padding(horizontal = 64.dp, vertical = 42.dp),
+                .padding(horizontal = 52.dp, vertical = 32.dp),
         ) {
-            Text("Tapo Cinema Room", style = MaterialTheme.typography.displaySmall, color = Color.White)
+            Text("Tapo Cinema Room", style = MaterialTheme.typography.headlineLarge, color = Color.White)
             Text(
                 "Select only the lights Minova may dim during Cinema Mode.",
                 style = MaterialTheme.typography.bodyLarge,
@@ -150,29 +160,54 @@ fun CinemaLightsSettingsScreen(
                 modifier = Modifier.padding(top = 6.dp),
             )
             Row(
-                modifier = Modifier.padding(top = 20.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Button(
                     onClick = onDiscover,
                     enabled = !state.discovering,
-                    modifier = Modifier.focusRequester(firstFocus),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(firstFocus),
                 ) {
-                    Text(if (state.discovering) "Scanning…" else "Scan local network")
+                    Text(if (state.discovering) "Scanning…" else "Scan for lights")
                 }
-                OutlinedButton(onClick = onChangeLogin) { Text("Change login") }
-                OutlinedButton(onClick = onClearCredentials) { Text("Disconnect") }
-                OutlinedButton(onClick = onDismiss) { Text("Done") }
+                OutlinedButton(onClick = onChangeLogin, modifier = Modifier.weight(1f)) {
+                    Text("Change login")
+                }
+                OutlinedButton(onClick = onClearCredentials, modifier = Modifier.weight(1f)) {
+                    Text("Disconnect")
+                }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text("Done")
+                }
             }
             state.message?.let {
                 Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 12.dp))
             }
-            Spacer(Modifier.height(18.dp))
+            Text(
+                when (state.lights.size) {
+                    0 -> "No compatible lights found yet"
+                    1 -> "1 compatible light found"
+                    else -> "${state.lights.size} compatible lights found · Use D-pad Up/Down to browse all lights"
+                },
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 16.dp, bottom = 10.dp),
+            )
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(state.lights, key = TapoLight::ipAddress) { light ->
+                itemsIndexed(
+                    items = state.lights,
+                    key = { _, light -> light.ipAddress },
+                ) { _, light ->
                     TapoLightRow(
                         light = light,
                         onClick = {
@@ -180,6 +215,7 @@ fun CinemaLightsSettingsScreen(
                         },
                     )
                 }
+                item { Spacer(Modifier.height(24.dp)) }
             }
         }
     }
@@ -301,4 +337,3 @@ private fun tapoTextFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedLabelColor = MinovaMuted,
     cursorColor = MinovaCyan,
 )
-

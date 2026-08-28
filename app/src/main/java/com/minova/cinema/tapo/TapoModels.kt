@@ -28,3 +28,7 @@ internal data class TapoDeviceInfo(
     val brightness: Int,
 )
 
+internal data class TapoDiscoveryResult(
+    val lights: List<DiscoveredTapoLight>,
+    val fallbackLightCount: Int,
+)
