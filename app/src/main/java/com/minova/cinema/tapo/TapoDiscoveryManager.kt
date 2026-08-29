@@ -28,24 +28,26 @@ import java.util.zip.CRC32
 /** Discovers Tapo endpoints over UDP 20002, then authenticates to read names. */
 internal data class DiscoveredTapoLight(
     val light: TapoLight,
-    val client: TapoKlapClient,
+    val client: TapoLocalClient,
 )
 
 class TapoDiscoveryManager(private val context: Context) {
     internal suspend fun discover(credentials: TapoCredentials): TapoDiscoveryResult {
-        val broadcastAddresses = discoverIpAddresses()
+        val broadcastEndpoints = discoverEndpoints()
         // Some routers do not reliably forward UDP broadcast replies between a
         // wired/5 GHz TV and 2.4 GHz bulbs. Probe only the TV's local /24 as a
         // bounded fallback, then authenticate candidates before showing them.
-        val subnetAddresses = discoverLocalHttpEndpoints()
-        val addresses = broadcastAddresses + subnetAddresses
+        val subnetEndpoints = discoverLocalEndpoints()
+        // The authenticated TDP response is authoritative when the same host
+        // was also found by the bounded TCP fallback.
+        val endpoints = subnetEndpoints + broadcastEndpoints
         val semaphore = Semaphore(MAX_PARALLEL_AUTHENTICATIONS)
         val lights = coroutineScope {
-            addresses.map { address ->
+            endpoints.map { (address, endpoint) ->
                 async(Dispatchers.IO) {
                     semaphore.withPermit {
                         runCatching {
-                            val client = TapoKlapClient(address, credentials)
+                            val client = TapoLocalClient(address, credentials, endpoint)
                             val info = client.getDeviceInfo()
                             DiscoveredTapoLight(
                                 light = TapoLight(
@@ -65,11 +67,11 @@ class TapoDiscoveryManager(private val context: Context) {
         }
         return TapoDiscoveryResult(
             lights = lights,
-            fallbackLightCount = lights.count { it.light.ipAddress !in broadcastAddresses },
+            fallbackLightCount = lights.count { it.light.ipAddress !in broadcastEndpoints },
         )
     }
 
-    private suspend fun discoverIpAddresses(): Set<String> = withContext(Dispatchers.IO) {
+    private suspend fun discoverEndpoints(): Map<String, TapoEndpointHint> = withContext(Dispatchers.IO) {
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE)
             as? WifiManager
         val multicastLock = wifiManager?.createMulticastLock("minova-tapo-discovery")?.apply {
@@ -90,7 +92,7 @@ class TapoDiscoveryManager(private val context: Context) {
                     Thread.sleep(BETWEEN_ROUNDS_MS)
                 }
 
-                val found = linkedSetOf<String>()
+                val found = linkedMapOf<String, TapoEndpointHint>()
                 val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DISCOVERY_WINDOW_MS)
                 while (System.nanoTime() < deadline) {
                     val buffer = ByteArray(MAX_PACKET_SIZE)
@@ -98,11 +100,16 @@ class TapoDiscoveryManager(private val context: Context) {
                     runCatching { socket.receive(packet) }.onSuccess {
                         val address = packet.address
                         if (address is Inet4Address && !address.isLoopbackAddress) {
-                            found += address.hostAddress.orEmpty()
+                            val host = address.hostAddress.orEmpty()
+                            if (host.isNotBlank()) {
+                                found[host] = parseEndpointHint(packet)
+                                    ?: found[host]
+                                    ?: TapoEndpointHint("http", TAPO_HTTP_PORT)
+                            }
                         }
                     }
                 }
-                found.filter(String::isNotBlank).toSet()
+                found
             }
         } finally {
             if (multicastLock?.isHeld == true) multicastLock.release()
@@ -111,9 +118,9 @@ class TapoDiscoveryManager(private val context: Context) {
 
     /**
      * Tapo's TDP v2 probe is a 16-byte big-endian header followed by a JSON
-     * payload containing a temporary RSA public key. We only retain response
-     * source addresses; all names and capabilities come from authenticated
-     * get_device_info calls afterward.
+     * payload containing a temporary RSA public key. Responses also advertise
+     * the management scheme and port. Newer KLAP firmware may require
+     * HTTPS/4433, so retaining this metadata is essential.
      */
     private fun createDiscoveryQuery(): ByteArray {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
@@ -151,13 +158,16 @@ class TapoDiscoveryManager(private val context: Context) {
         return addresses
     }
 
+    private fun parseEndpointHint(packet: DatagramPacket): TapoEndpointHint? =
+        parseTapoEndpointHint(packet.data, packet.offset, packet.length)
+
     /**
      * Finds HTTP endpoints on the same /24 segments as this TV. The scan is
      * deliberately bounded to private, directly connected IPv4 networks and
-     * port 80. A device is never presented as Tapo until authenticated
+     * Tapo's local ports 80/4433. A device is never presented as Tapo until authenticated
      * get_device_info succeeds with the user's locally stored credentials.
      */
-    private suspend fun discoverLocalHttpEndpoints(): Set<String> = coroutineScope {
+    private suspend fun discoverLocalEndpoints(): Map<String, TapoEndpointHint> = coroutineScope {
         val localAddresses = localSiteAddresses()
         val localAddressStrings = localAddresses.mapNotNull(InetAddress::getHostAddress).toSet()
         val candidates = localAddresses
@@ -170,21 +180,31 @@ class TapoDiscoveryManager(private val context: Context) {
             .distinct()
 
         val semaphore = Semaphore(MAX_PARALLEL_TCP_PROBES)
-        candidates.map { address ->
-            async(Dispatchers.IO) {
-                semaphore.withPermit {
-                    runCatching {
-                        Socket().use { socket ->
-                            socket.connect(
-                                InetSocketAddress(address, TAPO_HTTP_PORT),
-                                TCP_PROBE_TIMEOUT_MS,
-                            )
-                        }
-                        address
-                    }.getOrNull()
+        candidates.flatMap { address ->
+            listOf(
+                TapoEndpointHint("http", TAPO_HTTP_PORT),
+                TapoEndpointHint("https", TAPO_HTTPS_PORT),
+            ).map { endpoint ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        runCatching {
+                            Socket().use { socket ->
+                                socket.connect(
+                                    InetSocketAddress(address, endpoint.port),
+                                    TCP_PROBE_TIMEOUT_MS,
+                                )
+                            }
+                            address to endpoint
+                        }.getOrNull()
+                    }
                 }
             }
-        }.awaitAll().filterNotNull().toSet()
+        }.awaitAll()
+            .filterNotNull()
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, endpoints) ->
+                endpoints.firstOrNull { it.scheme == "https" } ?: endpoints.first()
+            }
     }
 
     private fun localSiteAddresses(): List<Inet4Address> = runCatching {
@@ -207,6 +227,7 @@ class TapoDiscoveryManager(private val context: Context) {
         val gson = Gson()
         const val TAPO_DISCOVERY_PORT = 20002
         const val TAPO_HTTP_PORT = 80
+        const val TAPO_HTTPS_PORT = 4433
         const val TDP_HEADER_SIZE = 16
         const val TDP_INITIAL_CRC = 0x5A6B7C8D
         const val DISCOVERY_ROUNDS = 3
@@ -220,3 +241,24 @@ class TapoDiscoveryManager(private val context: Context) {
         const val MAX_LOCAL_SUBNETS = 2
     }
 }
+
+/** Parses the endpoint advertised in a TDP v2 response. Kept internal for protocol regression tests. */
+internal fun parseTapoEndpointHint(
+    packetData: ByteArray,
+    packetOffset: Int,
+    packetLength: Int,
+): TapoEndpointHint? = runCatching {
+    if (packetLength <= 16) return@runCatching null
+    val json = String(packetData, packetOffset + 16, packetLength - 16, Charsets.UTF_8)
+    val root = Gson().fromJson(json, com.google.gson.JsonObject::class.java)
+    val scheme = root.getAsJsonObject("result")
+        ?.getAsJsonObject("mgt_encrypt_schm")
+        ?: return@runCatching null
+    val supportsHttps = scheme.get("is_support_https")?.asBoolean == true
+    val advertisedPort = scheme.get("http_port")?.asInt
+    TapoEndpointHint(
+        scheme = if (supportsHttps || advertisedPort == 4433) "https" else "http",
+        port = advertisedPort?.takeIf { it in 1..65535 }
+            ?: if (supportsHttps) 4433 else 80,
+    )
+}.getOrNull()

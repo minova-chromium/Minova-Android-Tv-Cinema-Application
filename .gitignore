@@ -5,6 +5,7 @@
 /.kotlin/
 **/build/
 captures/
+/.artifacts/
 .externalNativeBuild/
 .cxx/
 keystore.properties

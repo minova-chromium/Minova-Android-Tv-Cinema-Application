@@ -33,9 +33,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -143,8 +145,11 @@ fun BrowseScreen(
             }
         } ?: gridItems
     }
-    val heroCandidates = remember(shelves) {
-        shelves.flatMap(BrowseShelf::items).distinctBy(MediaContent::ratingKey)
+    val visibleShelves = remember(shelves, selectedGenre, tab) {
+        filterShelvesByGenre(shelves, selectedGenre, tab)
+    }
+    val heroCandidates = remember(visibleShelves) {
+        visibleShelves.flatMap(BrowseShelf::items).distinctBy(MediaContent::ratingKey)
     }
     var highlightedContent by remember(tab) {
         mutableStateOf(heroCandidates.firstOrNull())
@@ -171,7 +176,7 @@ fun BrowseScreen(
             selectedTab = tab,
             layout = layout,
             showLayout = tab != BrowseTab.Home && tab != BrowseTab.Search,
-            showFilter = layout == BrowseLayout.Grid && gridGenres.isNotEmpty(),
+            showFilter = tab != BrowseTab.Home && gridGenres.isNotEmpty(),
             filterActive = selectedGenre != null,
             onTabSelected = { tab = it },
             onLayoutChanged = { layout = it },
@@ -200,8 +205,11 @@ fun BrowseScreen(
             )
         } else {
             ShelfBrowser(
-                shelves = shelves,
-                hero = highlightedContent,
+                shelves = visibleShelves,
+                // The approved Movies/Series render is shelf-first. Keep the
+                // featured backdrop on Home only so catalog browsing remains
+                // spacious and immediately scannable.
+                hero = highlightedContent.takeIf { tab == BrowseTab.Home },
                 emptyMessage = emptyMessage,
                 onOpen = onOpen,
                 onHighlighted = { highlightedContent = it },
@@ -219,6 +227,27 @@ fun BrowseScreen(
                 onDismiss = { filterOpen = false },
             )
         }
+    }
+}
+
+private fun filterShelvesByGenre(
+    shelves: List<BrowseShelf>,
+    selectedGenre: String?,
+    tab: BrowseTab,
+): List<BrowseShelf> {
+    if (selectedGenre == null || tab == BrowseTab.Home) return shelves
+    return shelves.mapNotNull { shelf ->
+        val shouldKeep = when (tab) {
+            BrowseTab.Movies, BrowseTab.Series ->
+                shelf.style == ShelfStyle.Landscape || shelf.title.equals(selectedGenre, ignoreCase = true)
+            BrowseTab.MyList -> true
+            BrowseTab.Home, BrowseTab.Search -> false
+        }
+        if (!shouldKeep) return@mapNotNull null
+        val matching = shelf.items.filter { item ->
+            item.genres.any { it.equals(selectedGenre, ignoreCase = true) }
+        }
+        shelf.copy(items = matching).takeIf { matching.isNotEmpty() }
     }
 }
 
@@ -348,9 +377,20 @@ private fun Header(
         }
         Spacer(Modifier.weight(1f))
         if (showLayout) {
-            HeaderItem(if (layout == BrowseLayout.Rows) "View: Rows" else "View: Grid", false) {
-                onLayoutChanged(if (layout == BrowseLayout.Rows) BrowseLayout.Grid else BrowseLayout.Rows)
-            }
+            HeaderIconItem(
+                icon = if (layout == BrowseLayout.Rows) Icons.Default.ViewHeadline else Icons.Default.Apps,
+                contentDescription = if (layout == BrowseLayout.Rows) {
+                    "Row view. Switch to grid view"
+                } else {
+                    "Grid view. Switch to row view"
+                },
+                selected = false,
+                onClick = {
+                    onLayoutChanged(
+                        if (layout == BrowseLayout.Rows) BrowseLayout.Grid else BrowseLayout.Rows,
+                    )
+                },
+            )
         }
         if (showFilter) {
             HeaderIconItem(
@@ -551,50 +591,90 @@ private fun ShelfBrowser(
     onHighlighted: (MediaContent) -> Unit,
 ) {
     if (shelves.isEmpty()) return EmptyMessage(emptyMessage)
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(top = 76.dp),
-        contentPadding = PaddingValues(bottom = 58.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+    val heroFocus = remember { FocusRequester() }
+    val firstCardFocus = remember(shelves) { FocusRequester() }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 76.dp)
+            .background(MinovaNightDeep),
     ) {
         hero?.let { content ->
-            item(key = "featured-${content.ratingKey}") {
-                FeaturedHero(content = content, onOpen = onOpen)
-            }
+            FeaturedHero(
+                content = content,
+                actionFocusRequester = heroFocus,
+                onDown = { firstCardFocus.requestFocus() },
+                onOpen = onOpen,
+            )
         }
-        items(shelves, key = { it.key }) { shelf ->
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 48.dp, end = 48.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    Text(
-                        shelf.title,
-                        color = MinovaWhite,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        "${shelf.items.size} titles",
-                        color = MinovaMuted,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                LazyRow(
-                    modifier = Modifier.focusGroup(),
-                    contentPadding = PaddingValues(horizontal = 48.dp, vertical = 7.dp),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    items(shelf.items, key = { "${shelf.key}-${it.ratingKey}" }) { content ->
-                        if (shelf.style == ShelfStyle.Landscape) {
-                            ContinueCard(content, onOpen, onHighlighted)
-                        } else {
-                            PosterCard(
-                                content = content,
-                                modifier = Modifier.width(148.dp),
-                                onOpen = onOpen,
-                                onFocused = onHighlighted,
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(top = 14.dp, bottom = 58.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
+        ) {
+            shelves.forEachIndexed { shelfIndex, shelf ->
+                item(key = shelf.key) {
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 48.dp, end = 48.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            Text(
+                                shelf.title,
+                                color = MinovaWhite,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.SemiBold,
                             )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "${shelf.items.size} titles",
+                                color = MinovaMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        LazyRow(
+                            modifier = Modifier.focusGroup(),
+                            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            items(shelf.items, key = { "${shelf.key}-${it.ratingKey}" }) { content ->
+                                val firstCardModifier = if (
+                                    shelfIndex == 0 && content.ratingKey == shelf.items.first().ratingKey
+                                ) {
+                                    Modifier.focusRequester(firstCardFocus).then(
+                                        if (hero != null) Modifier.onPreviewKeyEvent { event ->
+                                            if (
+                                                event.type == KeyEventType.KeyDown &&
+                                                event.key == Key.DirectionUp
+                                            ) {
+                                                heroFocus.requestFocus()
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        } else Modifier,
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                                if (shelf.style == ShelfStyle.Landscape) {
+                                    ContinueCard(
+                                        content = content,
+                                        modifier = firstCardModifier,
+                                        onOpen = onOpen,
+                                        onFocused = onHighlighted,
+                                    )
+                                } else {
+                                    PosterCard(
+                                        content = content,
+                                        modifier = Modifier.width(148.dp).then(firstCardModifier),
+                                        onOpen = onOpen,
+                                        onFocused = onHighlighted,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -606,19 +686,34 @@ private fun ShelfBrowser(
 @Composable
 private fun FeaturedHero(
     content: MediaContent,
+    actionFocusRequester: FocusRequester,
+    onDown: () -> Unit,
     onOpen: (MediaContent) -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(336.dp)
+            .height(260.dp)
             .background(MinovaBlack),
     ) {
+        // A soft fill behind the image keeps the hero cinematic on aspect
+        // ratios that differ from the TV without substituting any artwork.
         AsyncImage(
             model = content.backdropUrl ?: content.posterUrl,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().alpha(0.28f),
+        )
+        // The foreground layer uses Fit: the complete Plex backdrop is always
+        // present rather than cropping faces or title artwork at TV edges.
+        AsyncImage(
+            model = content.backdropUrl ?: content.posterUrl,
+            contentDescription = content.title,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .fillMaxWidth(0.58f),
         )
         Box(
             Modifier
@@ -626,8 +721,8 @@ private fun FeaturedHero(
                 .background(
                     Brush.horizontalGradient(
                         0f to MinovaNightDeep,
-                        0.48f to MinovaNightDeep.copy(alpha = 0.82f),
-                        0.78f to MinovaNightDeep.copy(alpha = 0.22f),
+                        0.46f to MinovaNightDeep.copy(alpha = 0.91f),
+                        0.76f to MinovaNightDeep.copy(alpha = 0.20f),
                         1f to Color.Transparent,
                     ),
                 ),
@@ -646,17 +741,17 @@ private fun FeaturedHero(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .width(500.dp)
-                .padding(start = 48.dp, top = 20.dp, bottom = 20.dp),
+                .width(620.dp)
+                .padding(start = 48.dp, top = 12.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = content.title,
                 color = MinovaWhite,
-                fontSize = 38.sp,
-                lineHeight = 42.sp,
+                fontSize = if (content.title.length > 42) 27.sp else 32.sp,
+                lineHeight = if (content.title.length > 42) 31.sp else 36.sp,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
             val details = buildList {
@@ -670,7 +765,7 @@ private fun FeaturedHero(
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 10.dp),
+                    modifier = Modifier.padding(top = 7.dp),
                 )
             }
             content.summary?.takeIf(String::isNotBlank)?.let { summary ->
@@ -678,19 +773,32 @@ private fun FeaturedHero(
                     text = summary,
                     color = MinovaWhite.copy(alpha = 0.88f),
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
             Row(
-                modifier = Modifier.padding(top = 18.dp),
+                modifier = Modifier.padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 HeroAction(
                     label = if (content.viewOffsetMs > 0L) "Resume details" else "View details",
                     primary = true,
+                    modifier = Modifier
+                        .focusRequester(actionFocusRequester)
+                        .onPreviewKeyEvent { event ->
+                            if (
+                                event.type == KeyEventType.KeyDown &&
+                                event.key == Key.DirectionDown
+                            ) {
+                                onDown()
+                                true
+                            } else {
+                                false
+                            }
+                        },
                     onClick = { onOpen(content) },
                 )
                 content.remainingTimeLabel?.let { remaining ->
@@ -709,13 +817,14 @@ private fun FeaturedHero(
 private fun HeroAction(
     label: String,
     primary: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(9.dp)
     Box(
-        modifier = Modifier
-            .height(48.dp)
+        modifier = modifier
+            .height(44.dp)
             .onFocusChanged { focused = it.isFocused }
             .border(
                 width = if (focused) 3.dp else 1.dp,
@@ -1002,6 +1111,7 @@ internal fun PosterCard(
 @Composable
 private fun ContinueCard(
     content: MediaContent,
+    modifier: Modifier = Modifier,
     onOpen: (MediaContent) -> Unit,
     onFocused: (MediaContent) -> Unit,
 ) {
@@ -1009,9 +1119,9 @@ private fun ContinueCard(
     val scale by animateFloatAsState(if (focused) 1.04f else 1f, tween(110), label = "continue_focus")
     val shape = RoundedCornerShape(9.dp)
     Column(
-        modifier = Modifier
+        modifier = modifier
             .width(300.dp)
-            .height(200.dp)
+            .height(176.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .zIndex(if (focused) 1f else 0f)
             .onFocusChanged {
@@ -1023,11 +1133,11 @@ private fun ContinueCard(
             .background(MinovaSurface)
             .clickable(role = Role.Button) { onOpen(content) },
     ) {
-        Box(Modifier.fillMaxWidth().height(148.dp).background(MinovaBlack)) {
+        Box(Modifier.fillMaxWidth().height(124.dp).background(MinovaBlack)) {
             AsyncImage(
                 model = content.backdropUrl ?: content.posterUrl,
                 contentDescription = content.title,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
             Box(

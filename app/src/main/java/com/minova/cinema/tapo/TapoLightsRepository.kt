@@ -25,7 +25,7 @@ class TapoLightsRepository(
     )
     val state: StateFlow<TapoLightsUiState> = _state.asStateFlow()
 
-    private val clients = ConcurrentHashMap<String, TapoKlapClient>()
+    private val clients = ConcurrentHashMap<String, TapoLocalClient>()
     private var assignedIps: Set<String> = emptySet()
     private val restoreStates = ConcurrentHashMap<String, TapoDeviceInfo>()
     private val lastCommandedBrightness = ConcurrentHashMap<String, Int>()
@@ -95,7 +95,7 @@ class TapoLightsRepository(
                         discovering = false,
                         lights = lights,
                         message = if (lights.isEmpty()) {
-                            "No compatible Tapo KLAP lights were found by broadcast or local network scan. " +
+                            "No compatible Tapo lights were found using KLAP or legacy local control. " +
                                 "Confirm the TV and lights are on the same LAN, the Tapo login is correct, " +
                                 "and client isolation is disabled."
                         } else {
@@ -180,7 +180,7 @@ class TapoLightsRepository(
         restoreStates.clear()
     }
 
-    private fun selectedClients(): List<Pair<String, TapoKlapClient>> = assignedIps.mapNotNull { ip ->
+    private fun selectedClients(): List<Pair<String, TapoLocalClient>> = assignedIps.mapNotNull { ip ->
         clients[ip]?.let { ip to it }
     }
 
@@ -208,7 +208,7 @@ class TapoLightsRepository(
 
     private data class FadeTarget(
         val ipAddress: String,
-        val client: TapoKlapClient,
+        val client: TapoLocalClient,
         val startBrightness: Int,
         val targetBrightness: Int,
     )
