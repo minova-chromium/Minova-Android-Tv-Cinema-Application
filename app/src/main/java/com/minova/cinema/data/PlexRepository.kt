@@ -428,6 +428,7 @@ class PlexRepository(
             summary = metadata.summary,
             tagline = metadata.tagline,
             year = metadata.year,
+            addedAtEpochSeconds = metadata.addedAt,
             durationMs = metadata.duration ?: part?.duration,
             viewOffsetMs = metadata.viewOffset ?: 0L,
             posterUrl = posterPath?.let(urls::authenticated),

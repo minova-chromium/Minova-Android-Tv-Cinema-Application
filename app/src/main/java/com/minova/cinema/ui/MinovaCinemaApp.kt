@@ -243,6 +243,8 @@ private fun MainScreen(
                     CinemaRoute.Browse -> BrowseScreen(
                         catalog = state.catalog,
                         onOpen = ::open,
+                        onPlay = ::play,
+                        onToggleMyList = viewModel::toggleMyList,
                         onSettings = { routes.add(CinemaRoute.Settings) },
                         onWatchlistRefresh = viewModel::refreshWatchlist,
                     )

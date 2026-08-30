@@ -34,7 +34,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewHeadline
@@ -69,6 +72,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
@@ -98,22 +102,22 @@ private enum class BrowseTab(val label: String) {
 }
 
 private enum class BrowseLayout { Rows, Grid }
-private enum class ShelfStyle { Landscape, Poster }
 
 private const val GridColumnCount = 6
 private val AlphabetBuckets = listOf("#") + ('A'..'Z').map(Char::toString)
 
-private data class BrowseShelf(
+private data class DiscoveryShelf(
     val key: String,
     val title: String,
-    val style: ShelfStyle,
-    val items: List<MediaContent>,
+    val media: List<MediaContent>,
 )
 
 @Composable
 fun BrowseScreen(
     catalog: CinemaCatalog,
     onOpen: (MediaContent) -> Unit,
+    onPlay: (MediaContent) -> Unit,
+    onToggleMyList: (MediaContent) -> Unit,
     onSettings: () -> Unit,
     onWatchlistRefresh: () -> Unit,
 ) {
@@ -121,39 +125,58 @@ fun BrowseScreen(
     var layout by remember { mutableStateOf(BrowseLayout.Rows) }
     var selectedGenre by remember(tab) { mutableStateOf<String?>(null) }
     var filterOpen by remember { mutableStateOf(false) }
-    val shelves = remember(catalog, tab) { buildShelves(catalog, tab) }
-    val gridItems = remember(catalog, tab) {
+    val browseItems = remember(catalog, tab) {
         when (tab) {
-            BrowseTab.Home -> emptyList()
+            BrowseTab.Home -> (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey)
             BrowseTab.Movies -> catalog.movies
             BrowseTab.Series -> catalog.shows
             BrowseTab.MyList -> catalog.myList
             BrowseTab.Search -> emptyList()
         }
     }
-    val gridGenres = remember(gridItems) {
-        gridItems
+    val continueWatching = remember(catalog, tab) {
+        when (tab) {
+            BrowseTab.Home -> catalog.continueWatching
+            BrowseTab.Movies -> catalog.continueWatching.filter { it.kind == MediaKind.Movie }
+            BrowseTab.Series -> catalog.continueWatching.filter {
+                it.kind == MediaKind.Show || it.kind == MediaKind.Season || it.kind == MediaKind.Episode
+            }
+            BrowseTab.MyList -> {
+                val saved = catalog.myList.mapTo(mutableSetOf(), MediaContent::ratingKey)
+                catalog.continueWatching.filter { it.ratingKey in saved }
+            }
+            BrowseTab.Search -> emptyList()
+        }
+    }
+    val gridGenres = remember(browseItems) {
+        browseItems
             .flatMap { it.genres }
             .filter { it.isNotBlank() }
             .distinctBy { it.lowercase() }
             .sortedWith(String.CASE_INSENSITIVE_ORDER)
     }
-    val filteredGridItems = remember(gridItems, selectedGenre) {
+    val filteredGridItems = remember(browseItems, selectedGenre) {
         selectedGenre?.let { genre ->
-            gridItems.filter { item ->
+            browseItems.filter { item ->
                 item.genres.any { it.equals(genre, ignoreCase = true) }
             }
-        } ?: gridItems
+        } ?: browseItems
     }
-    val visibleShelves = remember(shelves, selectedGenre, tab) {
-        filterShelvesByGenre(shelves, selectedGenre, tab)
+    val heroCandidates = remember(continueWatching, filteredGridItems) {
+        (continueWatching + filteredGridItems).distinctBy(MediaContent::ratingKey)
     }
-    val heroCandidates = remember(visibleShelves) {
-        visibleShelves.flatMap(BrowseShelf::items).distinctBy(MediaContent::ratingKey)
+    val homeShelves = remember(catalog) {
+        buildHomeDiscoveryShelves(
+            (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey),
+        )
     }
     var highlightedContent by remember(tab) {
         mutableStateOf(heroCandidates.firstOrNull())
     }
+    val heroFocus = remember(tab) { FocusRequester() }
+    val firstContinueFocus = remember(tab) { FocusRequester() }
+    val firstGenreFocus = remember(tab) { FocusRequester() }
+    val firstPosterFocus = remember(tab, selectedGenre) { FocusRequester() }
 
     LaunchedEffect(gridGenres, selectedGenre) {
         if (selectedGenre != null && gridGenres.none { it.equals(selectedGenre, ignoreCase = true) }) {
@@ -171,7 +194,16 @@ fun BrowseScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MinovaNightDeep)) {
+    Box(Modifier.fillMaxSize().background(MinovaBlack)) {
+        val requestFirstContentFocus = {
+            when {
+                highlightedContent != null -> heroFocus.requestFocus()
+                continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
+                gridGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
+                filteredGridItems.isNotEmpty() -> firstPosterFocus.requestFocus()
+            }
+            Unit
+        }
         Header(
             selectedTab = tab,
             layout = layout,
@@ -182,6 +214,7 @@ fun BrowseScreen(
             onLayoutChanged = { layout = it },
             onFilter = { filterOpen = true },
             onSettings = onSettings,
+            onDown = requestFirstContentFocus,
         )
 
         val emptyMessage = when (tab) {
@@ -204,14 +237,30 @@ fun BrowseScreen(
                 onOpen = onOpen,
             )
         } else {
-            ShelfBrowser(
-                shelves = visibleShelves,
-                // The approved Movies/Series render is shelf-first. Keep the
-                // featured backdrop on Home only so catalog browsing remains
-                // spacious and immediately scannable.
-                hero = highlightedContent.takeIf { tab == BrowseTab.Home },
+            CinematicBrowser(
+                hero = highlightedContent,
+                continueWatching = continueWatching,
+                media = filteredGridItems,
+                genres = gridGenres,
+                selectedGenre = selectedGenre,
+                browseTitle = when (tab) {
+                    BrowseTab.Movies -> "Browse Movies"
+                    BrowseTab.Series -> "Browse Series"
+                    BrowseTab.MyList -> "Browse Watchlist"
+                    else -> "Browse Movies & Series"
+                },
+                homeMode = tab == BrowseTab.Home,
+                homeShelves = homeShelves,
                 emptyMessage = emptyMessage,
                 onOpen = onOpen,
+                onPlay = onPlay,
+                isInMyList = { content -> catalog.myList.any { it.ratingKey == content.ratingKey } },
+                onToggleMyList = onToggleMyList,
+                onGenreSelected = { selectedGenre = it },
+                heroFocus = heroFocus,
+                firstContinueFocus = firstContinueFocus,
+                firstGenreFocus = firstGenreFocus,
+                firstPosterFocus = firstPosterFocus,
                 onHighlighted = { highlightedContent = it },
             )
         }
@@ -230,100 +279,29 @@ fun BrowseScreen(
     }
 }
 
-private fun filterShelvesByGenre(
-    shelves: List<BrowseShelf>,
-    selectedGenre: String?,
-    tab: BrowseTab,
-): List<BrowseShelf> {
-    if (selectedGenre == null || tab == BrowseTab.Home) return shelves
-    return shelves.mapNotNull { shelf ->
-        val shouldKeep = when (tab) {
-            BrowseTab.Movies, BrowseTab.Series ->
-                shelf.style == ShelfStyle.Landscape || shelf.title.equals(selectedGenre, ignoreCase = true)
-            BrowseTab.MyList -> true
-            BrowseTab.Home, BrowseTab.Search -> false
-        }
-        if (!shouldKeep) return@mapNotNull null
-        val matching = shelf.items.filter { item ->
-            item.genres.any { it.equals(selectedGenre, ignoreCase = true) }
-        }
-        shelf.copy(items = matching).takeIf { matching.isNotEmpty() }
-    }
-}
-
-private fun buildShelves(catalog: CinemaCatalog, tab: BrowseTab): List<BrowseShelf> = buildList {
-    when (tab) {
-        BrowseTab.Home -> {
-            if (catalog.continueWatching.isNotEmpty()) {
-                add(BrowseShelf("continue", "Continue Watching", ShelfStyle.Landscape, catalog.continueWatching))
-            }
-            if (catalog.myList.isNotEmpty()) {
-                add(BrowseShelf("my-list", "Plex Watchlist", ShelfStyle.Poster, catalog.myList))
-            }
-            if (catalog.movies.isNotEmpty()) {
-                add(BrowseShelf("home-movies", "Movies", ShelfStyle.Poster, catalog.movies))
-            }
-            if (catalog.shows.isNotEmpty()) {
-                add(BrowseShelf("home-series", "Series", ShelfStyle.Poster, catalog.shows))
-            }
-        }
-        BrowseTab.Movies -> {
-            val continuingMovies = catalog.continueWatching.filter {
-                it.kind == MediaKind.Movie
-            }
-            if (continuingMovies.isNotEmpty()) {
-                add(
-                    BrowseShelf(
-                        key = "movie-continue",
-                        title = "Continue Watching",
-                        style = ShelfStyle.Landscape,
-                        items = continuingMovies,
-                    ),
-                )
-            }
-            addAll(genreShelves("movie", "Movies", catalog.movies))
-        }
-        BrowseTab.Series -> {
-            // Plex normally returns the next/in-progress episode here rather
-            // than its parent show, so every episodic type belongs in Series.
-            val continuingSeries = catalog.continueWatching.filter {
-                it.kind == MediaKind.Show ||
-                    it.kind == MediaKind.Season ||
-                    it.kind == MediaKind.Episode
-            }
-            if (continuingSeries.isNotEmpty()) {
-                add(
-                    BrowseShelf(
-                        key = "series-continue",
-                        title = "Continue Watching",
-                        style = ShelfStyle.Landscape,
-                        items = continuingSeries,
-                    ),
-                )
-            }
-            addAll(genreShelves("series", "Series", catalog.shows))
-        }
-        BrowseTab.MyList -> if (catalog.myList.isNotEmpty()) {
-            add(BrowseShelf("saved", "Saved for Later", ShelfStyle.Poster, catalog.myList))
-        }
-        BrowseTab.Search -> Unit
-    }
-}
-
-private fun genreShelves(prefix: String, label: String, media: List<MediaContent>): List<BrowseShelf> {
+private fun buildHomeDiscoveryShelves(media: List<MediaContent>): List<DiscoveryShelf> {
     if (media.isEmpty()) return emptyList()
-    val genres = sortedMapOf<String, MutableList<MediaContent>>(String.CASE_INSENSITIVE_ORDER)
-    media.forEach { item ->
-        item.genres.ifEmpty { listOf("Other") }.distinct().forEach { genre ->
-            genres.getOrPut(genre) { mutableListOf() }.add(item)
+    val recentlyAdded = media.sortedWith(
+        compareByDescending<MediaContent> { it.addedAtEpochSeconds ?: Long.MIN_VALUE }
+            .thenByDescending { it.year ?: Int.MIN_VALUE },
+    )
+    val newReleases = media.sortedWith(
+        compareByDescending<MediaContent> { it.year ?: Int.MIN_VALUE }
+            .thenByDescending { it.addedAtEpochSeconds ?: Long.MIN_VALUE },
+    )
+    val genreGroups = sortedMapOf<String, MutableList<MediaContent>>(String.CASE_INSENSITIVE_ORDER)
+    media.forEach { content ->
+        content.genres.distinct().filter(String::isNotBlank).forEach { genre ->
+            genreGroups.getOrPut(genre) { mutableListOf() }.add(content)
         }
     }
     return buildList {
-        add(BrowseShelf("$prefix-all", "All $label", ShelfStyle.Poster, media))
-        genres.forEach { (genre, items) ->
-            add(BrowseShelf("$prefix-$genre", genre, ShelfStyle.Poster, items))
+        add(DiscoveryShelf("recently-added", "Recently Added", recentlyAdded.take(30)))
+        add(DiscoveryShelf("new-releases", "New Releases", newReleases.take(30)))
+        genreGroups.forEach { (genre, titles) ->
+            add(DiscoveryShelf("genre-$genre", genre, titles))
         }
-    }
+    }.filter { it.media.isNotEmpty() }
 }
 
 @Composable
@@ -337,31 +315,44 @@ private fun Header(
     onLayoutChanged: (BrowseLayout) -> Unit,
     onFilter: () -> Unit,
     onSettings: () -> Unit,
+    onDown: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .zIndex(10f)
             .fillMaxWidth()
-            .height(76.dp)
-            .background(MinovaBlack.copy(alpha = 0.97f))
-            .border(0.5.dp, MinovaSurfaceRaised.copy(alpha = 0.7f))
-            .padding(horizontal = 38.dp)
+            .height(58.dp)
+            .background(
+                Brush.verticalGradient(
+                    listOf(MinovaBlack.copy(alpha = 0.94f), MinovaBlack.copy(alpha = 0.64f), Color.Transparent),
+                ),
+            )
+            .padding(horizontal = 32.dp)
             .focusGroup(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
             painter = painterResource(R.drawable.ic_launcher),
             contentDescription = "Minova Cinema",
-            modifier = Modifier.size(40.dp).clip(CircleShape),
+            modifier = Modifier.size(26.dp).clip(CircleShape),
         )
         Image(
-            painter = painterResource(R.drawable.minova_cinema_wordmark),
-            contentDescription = "Minova Cinema",
+            painter = painterResource(R.drawable.minova_wordmark),
+            contentDescription = "Minova",
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .padding(start = 12.dp, end = 30.dp)
-                .width(140.dp)
-                .height(52.dp),
+                .padding(start = 9.dp)
+                .width(75.dp)
+                .height(22.dp),
+        )
+        Image(
+            painter = painterResource(R.drawable.cinema_wordmark),
+            contentDescription = "Cinema",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .padding(start = 5.dp, end = 28.dp)
+                .width(80.dp)
+                .height(22.dp),
         )
         BrowseTab.entries.forEach { item ->
             if (item == BrowseTab.Search) {
@@ -369,10 +360,11 @@ private fun Header(
                     icon = Icons.Default.Search,
                     contentDescription = "Search",
                     selected = item == selectedTab,
+                    onDown = onDown,
                     onClick = { onTabSelected(item) },
                 )
             } else {
-                HeaderItem(item.label, item == selectedTab) { onTabSelected(item) }
+                HeaderItem(item.label, item == selectedTab, onDown) { onTabSelected(item) }
             }
         }
         Spacer(Modifier.weight(1f))
@@ -385,6 +377,7 @@ private fun Header(
                     "Grid view. Switch to row view"
                 },
                 selected = false,
+                onDown = onDown,
                 onClick = {
                     onLayoutChanged(
                         if (layout == BrowseLayout.Rows) BrowseLayout.Grid else BrowseLayout.Rows,
@@ -397,6 +390,7 @@ private fun Header(
                 icon = Icons.Default.FilterList,
                 contentDescription = "Filter by genre",
                 selected = filterActive,
+                onDown = onDown,
                 onClick = onFilter,
             )
         }
@@ -404,6 +398,7 @@ private fun Header(
             icon = Icons.Default.Settings,
             contentDescription = "Settings",
             selected = false,
+            onDown = onDown,
             onClick = onSettings,
         )
     }
@@ -414,6 +409,7 @@ private fun HeaderIconItem(
     icon: ImageVector,
     contentDescription: String,
     selected: Boolean,
+    onDown: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -423,6 +419,12 @@ private fun HeaderIconItem(
             .size(44.dp)
             .clip(RoundedCornerShape(7.dp))
             .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                    onDown()
+                    true
+                } else false
+            }
             .background(if (focused) MinovaSurfaceRaised else Color.Transparent)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -563,14 +565,20 @@ private fun GenreFilterChoice(
 }
 
 @Composable
-private fun HeaderItem(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun HeaderItem(label: String, selected: Boolean, onDown: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .padding(horizontal = 3.dp)
             .clip(RoundedCornerShape(7.dp))
             .onFocusChanged { focused = it.isFocused }
-            .background(if (focused) MinovaSurfaceRaised else Color.Transparent)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                    onDown()
+                    true
+                } else false
+            }
+            .background(if (focused) MinovaWhite.copy(alpha = 0.11f) else Color.Transparent)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 15.dp, vertical = 10.dp),
     ) {
@@ -583,98 +591,175 @@ private fun HeaderItem(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ShelfBrowser(
-    shelves: List<BrowseShelf>,
+private fun CinematicBrowser(
     hero: MediaContent?,
+    continueWatching: List<MediaContent>,
+    media: List<MediaContent>,
+    genres: List<String>,
+    selectedGenre: String?,
+    browseTitle: String,
+    homeMode: Boolean,
+    homeShelves: List<DiscoveryShelf>,
     emptyMessage: String,
     onOpen: (MediaContent) -> Unit,
+    onPlay: (MediaContent) -> Unit,
+    isInMyList: (MediaContent) -> Boolean,
+    onToggleMyList: (MediaContent) -> Unit,
+    onGenreSelected: (String?) -> Unit,
+    heroFocus: FocusRequester,
+    firstContinueFocus: FocusRequester,
+    firstGenreFocus: FocusRequester,
+    firstPosterFocus: FocusRequester,
     onHighlighted: (MediaContent) -> Unit,
 ) {
-    if (shelves.isEmpty()) return EmptyMessage(emptyMessage)
-    val heroFocus = remember { FocusRequester() }
-    val firstCardFocus = remember(shelves) { FocusRequester() }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 76.dp)
-            .background(MinovaNightDeep),
-    ) {
+    if (hero == null && continueWatching.isEmpty() && media.isEmpty()) return EmptyMessage(emptyMessage)
+
+    val quickGenres = remember(genres, selectedGenre) {
+        buildList<String?> {
+            add(null)
+            selectedGenre?.let { add(it) }
+            genres.filterNot { it.equals(selectedGenre, ignoreCase = true) }.take(5).forEach(::add)
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(MinovaBlack)) {
         hero?.let { content ->
-            FeaturedHero(
-                content = content,
-                actionFocusRequester = heroFocus,
-                onDown = { firstCardFocus.requestFocus() },
-                onOpen = onOpen,
+            AsyncImage(
+                model = content.backdropUrl ?: content.posterUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().height(330.dp).align(Alignment.TopCenter),
+            )
+            Box(
+                Modifier.fillMaxWidth().height(330.dp).background(
+                    Brush.horizontalGradient(
+                        0f to MinovaBlack.copy(alpha = 0.98f),
+                        0.36f to MinovaBlack.copy(alpha = 0.76f),
+                        0.68f to MinovaBlack.copy(alpha = 0.10f),
+                        1f to MinovaBlack.copy(alpha = 0.12f),
+                    ),
+                ),
+            )
+            Box(
+                Modifier.fillMaxWidth().height(335.dp).background(
+                    Brush.verticalGradient(
+                        0f to MinovaBlack.copy(alpha = 0.22f),
+                        0.64f to Color.Transparent,
+                        1f to MinovaBlack,
+                    ),
+                ),
             )
         }
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = PaddingValues(top = 14.dp, bottom = 58.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp),
-        ) {
-            shelves.forEachIndexed { shelfIndex, shelf ->
-                item(key = shelf.key) {
-                    Column {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 48.dp, end = 48.dp, bottom = 8.dp),
-                            verticalAlignment = Alignment.Bottom,
-                        ) {
-                            Text(
-                                shelf.title,
-                                color = MinovaWhite,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Spacer(Modifier.weight(1f))
-                            Text(
-                                "${shelf.items.size} titles",
-                                color = MinovaMuted,
-                                style = MaterialTheme.typography.bodySmall,
+
+        // This composition intentionally stays fixed instead of using a
+        // vertical lazy list. Compose's automatic bring-into-view behavior
+        // made the entire hero jump underneath the header whenever focus
+        // entered a shelf. Horizontal shelves still scroll independently.
+        Column(Modifier.fillMaxSize().padding(top = 58.dp)) {
+            Box(Modifier.fillMaxWidth().height(190.dp)) {
+                hero?.let { content ->
+                    HeroContent(
+                        content = content,
+                        inMyList = isInMyList(content),
+                        focusRequester = heroFocus,
+                        onDown = {
+                            when {
+                                continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
+                                homeMode && homeShelves.isNotEmpty() -> firstGenreFocus.requestFocus()
+                                quickGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
+                                media.isNotEmpty() -> firstPosterFocus.requestFocus()
+                            }
+                        },
+                        onOpen = onOpen,
+                        onPlay = onPlay,
+                        onToggleMyList = onToggleMyList,
+                    )
+                }
+            }
+
+            if (continueWatching.isNotEmpty()) {
+                Column(Modifier.height(153.dp)) {
+                    SectionHeading("Continue Watching")
+                    LazyRow(
+                        modifier = Modifier.focusGroup(),
+                        contentPadding = PaddingValues(horizontal = 34.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(continueWatching, key = { "continue-${it.ratingKey}" }) { content ->
+                            val first = content.ratingKey == continueWatching.first().ratingKey
+                            ContinueCard(
+                                content = content,
+                                modifier = if (first) Modifier.focusRequester(firstContinueFocus) else Modifier,
+                                onOpen = onOpen,
+                                onFocused = onHighlighted,
+                                onUp = { heroFocus.requestFocus() },
+                                onDown = {
+                                    if (homeMode && homeShelves.isNotEmpty()) firstGenreFocus.requestFocus()
+                                    else if (quickGenres.isNotEmpty()) firstGenreFocus.requestFocus()
+                                    else if (media.isNotEmpty()) firstPosterFocus.requestFocus()
+                                },
                             )
                         }
-                        LazyRow(
-                            modifier = Modifier.focusGroup(),
-                            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 7.dp),
-                            horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        ) {
-                            items(shelf.items, key = { "${shelf.key}-${it.ratingKey}" }) { content ->
-                                val firstCardModifier = if (
-                                    shelfIndex == 0 && content.ratingKey == shelf.items.first().ratingKey
-                                ) {
-                                    Modifier.focusRequester(firstCardFocus).then(
-                                        if (hero != null) Modifier.onPreviewKeyEvent { event ->
-                                            if (
-                                                event.type == KeyEventType.KeyDown &&
-                                                event.key == Key.DirectionUp
-                                            ) {
-                                                heroFocus.requestFocus()
-                                                true
-                                            } else {
-                                                false
-                                            }
-                                        } else Modifier,
-                                    )
-                                } else {
-                                    Modifier
-                                }
-                                if (shelf.style == ShelfStyle.Landscape) {
-                                    ContinueCard(
-                                        content = content,
-                                        modifier = firstCardModifier,
-                                        onOpen = onOpen,
-                                        onFocused = onHighlighted,
-                                    )
-                                } else {
-                                    PosterCard(
-                                        content = content,
-                                        modifier = Modifier.width(148.dp).then(firstCardModifier),
-                                        onOpen = onOpen,
-                                        onFocused = onHighlighted,
-                                    )
-                                }
-                            }
+                    }
+                }
+            }
+
+            if (homeMode) {
+                HomeDiscoveryFeed(
+                    modifier = Modifier.weight(1f),
+                    shelves = homeShelves,
+                    firstFocusRequester = firstGenreFocus,
+                    onOpen = onOpen,
+                    onHighlighted = onHighlighted,
+                    onUpFromFirst = {
+                        if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
+                        else heroFocus.requestFocus()
+                    },
+                )
+            } else Column {
+                SectionHeading(browseTitle)
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().height(48.dp).focusGroup(),
+                    contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(quickGenres, key = { it ?: "all" }) { genre ->
+                        val first = genre == quickGenres.first()
+                        GenrePill(
+                            label = genre ?: "All",
+                            selected = genre == selectedGenre,
+                            modifier = if (first) Modifier.focusRequester(firstGenreFocus) else Modifier,
+                            onUp = {
+                                if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
+                                else heroFocus.requestFocus()
+                            },
+                            onDown = { if (media.isNotEmpty()) firstPosterFocus.requestFocus() },
+                            onClick = { onGenreSelected(genre) },
+                        )
+                    }
+                }
+                if (media.isEmpty()) {
+                    Text(
+                        emptyMessage,
+                        color = MinovaMuted,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(horizontal = 34.dp, vertical = 24.dp),
+                    )
+                } else {
+                    LazyRow(
+                        modifier = Modifier.focusGroup(),
+                        contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 3.dp, bottom = 22.dp),
+                        horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    ) {
+                        items(media, key = { "browse-${it.ratingKey}" }) { content ->
+                            val first = content.ratingKey == media.first().ratingKey
+                            CinematicPosterCard(
+                                content = content,
+                                modifier = if (first) Modifier.focusRequester(firstPosterFocus) else Modifier,
+                                onOpen = onOpen,
+                                onFocused = onHighlighted,
+                                onUp = { firstGenreFocus.requestFocus() },
+                            )
                         }
                     }
                 }
@@ -684,129 +769,61 @@ private fun ShelfBrowser(
 }
 
 @Composable
-private fun FeaturedHero(
-    content: MediaContent,
-    actionFocusRequester: FocusRequester,
-    onDown: () -> Unit,
+private fun HomeDiscoveryFeed(
+    modifier: Modifier,
+    shelves: List<DiscoveryShelf>,
+    firstFocusRequester: FocusRequester,
     onOpen: (MediaContent) -> Unit,
+    onHighlighted: (MediaContent) -> Unit,
+    onUpFromFirst: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(260.dp)
-            .background(MinovaBlack),
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val rowFocusRequesters = remember(shelves) {
+        shelves.mapIndexed { index, _ -> if (index == 0) firstFocusRequester else FocusRequester() }
+    }
+
+    fun focusRow(index: Int) {
+        if (index !in shelves.indices) return
+        scope.launch {
+            listState.animateScrollToItem(index)
+            delay(80)
+            rowFocusRequesters[index].requestFocus()
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier.fillMaxWidth().focusGroup(),
+        contentPadding = PaddingValues(bottom = 30.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // A soft fill behind the image keeps the hero cinematic on aspect
-        // ratios that differ from the TV without substituting any artwork.
-        AsyncImage(
-            model = content.backdropUrl ?: content.posterUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().alpha(0.28f),
-        )
-        // The foreground layer uses Fit: the complete Plex backdrop is always
-        // present rather than cropping faces or title artwork at TV edges.
-        AsyncImage(
-            model = content.backdropUrl ?: content.posterUrl,
-            contentDescription = content.title,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .fillMaxWidth(0.58f),
-        )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        0f to MinovaNightDeep,
-                        0.46f to MinovaNightDeep.copy(alpha = 0.91f),
-                        0.76f to MinovaNightDeep.copy(alpha = 0.20f),
-                        1f to Color.Transparent,
-                    ),
-                ),
-        )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.72f to Color.Transparent,
-                        1f to MinovaNightDeep,
-                    ),
-                ),
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .width(620.dp)
-                .padding(start = 48.dp, top = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = content.title,
-                color = MinovaWhite,
-                fontSize = if (content.title.length > 42) 27.sp else 32.sp,
-                lineHeight = if (content.title.length > 42) 31.sp else 36.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            val details = buildList {
-                if (content.metadataLine.isNotBlank()) add(content.metadataLine)
-                if (content.genres.isNotEmpty()) add(content.genres.take(3).joinToString("  •  "))
-            }.joinToString("    ")
-            if (details.isNotBlank()) {
-                Text(
-                    text = details,
-                    color = MinovaMuted,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 7.dp),
-                )
-            }
-            content.summary?.takeIf(String::isNotBlank)?.let { summary ->
-                Text(
-                    text = summary,
-                    color = MinovaWhite.copy(alpha = 0.88f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            Row(
-                modifier = Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                HeroAction(
-                    label = if (content.viewOffsetMs > 0L) "Resume details" else "View details",
-                    primary = true,
-                    modifier = Modifier
-                        .focusRequester(actionFocusRequester)
-                        .onPreviewKeyEvent { event ->
-                            if (
-                                event.type == KeyEventType.KeyDown &&
-                                event.key == Key.DirectionDown
-                            ) {
-                                onDown()
-                                true
-                            } else {
-                                false
-                            }
-                        },
-                    onClick = { onOpen(content) },
-                )
-                content.remainingTimeLabel?.let { remaining ->
-                    Text(
-                        text = remaining,
-                        color = MinovaCyan,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
+        items(shelves, key = DiscoveryShelf::key) { shelf ->
+            val shelfIndex = shelves.indexOfFirst { it.key == shelf.key }
+            Column {
+                SectionHeading(shelf.title)
+                LazyRow(
+                    modifier = Modifier.focusGroup(),
+                    contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 3.dp, bottom = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    items(shelf.media, key = { "${shelf.key}-${it.ratingKey}" }) { content ->
+                        val first = content.ratingKey == shelf.media.first().ratingKey
+                        CinematicPosterCard(
+                            content = content,
+                            width = 72.dp,
+                            modifier = if (first) {
+                                Modifier.focusRequester(rowFocusRequesters[shelfIndex])
+                            } else Modifier,
+                            onOpen = onOpen,
+                            onFocused = onHighlighted,
+                            onUp = {
+                                if (shelfIndex == 0) onUpFromFirst()
+                                else focusRow(shelfIndex - 1)
+                            },
+                            onDown = { focusRow(shelfIndex + 1) },
+                        )
+                    }
                 }
             }
         }
@@ -814,8 +831,106 @@ private fun FeaturedHero(
 }
 
 @Composable
+private fun SectionHeading(title: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 34.dp, end = 34.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(
+            title,
+            color = MinovaWhite,
+            fontSize = 19.sp,
+            lineHeight = 23.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun HeroContent(
+    content: MediaContent,
+    inMyList: Boolean,
+    focusRequester: FocusRequester,
+    onDown: () -> Unit,
+    onOpen: (MediaContent) -> Unit,
+    onPlay: (MediaContent) -> Unit,
+    onToggleMyList: (MediaContent) -> Unit,
+) {
+    val directlyPlayable = content.kind == MediaKind.Movie ||
+        content.kind == MediaKind.Episode || content.kind == MediaKind.Extra
+    Column(
+        modifier = Modifier.width(510.dp).padding(start = 34.dp, top = 24.dp),
+    ) {
+        Text(
+            content.title,
+            color = MinovaWhite,
+            fontSize = when {
+                content.title.length > 55 -> 24.sp
+                content.title.length > 34 -> 28.sp
+                else -> 34.sp
+            },
+            lineHeight = 37.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (content.metadataLine.isNotBlank()) {
+            Text(
+                content.metadataLine,
+                color = MinovaWhite.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 5.dp),
+            )
+        }
+        content.summary?.takeIf(String::isNotBlank)?.let { summary ->
+            Text(
+                summary,
+                color = MinovaWhite.copy(alpha = 0.82f),
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        Row(
+            modifier = Modifier.padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            HeroAction(
+                label = when {
+                    !directlyPlayable -> "View details"
+                    content.viewOffsetMs > 0L -> "Resume"
+                    else -> "Play"
+                },
+                icon = Icons.Default.PlayArrow,
+                primary = true,
+                modifier = Modifier.focusRequester(focusRequester).onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                        onDown(); true
+                    } else false
+                },
+                onClick = { if (directlyPlayable) onPlay(content) else onOpen(content) },
+            )
+            HeroAction(
+                label = if (inMyList) "In Watchlist" else "Watchlist",
+                icon = if (inMyList) Icons.Default.Check else Icons.Default.Add,
+                primary = false,
+                modifier = Modifier.onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                        onDown(); true
+                    } else false
+                },
+                onClick = { onToggleMyList(content) },
+            )
+        }
+    }
+}
+
+@Composable
 private fun HeroAction(
     label: String,
+    icon: ImageVector,
     primary: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -824,32 +939,147 @@ private fun HeroAction(
     val shape = RoundedCornerShape(9.dp)
     Box(
         modifier = modifier
-            .height(44.dp)
+            .height(39.dp)
             .onFocusChanged { focused = it.isFocused }
             .border(
                 width = if (focused) 3.dp else 1.dp,
-                color = if (focused) MinovaCyan else Color.Transparent,
+                color = if (focused) MinovaWhite else Color.Transparent,
                 shape = shape,
             )
             .clip(shape)
             .background(
                 when {
-                    primary && focused -> MinovaWhite
-                    primary -> MinovaWhite.copy(alpha = 0.94f)
+                    primary -> MinovaCyan
                     focused -> MinovaSurfaceRaised
                     else -> MinovaSurface.copy(alpha = 0.92f)
                 },
             )
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 17.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Image(
+                imageVector = icon,
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(if (primary) MinovaBlack else MinovaWhite),
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = label,
+                color = if (primary) MinovaBlack else MinovaWhite,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GenrePill(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onUp: () -> Unit,
+    onDown: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(50)
+    Box(
+        modifier = modifier
+            .height(31.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionUp -> { onUp(); true }
+                    Key.DirectionDown -> { onDown(); true }
+                    else -> false
+                }
+            }
+            .border(
+                if (focused) 2.dp else 1.dp,
+                if (focused) MinovaWhite else if (selected) MinovaCyan else MinovaWhite.copy(alpha = 0.25f),
+                shape,
+            )
+            .clip(shape)
+            .background(if (selected) MinovaCyan else MinovaSurface.copy(alpha = 0.88f))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = label,
-            color = if (primary) MinovaBlack else MinovaWhite,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            label,
+            color = if (selected) MinovaBlack else MinovaWhite,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
+    }
+}
+
+@Composable
+private fun CinematicPosterCard(
+    content: MediaContent,
+    width: Dp = 116.dp,
+    modifier: Modifier = Modifier,
+    onOpen: (MediaContent) -> Unit,
+    onFocused: (MediaContent) -> Unit,
+    onUp: () -> Unit,
+    onDown: () -> Unit = {},
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.04f else 1f, tween(110), label = "cinema_poster_focus")
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        modifier = modifier
+            .width(width)
+            .aspectRatio(2f / 3f)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .zIndex(if (focused) 1f else 0f)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused(content)
+            }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionUp -> { onUp(); true }
+                    Key.DirectionDown -> { onDown(); true }
+                    else -> false
+                }
+            }
+            .border(if (focused) 3.dp else 1.dp, if (focused) MinovaCyan else MinovaWhite.copy(alpha = 0.16f), shape)
+            .clip(shape)
+            .background(MinovaSurface)
+            .clickable(role = Role.Button) { onOpen(content) },
+    ) {
+        AsyncImage(
+            model = content.posterUrl,
+            contentDescription = content.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier.fillMaxWidth().height(58.dp).align(Alignment.BottomCenter).background(
+                Brush.verticalGradient(listOf(Color.Transparent, MinovaBlack.copy(alpha = 0.92f))),
+            ),
+        )
+        Text(
+            content.title,
+            color = MinovaWhite,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+        )
+        if (content.progress > 0f) {
+            Box(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth(content.progress).height(4.dp)
+                    .background(Brush.horizontalGradient(listOf(MinovaCobalt, MinovaCyan, MinovaTeal))),
+            )
+        }
+        if (content.isWatched) WatchedBadge(Modifier.align(Alignment.TopEnd))
     }
 }
 
@@ -912,7 +1142,7 @@ private fun CatalogGrid(
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = 76.dp)
+            .padding(top = 58.dp)
             .background(MinovaNightDeep),
     ) {
         LazyVerticalGrid(
@@ -1114,53 +1344,72 @@ private fun ContinueCard(
     modifier: Modifier = Modifier,
     onOpen: (MediaContent) -> Unit,
     onFocused: (MediaContent) -> Unit,
+    onUp: () -> Unit,
+    onDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.04f else 1f, tween(110), label = "continue_focus")
     val shape = RoundedCornerShape(9.dp)
-    Column(
+    Box(
         modifier = modifier
-            .width(300.dp)
-            .height(176.dp)
+            .width(220.dp)
+            .aspectRatio(16f / 9f)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .zIndex(if (focused) 1f else 0f)
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused(content)
             }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionUp -> { onUp(); true }
+                    Key.DirectionDown -> { onDown(); true }
+                    else -> false
+                }
+            }
             .border(if (focused) 3.dp else 1.dp, if (focused) MinovaCyan else MinovaSurfaceRaised, shape)
             .clip(shape)
             .background(MinovaSurface)
             .clickable(role = Role.Button) { onOpen(content) },
     ) {
-        Box(Modifier.fillMaxWidth().height(124.dp).background(MinovaBlack)) {
-            AsyncImage(
-                model = content.backdropUrl ?: content.posterUrl,
-                contentDescription = content.title,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
+        AsyncImage(
+            model = content.backdropUrl ?: content.posterUrl,
+            contentDescription = content.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier.fillMaxWidth().height(50.dp).align(Alignment.BottomCenter).background(
+                Brush.verticalGradient(listOf(Color.Transparent, MinovaBlack.copy(alpha = 0.94f))),
+            ),
+        )
+        Column(Modifier.align(Alignment.BottomStart).padding(start = 9.dp, end = 9.dp, bottom = 9.dp)) {
+            Text(
+                content.title,
+                color = MinovaWhite,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Box(
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp)
-                    .background(MinovaSurfaceRaised),
-            ) {
-                Box(
-                    Modifier.fillMaxWidth(content.progress).fillMaxHeight()
-                        .background(Brush.horizontalGradient(listOf(MinovaCobalt, MinovaCyan, MinovaTeal))),
-                )
-            }
-            if (content.isWatched) WatchedBadge(Modifier.align(Alignment.TopEnd))
-        }
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Text(content.title, color = MinovaWhite, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 content.remainingTimeLabel ?: content.secondaryTitle.orEmpty(),
-                color = MinovaTeal,
-                style = MaterialTheme.typography.bodySmall,
+                color = MinovaWhite.copy(alpha = 0.88f),
+                fontSize = 10.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Box(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp)
+                .background(MinovaWhite.copy(alpha = 0.20f)),
+        ) {
+            Box(
+                Modifier.fillMaxWidth(content.progress).fillMaxHeight()
+                    .background(Brush.horizontalGradient(listOf(MinovaCobalt, MinovaCyan, MinovaTeal))),
+            )
+        }
+        if (content.isWatched) WatchedBadge(Modifier.align(Alignment.TopEnd))
     }
 }
 
@@ -1180,7 +1429,7 @@ private fun WatchedBadge(modifier: Modifier = Modifier) {
 
 @Composable
 private fun EmptyMessage(message: String) {
-    Box(Modifier.fillMaxSize().padding(top = 76.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().padding(top = 58.dp), contentAlignment = Alignment.Center) {
         Text(message, color = MinovaMuted, style = MaterialTheme.typography.bodyLarge)
     }
 }

@@ -46,6 +46,7 @@ data class Metadata(
     @SerializedName("summary") val summary: String? = null,
     @SerializedName("tagline") val tagline: String? = null,
     @SerializedName("year") val year: Int? = null,
+    @SerializedName("addedAt") val addedAt: Long? = null,
     @SerializedName("thumb") val thumb: String? = null,
     @SerializedName("art") val art: String? = null,
     @SerializedName("parentThumb") val parentThumb: String? = null,

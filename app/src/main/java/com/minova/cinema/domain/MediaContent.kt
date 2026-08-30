@@ -63,6 +63,7 @@ data class MediaContent(
     val summary: String?,
     val tagline: String?,
     val year: Int?,
+    val addedAtEpochSeconds: Long? = null,
     val durationMs: Long?,
     val viewOffsetMs: Long,
     val posterUrl: String?,

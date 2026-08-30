@@ -81,7 +81,7 @@ internal fun SearchScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MinovaNightDeep)
-            .padding(top = 76.dp),
+            .padding(top = 58.dp),
     ) {
         Row(
             modifier = Modifier
