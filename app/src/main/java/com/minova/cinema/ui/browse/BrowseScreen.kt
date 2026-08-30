@@ -669,10 +669,13 @@ private fun CinematicBrowser(
     if (hero == null && continueWatching.isEmpty() && media.isEmpty()) return EmptyMessage(emptyMessage)
 
     val quickGenres = remember(genres, selectedGenre) {
+        val fixedGenres = genres.take(6)
         buildList<String?> {
             add(null)
-            selectedGenre?.let { add(it) }
-            genres.filterNot { it.equals(selectedGenre, ignoreCase = true) }.take(5).forEach(::add)
+            addAll(fixedGenres)
+            selectedGenre
+                ?.takeIf { selected -> fixedGenres.none { it.equals(selected, ignoreCase = true) } }
+                ?.let(::add)
         }
     }
     var homeBrowsing by remember(homeMode) { mutableStateOf(false) }
@@ -829,9 +832,9 @@ private fun CinematicBrowser(
             } else Column {
                 SectionHeading(browseTitle)
                 LazyRow(
-                    modifier = Modifier.fillMaxWidth().height(48.dp).focusGroup(),
+                    modifier = Modifier.fillMaxWidth().height(42.dp).focusGroup(),
                     contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(quickGenres, key = { it ?: "all" }) { genre ->
                         val first = genre == quickGenres.first()
@@ -1167,7 +1170,7 @@ private fun GenrePill(
     val shape = RoundedCornerShape(50)
     Box(
         modifier = modifier
-            .height(31.dp)
+            .height(28.dp)
             .onFocusChanged { focused = it.isFocused }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -1185,13 +1188,13 @@ private fun GenrePill(
             .clip(shape)
             .background(if (selected) MinovaCyan else MinovaSurface.copy(alpha = 0.88f))
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 11.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
             color = if (selected) MinovaBlack else MinovaWhite,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
