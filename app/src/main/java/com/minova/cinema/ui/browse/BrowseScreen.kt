@@ -1,6 +1,7 @@
 package com.minova.cinema.ui.browse
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -184,6 +185,7 @@ fun BrowseScreen(
     var highlightedContent by remember(tab) {
         mutableStateOf(heroCandidates.firstOrNull())
     }
+    var pendingHighlightedContent by remember(tab) { mutableStateOf<MediaContent?>(null) }
     var homeFeaturedIndex by remember { mutableStateOf(0) }
     val heroFocus = remember(tab) { FocusRequester() }
     val firstContinueFocus = remember(tab) { FocusRequester() }
@@ -203,6 +205,16 @@ fun BrowseScreen(
     LaunchedEffect(heroCandidates) {
         if (highlightedContent?.ratingKey !in heroCandidates.map(MediaContent::ratingKey)) {
             highlightedContent = heroCandidates.firstOrNull()
+        }
+    }
+
+    LaunchedEffect(tab, pendingHighlightedContent?.ratingKey) {
+        val pending = pendingHighlightedContent ?: return@LaunchedEffect
+        if (tab != BrowseTab.Home) {
+            // Avoid flashing every intermediate backdrop while the user is
+            // quickly travelling across a poster row with the D-Pad.
+            delay(150)
+            highlightedContent = pending
         }
     }
 
@@ -300,7 +312,7 @@ fun BrowseScreen(
                 firstGenreFocus = firstGenreFocus,
                 firstPosterFocus = firstPosterFocus,
                 onHighlighted = { content ->
-                    if (tab != BrowseTab.Home) highlightedContent = content
+                    if (tab != BrowseTab.Home) pendingHighlightedContent = content
                 },
             )
         }
@@ -678,28 +690,28 @@ private fun CinematicBrowser(
                 ?.let(::add)
         }
     }
-    var homeBrowsing by remember(homeMode) { mutableStateOf(false) }
-    var pendingHomeBrowsing by remember(homeMode) { mutableStateOf(false) }
+    var contentBrowsing by remember(homeMode) { mutableStateOf(false) }
+    var pendingContentBrowsing by remember(homeMode) { mutableStateOf(false) }
     var restoreHomeFocus by remember { mutableStateOf(false) }
 
-    LaunchedEffect(homeBrowsing, restoreHomeFocus) {
-        if (!homeBrowsing && restoreHomeFocus) {
-            delay(280)
+    LaunchedEffect(contentBrowsing, restoreHomeFocus) {
+        if (!contentBrowsing && restoreHomeFocus) {
+            delay(360)
             if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
             else heroFocus.requestFocus()
             restoreHomeFocus = false
         }
     }
 
-    LaunchedEffect(pendingHomeBrowsing) {
-        if (pendingHomeBrowsing) {
+    LaunchedEffect(pendingContentBrowsing) {
+        if (pendingContentBrowsing) {
             // Keep the currently focused Continue card in the composition
             // until the complete D-Pad press has settled. Removing it during
             // KeyDown could make Compose dispatch the remaining key sequence
             // as a click on the title that just gained focus.
             delay(140)
-            homeBrowsing = true
-            pendingHomeBrowsing = false
+            contentBrowsing = true
+            pendingContentBrowsing = false
         }
     }
 
@@ -707,7 +719,7 @@ private fun CinematicBrowser(
         if (hero != null) {
             Crossfade(
                 targetState = hero,
-                animationSpec = tween(650),
+                animationSpec = tween(850, easing = FastOutSlowInEasing),
                 label = "featured_backdrop_crossfade",
             ) { content ->
                 AsyncImage(
@@ -746,7 +758,7 @@ private fun CinematicBrowser(
         // entered a shelf. Horizontal shelves still scroll independently.
         Column(Modifier.fillMaxSize().padding(top = 58.dp)) {
             AnimatedVisibility(
-                visible = !homeMode || !homeBrowsing,
+                visible = !contentBrowsing,
                 enter = fadeIn(tween(320)) + expandVertically(
                     animationSpec = tween(460),
                     expandFrom = Alignment.Top,
@@ -815,18 +827,18 @@ private fun CinematicBrowser(
                 HomeDiscoveryFeed(
                     modifier = Modifier
                         .weight(1f)
-                        .background(if (homeBrowsing) MinovaNightDeep else Color.Transparent),
+                        .background(if (contentBrowsing) MinovaNightDeep else Color.Transparent),
                     shelves = homeShelves,
                     firstFocusRequester = firstGenreFocus,
                     onOpen = onOpen,
                     onHighlighted = { content ->
-                        pendingHomeBrowsing = true
+                        pendingContentBrowsing = true
                         onHighlighted(content)
                     },
                     onUpFromFirst = {
-                        pendingHomeBrowsing = false
+                        pendingContentBrowsing = false
                         restoreHomeFocus = true
-                        homeBrowsing = false
+                        contentBrowsing = false
                     },
                 )
             } else Column {
@@ -842,9 +854,11 @@ private fun CinematicBrowser(
                             label = genre ?: "All",
                             selected = genre == selectedGenre,
                             modifier = if (first) Modifier.focusRequester(firstGenreFocus) else Modifier,
+                            onFocused = { pendingContentBrowsing = true },
                             onUp = {
-                                if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
-                                else heroFocus.requestFocus()
+                                pendingContentBrowsing = false
+                                restoreHomeFocus = true
+                                contentBrowsing = false
                             },
                             onDown = { if (media.isNotEmpty()) firstPosterFocus.requestFocus() },
                             onClick = { onGenreSelected(genre) },
@@ -861,7 +875,7 @@ private fun CinematicBrowser(
                 } else {
                     LazyRow(
                         modifier = Modifier.focusGroup(),
-                        contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 3.dp, bottom = 22.dp),
+                        contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 10.dp, bottom = 22.dp),
                         horizontalArrangement = Arrangement.spacedBy(11.dp),
                     ) {
                         items(media, key = { "browse-${it.ratingKey}" }) { content ->
@@ -870,7 +884,10 @@ private fun CinematicBrowser(
                                 content = content,
                                 modifier = if (first) Modifier.focusRequester(firstPosterFocus) else Modifier,
                                 onOpen = onOpen,
-                                onFocused = onHighlighted,
+                                onFocused = {
+                                    pendingContentBrowsing = true
+                                    onHighlighted(it)
+                                },
                                 onUp = { firstGenreFocus.requestFocus() },
                             )
                         }
@@ -1162,6 +1179,7 @@ private fun GenrePill(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    onFocused: () -> Unit,
     onUp: () -> Unit,
     onDown: () -> Unit,
     onClick: () -> Unit,
@@ -1171,7 +1189,10 @@ private fun GenrePill(
     Box(
         modifier = modifier
             .height(28.dp)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused()
+            }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
