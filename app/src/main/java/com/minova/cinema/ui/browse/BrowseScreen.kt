@@ -3,12 +3,13 @@ package com.minova.cinema.ui.browse
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -692,7 +693,13 @@ private fun CinematicBrowser(
     }
     var contentBrowsing by remember(homeMode) { mutableStateOf(false) }
     var pendingContentBrowsing by remember(homeMode) { mutableStateOf(false) }
+    var revealCatalogAndFocus by remember(homeMode) { mutableStateOf(false) }
     var restoreHomeFocus by remember { mutableStateOf(false) }
+    val catalogScrimAlpha by animateFloatAsState(
+        targetValue = if (!homeMode && contentBrowsing) 0.34f else 0f,
+        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        label = "catalog_backdrop_scrim",
+    )
 
     LaunchedEffect(contentBrowsing, restoreHomeFocus) {
         if (!contentBrowsing && restoreHomeFocus) {
@@ -715,25 +722,54 @@ private fun CinematicBrowser(
         }
     }
 
+    LaunchedEffect(revealCatalogAndFocus) {
+        if (revealCatalogAndFocus) {
+            // Let the D-Pad key-up finish on the current card, then reveal the
+            // catalog and move focus once its controls are in composition.
+            delay(140)
+            contentBrowsing = true
+            delay(180)
+            when {
+                quickGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
+                media.isNotEmpty() -> firstPosterFocus.requestFocus()
+            }
+            revealCatalogAndFocus = false
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(MinovaBlack)) {
         if (hero != null) {
-            Crossfade(
+            AnimatedContent(
                 targetState = hero,
-                animationSpec = tween(850, easing = FastOutSlowInEasing),
-                label = "featured_backdrop_crossfade",
+                transitionSpec = {
+                    fadeIn(
+                        animationSpec = tween(
+                            durationMillis = 460,
+                            delayMillis = 190,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    ) togetherWith fadeOut(
+                        animationSpec = tween(
+                            durationMillis = 190,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    )
+                },
+                contentKey = { it.ratingKey },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .align(Alignment.TopCenter),
+                label = "featured_backdrop_fade_through",
             ) { content ->
                 AsyncImage(
                     model = content.backdropUrl ?: content.posterUrl,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(445.dp)
-                        .align(Alignment.TopCenter),
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
             Box(
-                Modifier.fillMaxWidth().height(445.dp).background(
+                Modifier.fillMaxSize().background(
                     Brush.horizontalGradient(
                         0f to MinovaNightDeep,
                         0.52f to MinovaNightDeep.copy(alpha = 0.68f),
@@ -742,14 +778,21 @@ private fun CinematicBrowser(
                 ),
             )
             Box(
-                Modifier.fillMaxWidth().height(445.dp).background(
+                Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
                         0f to MinovaNightDeep.copy(alpha = 0.08f),
-                        0.70f to Color.Transparent,
-                        1f to MinovaNightDeep,
+                        0.68f to Color.Transparent,
+                        1f to MinovaBlack,
                     ),
                 ),
             )
+            if (catalogScrimAlpha > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MinovaNightDeep.copy(alpha = catalogScrimAlpha)),
+                )
+            }
         }
 
         // This composition intentionally stays fixed instead of using a
@@ -783,8 +826,7 @@ private fun CinematicBrowser(
                                     when {
                                         continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
                                         homeMode && homeShelves.isNotEmpty() -> firstGenreFocus.requestFocus()
-                                        quickGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
-                                        media.isNotEmpty() -> firstPosterFocus.requestFocus()
+                                        !homeMode -> revealCatalogAndFocus = true
                                     }
                                 },
                                 onOpen = onOpen,
@@ -812,8 +854,7 @@ private fun CinematicBrowser(
                                         onUp = { heroFocus.requestFocus() },
                                         onDown = {
                                             if (homeMode && homeShelves.isNotEmpty()) firstGenreFocus.requestFocus()
-                                            else if (quickGenres.isNotEmpty()) firstGenreFocus.requestFocus()
-                                            else if (media.isNotEmpty()) firstPosterFocus.requestFocus()
+                                            else revealCatalogAndFocus = true
                                         },
                                     )
                                 }
@@ -841,55 +882,67 @@ private fun CinematicBrowser(
                         contentBrowsing = false
                     },
                 )
-            } else Column {
-                SectionHeading(browseTitle)
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth().height(42.dp).focusGroup(),
-                    contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(quickGenres, key = { it ?: "all" }) { genre ->
-                        val first = genre == quickGenres.first()
-                        GenrePill(
-                            label = genre ?: "All",
-                            selected = genre == selectedGenre,
-                            modifier = if (first) Modifier.focusRequester(firstGenreFocus) else Modifier,
-                            onFocused = { pendingContentBrowsing = true },
-                            onUp = {
-                                pendingContentBrowsing = false
-                                restoreHomeFocus = true
-                                contentBrowsing = false
-                            },
-                            onDown = { if (media.isNotEmpty()) firstPosterFocus.requestFocus() },
-                            onClick = { onGenreSelected(genre) },
-                        )
-                    }
-                }
-                if (media.isEmpty()) {
-                    Text(
-                        emptyMessage,
-                        color = MinovaMuted,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 34.dp, vertical = 24.dp),
-                    )
-                } else {
+            } else AnimatedVisibility(
+                visible = contentBrowsing,
+                enter = fadeIn(tween(360)) + expandVertically(
+                    animationSpec = tween(460, easing = FastOutSlowInEasing),
+                    expandFrom = Alignment.Top,
+                ),
+                exit = fadeOut(tween(220)) + shrinkVertically(
+                    animationSpec = tween(360, easing = FastOutSlowInEasing),
+                    shrinkTowards = Alignment.Top,
+                ),
+            ) {
+                Column {
+                    SectionHeading(browseTitle)
                     LazyRow(
-                        modifier = Modifier.focusGroup(),
-                        contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 10.dp, bottom = 22.dp),
-                        horizontalArrangement = Arrangement.spacedBy(11.dp),
+                        modifier = Modifier.fillMaxWidth().height(42.dp).focusGroup(),
+                        contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        items(media, key = { "browse-${it.ratingKey}" }) { content ->
-                            val first = content.ratingKey == media.first().ratingKey
-                            CinematicPosterCard(
-                                content = content,
-                                modifier = if (first) Modifier.focusRequester(firstPosterFocus) else Modifier,
-                                onOpen = onOpen,
-                                onFocused = {
-                                    pendingContentBrowsing = true
-                                    onHighlighted(it)
+                        items(quickGenres, key = { it ?: "all" }) { genre ->
+                            val first = genre == quickGenres.first()
+                            GenrePill(
+                                label = genre ?: "All",
+                                selected = genre == selectedGenre,
+                                modifier = if (first) Modifier.focusRequester(firstGenreFocus) else Modifier,
+                                onFocused = { contentBrowsing = true },
+                                onUp = {
+                                    pendingContentBrowsing = false
+                                    restoreHomeFocus = true
+                                    contentBrowsing = false
                                 },
-                                onUp = { firstGenreFocus.requestFocus() },
+                                onDown = { if (media.isNotEmpty()) firstPosterFocus.requestFocus() },
+                                onClick = { onGenreSelected(genre) },
                             )
+                        }
+                    }
+                    if (media.isEmpty()) {
+                        Text(
+                            emptyMessage,
+                            color = MinovaMuted,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(horizontal = 34.dp, vertical = 24.dp),
+                        )
+                    } else {
+                        LazyRow(
+                            modifier = Modifier.focusGroup(),
+                            contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 10.dp, bottom = 22.dp),
+                            horizontalArrangement = Arrangement.spacedBy(11.dp),
+                        ) {
+                            items(media, key = { "browse-${it.ratingKey}" }) { content ->
+                                val first = content.ratingKey == media.first().ratingKey
+                                CinematicPosterCard(
+                                    content = content,
+                                    modifier = if (first) Modifier.focusRequester(firstPosterFocus) else Modifier,
+                                    onOpen = onOpen,
+                                    onFocused = {
+                                        contentBrowsing = true
+                                        onHighlighted(it)
+                                    },
+                                    onUp = { firstGenreFocus.requestFocus() },
+                                )
+                            }
                         }
                     }
                 }
