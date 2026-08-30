@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.6.4/Minova-Cinema-2.6.4.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.7.0/Minova-Cinema-2.7.0.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -40,7 +40,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 
 ## Install
 
-1. [Download the Minova Cinema 2.6.4 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.6.4/Minova-Cinema-2.6.4.apk).
+1. [Download the Minova Cinema 2.7.0 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.7.0/Minova-Cinema-2.7.0.apk).
 2. Transfer it to an Android TV device and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and enter the Plex server address and token during setup.
 
@@ -140,6 +140,6 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) before publishing di
 
 ## Project status and source terms
 
-Version 2.6.4 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
+Version 2.7.0 is the current public release. Source is published for inspection and collaboration. No software license has been added yet, so default copyright terms apply until the project owner selects one.
 
 Plex is a trademark of Plex, Inc. Minova Cinema is not endorsed by or affiliated with Plex, Inc.

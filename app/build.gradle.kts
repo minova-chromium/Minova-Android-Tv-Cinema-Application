@@ -52,8 +52,8 @@ android {
         // intentionally use API 29 as the public platform baseline.
         minSdk = 29
         targetSdk = 37
-        versionCode = 34
-        versionName = "2.6.4"
+        versionCode = 35
+        versionName = "2.7.0"
 
         buildConfigField("String", "PLEX_CLIENT_ID", "\"MinovaCinema\"")
         buildConfigField("String", "UPDATE_GITHUB_OWNER", "\"minova-chromium\"")

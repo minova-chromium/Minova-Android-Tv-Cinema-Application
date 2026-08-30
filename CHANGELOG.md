@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.7.0 — 2026-08-31
+
+### Cinematic browsing and broader Tapo compatibility
+
+- Rebuilt Home, Movies, and Series around a cinematic, full-screen Plex artwork experience with a featured carousel and smooth fade-through-black backdrop transitions.
+- Added a cleaner two-stage Movies/Series flow: hero and Continue Watching first, then a dedicated D-pad genre and poster browser.
+- Added stable compact genre controls, larger poster shelves, a full-library grid, and an alphabetical jump rail for fast TV navigation.
+- Improved D-pad focus restoration, shelf transitions, artwork updates, title visibility, and Continue Watching card proportions.
+- Added dual-protocol Tapo local control that tries modern KLAP first and falls back to legacy Secure Passthrough for compatible older lights.
+- Improved Tapo discovery by preserving each device's advertised HTTP/HTTPS transport and port.
+- Added regression coverage for Tapo protocol selection, cryptographic session handling, and fallback behavior.
+
 ## 2.6.4 — 2026-08-29
 
 ### Settings polish and more reliable Tapo discovery
