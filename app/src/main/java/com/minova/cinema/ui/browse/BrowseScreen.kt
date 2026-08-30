@@ -2,6 +2,12 @@ package com.minova.cinema.ui.browse
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -103,7 +109,7 @@ private enum class BrowseTab(val label: String) {
 
 private enum class BrowseLayout { Rows, Grid }
 
-private const val GridColumnCount = 6
+private const val GridColumnCount = 5
 private val AlphabetBuckets = listOf("#") + ('A'..'Z').map(Char::toString)
 
 private data class DiscoveryShelf(
@@ -165,6 +171,11 @@ fun BrowseScreen(
     val heroCandidates = remember(continueWatching, filteredGridItems) {
         (continueWatching + filteredGridItems).distinctBy(MediaContent::ratingKey)
     }
+    val homeFeatured = remember(catalog) {
+        buildFeaturedCarousel(
+            (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey),
+        )
+    }
     val homeShelves = remember(catalog) {
         buildHomeDiscoveryShelves(
             (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey),
@@ -173,6 +184,7 @@ fun BrowseScreen(
     var highlightedContent by remember(tab) {
         mutableStateOf(heroCandidates.firstOrNull())
     }
+    var homeFeaturedIndex by remember { mutableStateOf(0) }
     val heroFocus = remember(tab) { FocusRequester() }
     val firstContinueFocus = remember(tab) { FocusRequester() }
     val firstGenreFocus = remember(tab) { FocusRequester() }
@@ -194,10 +206,22 @@ fun BrowseScreen(
         }
     }
 
+    LaunchedEffect(homeFeatured.size) {
+        homeFeaturedIndex = homeFeaturedIndex.coerceIn(0, (homeFeatured.lastIndex).coerceAtLeast(0))
+    }
+
+    LaunchedEffect(tab, homeFeatured.size, homeFeaturedIndex) {
+        if (tab == BrowseTab.Home && homeFeatured.size > 1) {
+            delay(15_000)
+            homeFeaturedIndex = (homeFeaturedIndex + 1) % homeFeatured.size
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(MinovaBlack)) {
         val requestFirstContentFocus = {
             when {
-                highlightedContent != null -> heroFocus.requestFocus()
+                (if (tab == BrowseTab.Home) homeFeatured.getOrNull(homeFeaturedIndex) else highlightedContent) != null ->
+                    heroFocus.requestFocus()
                 continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
                 gridGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
                 filteredGridItems.isNotEmpty() -> firstPosterFocus.requestFocus()
@@ -238,7 +262,21 @@ fun BrowseScreen(
             )
         } else {
             CinematicBrowser(
-                hero = highlightedContent,
+                hero = if (tab == BrowseTab.Home) {
+                    homeFeatured.getOrNull(homeFeaturedIndex) ?: highlightedContent
+                } else highlightedContent,
+                heroCarouselPosition = if (tab == BrowseTab.Home) homeFeaturedIndex else null,
+                heroCarouselCount = if (tab == BrowseTab.Home) homeFeatured.size else 0,
+                onPreviousHero = {
+                    if (homeFeatured.isNotEmpty()) {
+                        homeFeaturedIndex = (homeFeaturedIndex - 1 + homeFeatured.size) % homeFeatured.size
+                    }
+                },
+                onNextHero = {
+                    if (homeFeatured.isNotEmpty()) {
+                        homeFeaturedIndex = (homeFeaturedIndex + 1) % homeFeatured.size
+                    }
+                },
                 continueWatching = continueWatching,
                 media = filteredGridItems,
                 genres = gridGenres,
@@ -261,7 +299,9 @@ fun BrowseScreen(
                 firstContinueFocus = firstContinueFocus,
                 firstGenreFocus = firstGenreFocus,
                 firstPosterFocus = firstPosterFocus,
-                onHighlighted = { highlightedContent = it },
+                onHighlighted = { content ->
+                    if (tab != BrowseTab.Home) highlightedContent = content
+                },
             )
         }
 
@@ -277,6 +317,16 @@ fun BrowseScreen(
             )
         }
     }
+}
+
+private fun buildFeaturedCarousel(media: List<MediaContent>): List<MediaContent> {
+    val withBackdrops = media.filter { !it.backdropUrl.isNullOrBlank() }
+    val source = if (withBackdrops.isNotEmpty()) withBackdrops else media
+    return source.sortedWith(
+        compareByDescending<MediaContent> { it.year ?: Int.MIN_VALUE }
+            .thenByDescending { it.addedAtEpochSeconds ?: Long.MIN_VALUE }
+            .thenBy { it.title.lowercase(Locale.ROOT) },
+    ).take(10)
 }
 
 private fun buildHomeDiscoveryShelves(media: List<MediaContent>): List<DiscoveryShelf> {
@@ -593,6 +643,10 @@ private fun HeaderItem(label: String, selected: Boolean, onDown: () -> Unit, onC
 @Composable
 private fun CinematicBrowser(
     hero: MediaContent?,
+    heroCarouselPosition: Int?,
+    heroCarouselCount: Int,
+    onPreviousHero: () -> Unit,
+    onNextHero: () -> Unit,
     continueWatching: List<MediaContent>,
     media: List<MediaContent>,
     genres: List<String>,
@@ -621,31 +675,63 @@ private fun CinematicBrowser(
             genres.filterNot { it.equals(selectedGenre, ignoreCase = true) }.take(5).forEach(::add)
         }
     }
+    var homeBrowsing by remember(homeMode) { mutableStateOf(false) }
+    var pendingHomeBrowsing by remember(homeMode) { mutableStateOf(false) }
+    var restoreHomeFocus by remember { mutableStateOf(false) }
+
+    LaunchedEffect(homeBrowsing, restoreHomeFocus) {
+        if (!homeBrowsing && restoreHomeFocus) {
+            delay(280)
+            if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
+            else heroFocus.requestFocus()
+            restoreHomeFocus = false
+        }
+    }
+
+    LaunchedEffect(pendingHomeBrowsing) {
+        if (pendingHomeBrowsing) {
+            // Keep the currently focused Continue card in the composition
+            // until the complete D-Pad press has settled. Removing it during
+            // KeyDown could make Compose dispatch the remaining key sequence
+            // as a click on the title that just gained focus.
+            delay(140)
+            homeBrowsing = true
+            pendingHomeBrowsing = false
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(MinovaBlack)) {
-        hero?.let { content ->
-            AsyncImage(
-                model = content.backdropUrl ?: content.posterUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().height(330.dp).align(Alignment.TopCenter),
-            )
+        if (hero != null) {
+            Crossfade(
+                targetState = hero,
+                animationSpec = tween(650),
+                label = "featured_backdrop_crossfade",
+            ) { content ->
+                AsyncImage(
+                    model = content.backdropUrl ?: content.posterUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(445.dp)
+                        .align(Alignment.TopCenter),
+                )
+            }
             Box(
-                Modifier.fillMaxWidth().height(330.dp).background(
+                Modifier.fillMaxWidth().height(445.dp).background(
                     Brush.horizontalGradient(
-                        0f to MinovaBlack.copy(alpha = 0.98f),
-                        0.36f to MinovaBlack.copy(alpha = 0.76f),
-                        0.68f to MinovaBlack.copy(alpha = 0.10f),
-                        1f to MinovaBlack.copy(alpha = 0.12f),
+                        0f to MinovaNightDeep,
+                        0.52f to MinovaNightDeep.copy(alpha = 0.68f),
+                        1f to Color.Transparent,
                     ),
                 ),
             )
             Box(
-                Modifier.fillMaxWidth().height(335.dp).background(
+                Modifier.fillMaxWidth().height(445.dp).background(
                     Brush.verticalGradient(
-                        0f to MinovaBlack.copy(alpha = 0.22f),
-                        0.64f to Color.Transparent,
-                        1f to MinovaBlack,
+                        0f to MinovaNightDeep.copy(alpha = 0.08f),
+                        0.70f to Color.Transparent,
+                        1f to MinovaNightDeep,
                     ),
                 ),
             )
@@ -656,49 +742,67 @@ private fun CinematicBrowser(
         // made the entire hero jump underneath the header whenever focus
         // entered a shelf. Horizontal shelves still scroll independently.
         Column(Modifier.fillMaxSize().padding(top = 58.dp)) {
-            Box(Modifier.fillMaxWidth().height(190.dp)) {
-                hero?.let { content ->
-                    HeroContent(
-                        content = content,
-                        inMyList = isInMyList(content),
-                        focusRequester = heroFocus,
-                        onDown = {
-                            when {
-                                continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
-                                homeMode && homeShelves.isNotEmpty() -> firstGenreFocus.requestFocus()
-                                quickGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
-                                media.isNotEmpty() -> firstPosterFocus.requestFocus()
-                            }
-                        },
-                        onOpen = onOpen,
-                        onPlay = onPlay,
-                        onToggleMyList = onToggleMyList,
-                    )
-                }
-            }
-
-            if (continueWatching.isNotEmpty()) {
-                Column(Modifier.height(153.dp)) {
-                    SectionHeading("Continue Watching")
-                    LazyRow(
-                        modifier = Modifier.focusGroup(),
-                        contentPadding = PaddingValues(horizontal = 34.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(continueWatching, key = { "continue-${it.ratingKey}" }) { content ->
-                            val first = content.ratingKey == continueWatching.first().ratingKey
-                            ContinueCard(
+            AnimatedVisibility(
+                visible = !homeMode || !homeBrowsing,
+                enter = fadeIn(tween(320)) + expandVertically(
+                    animationSpec = tween(460),
+                    expandFrom = Alignment.Top,
+                ),
+                exit = fadeOut(tween(300)) + shrinkVertically(
+                    animationSpec = tween(460),
+                    shrinkTowards = Alignment.Top,
+                ),
+            ) {
+                Column {
+                    Box(Modifier.fillMaxWidth().height(206.dp)) {
+                        hero?.let { content ->
+                            HeroContent(
                                 content = content,
-                                modifier = if (first) Modifier.focusRequester(firstContinueFocus) else Modifier,
-                                onOpen = onOpen,
-                                onFocused = onHighlighted,
-                                onUp = { heroFocus.requestFocus() },
+                                carouselPosition = heroCarouselPosition,
+                                carouselCount = heroCarouselCount,
+                                onPrevious = onPreviousHero,
+                                onNext = onNextHero,
+                                inMyList = isInMyList(content),
+                                focusRequester = heroFocus,
                                 onDown = {
-                                    if (homeMode && homeShelves.isNotEmpty()) firstGenreFocus.requestFocus()
-                                    else if (quickGenres.isNotEmpty()) firstGenreFocus.requestFocus()
-                                    else if (media.isNotEmpty()) firstPosterFocus.requestFocus()
+                                    when {
+                                        continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
+                                        homeMode && homeShelves.isNotEmpty() -> firstGenreFocus.requestFocus()
+                                        quickGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
+                                        media.isNotEmpty() -> firstPosterFocus.requestFocus()
+                                    }
                                 },
+                                onOpen = onOpen,
+                                onPlay = onPlay,
+                                onToggleMyList = onToggleMyList,
                             )
+                        }
+                    }
+
+                    if (continueWatching.isNotEmpty()) {
+                        Column(Modifier.height(153.dp)) {
+                            SectionHeading("Continue Watching")
+                            LazyRow(
+                                modifier = Modifier.focusGroup(),
+                                contentPadding = PaddingValues(horizontal = 34.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items(continueWatching, key = { "continue-${it.ratingKey}" }) { content ->
+                                    val first = content.ratingKey == continueWatching.first().ratingKey
+                                    ContinueCard(
+                                        content = content,
+                                        modifier = if (first) Modifier.focusRequester(firstContinueFocus) else Modifier,
+                                        onOpen = onOpen,
+                                        onFocused = onHighlighted,
+                                        onUp = { heroFocus.requestFocus() },
+                                        onDown = {
+                                            if (homeMode && homeShelves.isNotEmpty()) firstGenreFocus.requestFocus()
+                                            else if (quickGenres.isNotEmpty()) firstGenreFocus.requestFocus()
+                                            else if (media.isNotEmpty()) firstPosterFocus.requestFocus()
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -706,14 +810,20 @@ private fun CinematicBrowser(
 
             if (homeMode) {
                 HomeDiscoveryFeed(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(if (homeBrowsing) MinovaNightDeep else Color.Transparent),
                     shelves = homeShelves,
                     firstFocusRequester = firstGenreFocus,
                     onOpen = onOpen,
-                    onHighlighted = onHighlighted,
+                    onHighlighted = { content ->
+                        pendingHomeBrowsing = true
+                        onHighlighted(content)
+                    },
                     onUpFromFirst = {
-                        if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
-                        else heroFocus.requestFocus()
+                        pendingHomeBrowsing = false
+                        restoreHomeFocus = true
+                        homeBrowsing = false
                     },
                 )
             } else Column {
@@ -785,6 +895,10 @@ private fun HomeDiscoveryFeed(
 
     fun focusRow(index: Int) {
         if (index !in shelves.indices) return
+        if (listState.layoutInfo.visibleItemsInfo.any { it.index == index }) {
+            rowFocusRequesters[index].requestFocus()
+            return
+        }
         scope.launch {
             listState.animateScrollToItem(index)
             delay(80)
@@ -811,7 +925,7 @@ private fun HomeDiscoveryFeed(
                         val first = content.ratingKey == shelf.media.first().ratingKey
                         CinematicPosterCard(
                             content = content,
-                            width = 72.dp,
+                            width = 108.dp,
                             modifier = if (first) {
                                 Modifier.focusRequester(rowFocusRequesters[shelfIndex])
                             } else Modifier,
@@ -849,6 +963,10 @@ private fun SectionHeading(title: String) {
 @Composable
 private fun HeroContent(
     content: MediaContent,
+    carouselPosition: Int?,
+    carouselCount: Int,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     inMyList: Boolean,
     focusRequester: FocusRequester,
     onDown: () -> Unit,
@@ -858,18 +976,29 @@ private fun HeroContent(
 ) {
     val directlyPlayable = content.kind == MediaKind.Movie ||
         content.kind == MediaKind.Episode || content.kind == MediaKind.Extra
+    val titleWraps = content.title.length > 34
     Column(
-        modifier = Modifier.width(510.dp).padding(start = 34.dp, top = 24.dp),
+        modifier = Modifier
+            .width(510.dp)
+            .height(206.dp)
+            .padding(start = 34.dp, top = 24.dp, bottom = 8.dp),
     ) {
+        if (carouselPosition != null && carouselCount > 1) {
+            HeroCarouselIndicator(
+                activeIndex = carouselPosition,
+                count = carouselCount,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
         Text(
             content.title,
             color = MinovaWhite,
             fontSize = when {
                 content.title.length > 55 -> 24.sp
-                content.title.length > 34 -> 28.sp
+                titleWraps -> 26.sp
                 else -> 34.sp
             },
-            lineHeight = 37.sp,
+            lineHeight = if (titleWraps) 29.sp else 37.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -888,13 +1017,13 @@ private fun HeroContent(
                 color = MinovaWhite.copy(alpha = 0.82f),
                 fontSize = 13.sp,
                 lineHeight = 17.sp,
-                maxLines = 2,
+                maxLines = if (titleWraps) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
+        Spacer(Modifier.weight(1f))
         Row(
-            modifier = Modifier.padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             HeroAction(
@@ -906,9 +1035,19 @@ private fun HeroContent(
                 icon = Icons.Default.PlayArrow,
                 primary = true,
                 modifier = Modifier.focusRequester(focusRequester).onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-                        onDown(); true
-                    } else false
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionLeft -> if (carouselCount > 1) {
+                            onPrevious(); true
+                        } else false
+                        Key.DirectionRight -> if (carouselCount > 1) {
+                            // Advance immediately, while allowing normal focus
+                            // movement to the adjacent Watchlist action.
+                            onNext(); false
+                        } else false
+                        Key.DirectionDown -> { onDown(); true }
+                        else -> false
+                    }
                 },
                 onClick = { if (directlyPlayable) onPlay(content) else onOpen(content) },
             )
@@ -917,11 +1056,51 @@ private fun HeroContent(
                 icon = if (inMyList) Icons.Default.Check else Icons.Default.Add,
                 primary = false,
                 modifier = Modifier.onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-                        onDown(); true
-                    } else false
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionLeft -> if (carouselCount > 1) {
+                            // Return to Play and move the carousel back in the
+                            // same spatial direction.
+                            onPrevious(); false
+                        } else false
+                        Key.DirectionRight -> if (carouselCount > 1) {
+                            onNext(); true
+                        } else false
+                        Key.DirectionDown -> { onDown(); true }
+                        else -> false
+                    }
                 },
                 onClick = { onToggleMyList(content) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroCarouselIndicator(
+    activeIndex: Int,
+    count: Int,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(count) { index ->
+            val active = index == activeIndex
+            val scale by animateFloatAsState(
+                targetValue = if (active) 1.25f else 1f,
+                animationSpec = tween(durationMillis = 190),
+                label = "featured_dot_$index",
+            )
+            Box(
+                Modifier
+                    .size(7.dp)
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .clip(CircleShape)
+                    .border(1.dp, MinovaCyan.copy(alpha = if (active) 1f else 0.72f), CircleShape)
+                    .background(if (active) MinovaCyan else Color.Transparent),
             )
         }
     }
@@ -1021,7 +1200,7 @@ private fun GenrePill(
 @Composable
 private fun CinematicPosterCard(
     content: MediaContent,
-    width: Dp = 116.dp,
+    width: Dp = 132.dp,
     modifier: Modifier = Modifier,
     onOpen: (MediaContent) -> Unit,
     onFocused: (MediaContent) -> Unit,
