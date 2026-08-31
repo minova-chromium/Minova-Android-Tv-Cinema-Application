@@ -87,6 +87,9 @@ import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.AudioStream
 import com.minova.cinema.domain.SubtitleStream
+import com.minova.cinema.domain.PlaybackDiagnostics
+import com.minova.cinema.domain.PlexPlaybackMode
+import com.minova.cinema.domain.MediaChapter
 import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
@@ -138,6 +141,16 @@ fun PlayerScreen(
     onProgress: (positionMs: Long, durationMs: Long, state: String) -> Unit,
     onSubtitleStreamSelected: (subtitleStreamId: Long?, onComplete: () -> Unit) -> Unit,
     onAudioStreamSelected: (audioStreamId: Long, onComplete: () -> Unit) -> Unit,
+    initialAudioDelayMs: Int,
+    initialSubtitleDelayMs: Int,
+    onAudioDelayChanged: (Int) -> Unit,
+    onSubtitleDelayChanged: (Int) -> Unit,
+    onDiagnosticsRequested: (
+        content: MediaContent,
+        sessionId: String?,
+        quality: PlaybackQuality,
+        onReady: (PlaybackDiagnostics) -> Unit,
+    ) -> Unit,
     onPlaybackEnded: (onReady: (MediaContent?) -> Unit) -> Unit,
     onPlayNext: (MediaContent) -> Unit,
 ) {
@@ -154,6 +167,7 @@ fun PlayerScreen(
     val latestProgress by rememberUpdatedState(onProgress)
     val latestPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val latestPlaybackActivityChanged by rememberUpdatedState(onPlaybackActivityChanged)
+    val latestDiagnosticsRequested by rememberUpdatedState(onDiagnosticsRequested)
     val urlFactory = remember(connection) { PlexUrlFactory(connection) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
     var controlsVisible by remember { mutableStateOf(true) }
@@ -181,6 +195,19 @@ fun PlayerScreen(
     }
     var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
+    var diagnostics by remember(content.ratingKey) {
+        mutableStateOf(
+            PlaybackDiagnostics(
+                mode = PlexPlaybackMode.DirectPlay,
+                reason = "The TV is playing the original file without conversion",
+                source = playback.technicalInfo,
+            ),
+        )
+    }
+    var audioDelayMs by remember(content.ratingKey) { mutableStateOf(initialAudioDelayMs) }
+    var subtitleDelayMs by remember(content.ratingKey) { mutableStateOf(initialSubtitleDelayMs) }
+    var restartPositionMs by remember(content.ratingKey) { mutableStateOf<Long?>(null) }
+    var restartPlaylistIndex by remember(content.ratingKey) { mutableStateOf<Int?>(null) }
     var nextEpisode by remember(content.ratingKey) { mutableStateOf<MediaContent?>(null) }
     var nextUpLoading by remember(content.ratingKey) { mutableStateOf(false) }
     var inactivityPromptVisible by remember { mutableStateOf(false) }
@@ -191,8 +218,9 @@ fun PlayerScreen(
     var activePlaylistIndex by remember(content.ratingKey) { mutableStateOf(0) }
     var activePlaylistTitle by remember(content.ratingKey) { mutableStateOf(content.title) }
     var lastAppliedSourceKey by remember(content.ratingKey) { mutableStateOf("") }
+    var lastDiagnosticsKey by remember(content.ratingKey) { mutableStateOf("") }
     val settingsFocusRequester = remember { FocusRequester() }
-    val creditsFocusRequester = remember { FocusRequester() }
+    val markerFocusRequester = remember { FocusRequester() }
     val latestSelectedQuality by rememberUpdatedState(selectedQuality)
     val playableTrailers = remember(preRollTrailers) {
         preRollTrailers.filter { it.playback != null }.take(2)
@@ -200,6 +228,7 @@ fun PlayerScreen(
     val localBumperUri = remember(bumperUri) { bumperUri?.takeIf(String::isNotBlank) }
     val mainFeatureIndex = playableTrailers.size + if (localBumperUri != null) 1 else 0
     val isMainFeatureActive = activePlaylistIndex == mainFeatureIndex
+    val playbackSessionId = remember(content.ratingKey) { UUID.randomUUID().toString() }
 
     // Movie/media attributes select Android's HDMI/optical media route and
     // request audio focus. Avoiding AudioProcessors keeps encoded passthrough
@@ -222,7 +251,10 @@ fun PlayerScreen(
         )
     }
 
-    val player = remember(content.ratingKey, connection) {
+    val renderersFactory = remember(content.ratingKey, audioDelayMs, subtitleDelayMs) {
+        CinemaRenderersFactory(context, audioDelayMs, subtitleDelayMs)
+    }
+    val player = remember(content.ratingKey, connection, renderersFactory) {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(PlexConfig.requestHeaders(connection))
             .setConnectTimeoutMs(10_000)
@@ -251,7 +283,10 @@ fun PlayerScreen(
             )
         }
 
-        ExoPlayer.Builder(context)
+        ExoPlayer.Builder(
+            context,
+            renderersFactory,
+        )
             .setMediaSourceFactory(sourceFactory)
             .setTrackSelector(trackSelector)
             .setAudioAttributes(cinemaAudioAttributes, true)
@@ -275,14 +310,17 @@ fun PlayerScreen(
 
     fun mainFeatureMediaItem(quality: PlaybackQuality): MediaItem {
         val uri = if (quality == PlaybackQuality.Original) {
-            playback.directUrl
+            playback.directUrl.toUri().buildUpon()
+                .appendQueryParameter("X-Plex-Session-Identifier", playbackSessionId)
+                .build()
+                .toString()
         } else {
             urlFactory.transcode(
                 ratingKey = content.ratingKey,
                 quality = quality,
                 // A new Plex transcoder session prevents a previous quality or
                 // burned-subtitle choice from being reused by the server.
-                sessionId = UUID.randomUUID().toString(),
+                sessionId = playbackSessionId,
                 subtitleStreamId = selectedPlexSubtitleId,
                 audioStreamId = selectedPlexAudioId,
             )
@@ -329,7 +367,14 @@ fun PlayerScreen(
         player.setMediaItems(items)
         activePlaylistIndex = 0
         activePlaylistTitle = items.firstOrNull()?.mediaMetadata?.title?.toString() ?: content.title
-        if (mainFeatureIndex == 0 && content.viewOffsetMs > 0L) {
+        val restoredIndex = restartPlaylistIndex?.coerceIn(0, items.lastIndex)
+        val restoredPosition = restartPositionMs
+        if (restoredIndex != null && restoredPosition != null) {
+            player.seekTo(restoredIndex, restoredPosition)
+            restartPlaylistIndex = null
+            restartPositionMs = null
+            mainResumeApplied = restoredIndex == mainFeatureIndex
+        } else if (mainFeatureIndex == 0 && content.viewOffsetMs > 0L) {
             player.seekTo(0, content.viewOffsetMs)
             mainResumeApplied = true
         }
@@ -477,7 +522,20 @@ fun PlayerScreen(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 reportPlaybackActivity()
-                if (playbackState == Player.STATE_READY) playbackMessage = null
+                if (playbackState == Player.STATE_READY) {
+                    playbackMessage = null
+                    if (player.currentMediaItemIndex == mainFeatureIndex) {
+                        val key = "${selectedQuality.name}:$playbackSessionId"
+                        if (lastDiagnosticsKey != key) {
+                            lastDiagnosticsKey = key
+                            latestDiagnosticsRequested(
+                                content,
+                                playbackSessionId,
+                                selectedQuality,
+                            ) { diagnostics = it }
+                        }
+                    }
+                }
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     controlsVisible = false
@@ -616,6 +674,7 @@ fun PlayerScreen(
             lifecycleOwner.lifecycle.removeObserver(observer)
             playerView?.player = null
             player.release()
+            renderersFactory.clearPendingSubtitleCues()
         }
     }
 
@@ -628,22 +687,42 @@ fun PlayerScreen(
         onInactivityTimeout()
     }
 
+    fun applySyncDelays(newAudioDelayMs: Int = audioDelayMs, newSubtitleDelayMs: Int = subtitleDelayMs) {
+        restartPlaylistIndex = player.currentMediaItemIndex.coerceAtLeast(0)
+        restartPositionMs = player.currentPosition.coerceAtLeast(0L)
+        if (newAudioDelayMs != audioDelayMs) {
+            audioDelayMs = newAudioDelayMs.coerceIn(0, 500)
+            onAudioDelayChanged(audioDelayMs)
+        }
+        if (newSubtitleDelayMs != subtitleDelayMs) {
+            subtitleDelayMs = newSubtitleDelayMs.coerceIn(0, 5_000)
+            onSubtitleDelayChanged(subtitleDelayMs)
+        }
+    }
+
+    val activeIntroMarker = content.markers.firstOrNull { marker ->
+        isMainFeatureActive &&
+            marker.type.equals("intro", ignoreCase = true) &&
+            playbackPositionMs >= marker.startTimeOffsetMs &&
+            playbackPositionMs < marker.endTimeOffsetMs
+    }
     val activeCreditsMarker = content.markers.firstOrNull { marker ->
         isMainFeatureActive &&
         marker.type.equals("credits", ignoreCase = true) &&
             playbackPositionMs >= marker.startTimeOffsetMs &&
             playbackPositionMs < marker.endTimeOffsetMs
     }
+    val activeSkipMarker = activeIntroMarker ?: activeCreditsMarker
 
     LaunchedEffect(
-        activeCreditsMarker?.startTimeOffsetMs,
+        activeSkipMarker?.startTimeOffsetMs,
         controlsVisible,
         settingsVisible,
         inactivityPromptVisible,
     ) {
-        if (activeCreditsMarker != null && !settingsVisible && !inactivityPromptVisible) {
+        if (activeSkipMarker != null && !settingsVisible && !inactivityPromptVisible) {
             delay(80)
-            runCatching { creditsFocusRequester.requestFocus() }
+            runCatching { markerFocusRequester.requestFocus() }
         }
     }
 
@@ -755,6 +834,16 @@ fun PlayerScreen(
                     activeVideoResolution?.let { resolution ->
                         Text(resolution, color = MinovaCyan, style = MaterialTheme.typography.bodyMedium)
                     }
+                    Text(
+                        diagnostics.mode.label,
+                        color = when (diagnostics.mode) {
+                            PlexPlaybackMode.DirectPlay -> MinovaTeal
+                            PlexPlaybackMode.DirectStream -> MinovaCyan
+                            PlexPlaybackMode.Transcode -> Color(0xFFFFC857)
+                            PlexPlaybackMode.Unknown -> MinovaMuted
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     Text("Settings are available below", color = MinovaMuted, style = MaterialTheme.typography.bodyMedium)
                 }
                 Button(
@@ -808,7 +897,7 @@ fun PlayerScreen(
         }
 
         if (
-            activeCreditsMarker != null &&
+            activeSkipMarker != null &&
             nextEpisode == null &&
             !nextUpLoading &&
             !settingsVisible &&
@@ -818,8 +907,8 @@ fun PlayerScreen(
                 onClick = {
                     val duration = player.duration.takeIf { it > 0 }
                         ?: content.durationMs
-                        ?: activeCreditsMarker.endTimeOffsetMs
-                    val target = activeCreditsMarker.endTimeOffsetMs.coerceAtMost(duration)
+                        ?: activeSkipMarker.endTimeOffsetMs
+                    val target = activeSkipMarker.endTimeOffsetMs.coerceAtMost(duration)
                     player.seekTo(target)
                     playbackPositionMs = target
                     onUserInteraction()
@@ -828,9 +917,9 @@ fun PlayerScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 48.dp, bottom = 150.dp)
-                    .focusRequester(creditsFocusRequester),
+                    .focusRequester(markerFocusRequester),
             ) {
-                Text("Skip Credits")
+                Text(if (activeIntroMarker != null) "Skip Intro" else "Skip Credits")
             }
         }
 
@@ -838,6 +927,10 @@ fun PlayerScreen(
         if (settingsVisible) {
             PlaybackSettingsPanel(
                 selectedQuality = selectedQuality,
+                diagnostics = diagnostics,
+                chapters = content.chapters,
+                audioDelayMs = audioDelayMs,
+                subtitleDelayMs = subtitleDelayMs,
                 audioTracks = audioTracks,
                 selectedAudioTrackId = selectedAudioTrackId,
                 plexAudioStreams = playback.audioStreams,
@@ -901,6 +994,14 @@ fun PlayerScreen(
                         selectedPlexSubtitleId = stream?.id ?: 0L
                     }
                 },
+                onChapterSelected = { chapter ->
+                    player.seekTo(chapter.startTimeOffsetMs)
+                    playbackPositionMs = chapter.startTimeOffsetMs
+                    settingsVisible = false
+                    playerView?.requestFocus()
+                },
+                onAudioDelayChanged = { applySyncDelays(newAudioDelayMs = it) },
+                onSubtitleDelayChanged = { applySyncDelays(newSubtitleDelayMs = it) },
                 onClose = {
                     settingsVisible = false
                     playerView?.requestFocus()
@@ -1160,6 +1261,10 @@ private fun subtitleConfiguration(stream: SubtitleStream): MediaItem.SubtitleCon
 @Composable
 private fun PlaybackSettingsPanel(
     selectedQuality: PlaybackQuality,
+    diagnostics: PlaybackDiagnostics,
+    chapters: List<MediaChapter>,
+    audioDelayMs: Int,
+    subtitleDelayMs: Int,
     audioTracks: List<AudioTrackOption>,
     selectedAudioTrackId: String?,
     plexAudioStreams: List<AudioStream>,
@@ -1173,6 +1278,9 @@ private fun PlaybackSettingsPanel(
     onPlexAudioSelected: (AudioStream) -> Unit,
     onSubtitleSelected: (SubtitleTrackOption?) -> Unit,
     onPlexSubtitleSelected: (SubtitleStream?) -> Unit,
+    onChapterSelected: (MediaChapter) -> Unit,
+    onAudioDelayChanged: (Int) -> Unit,
+    onSubtitleDelayChanged: (Int) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1191,6 +1299,30 @@ private fun PlaybackSettingsPanel(
             .padding(horizontal = 34.dp, vertical = 30.dp),
     ) {
         Text("Playback settings", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "${diagnostics.mode.label} · ${diagnostics.reason.orEmpty()}",
+            color = when (diagnostics.mode) {
+                PlexPlaybackMode.DirectPlay -> MinovaTeal
+                PlexPlaybackMode.DirectStream -> MinovaCyan
+                PlexPlaybackMode.Transcode -> Color(0xFFFFC857)
+                PlexPlaybackMode.Unknown -> MinovaMuted
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 7.dp),
+        )
+        diagnostics.source?.let { source ->
+            Text(
+                listOfNotNull(
+                    source.videoResolution?.uppercase(),
+                    source.videoCodec?.uppercase(),
+                    source.audioCodec?.uppercase(),
+                    source.bitrateKbps?.let { "${it / 1_000f} Mbps" },
+                ).joinToString("  •  "),
+                color = MinovaMuted,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 3.dp),
+            )
+        }
         Text(
             "QUALITY",
             color = MinovaCyan,
@@ -1286,6 +1418,48 @@ private fun PlaybackSettingsPanel(
                 modifier = Modifier.padding(vertical = 12.dp),
             )
         }
+
+        Text(
+            "SYNC CORRECTION",
+            color = MinovaCyan,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 25.dp, bottom = 8.dp),
+        )
+        SettingStepper(
+            title = "Audio delay",
+            value = if (audioDelayMs == 0) "Off" else "+${audioDelayMs} ms",
+            detail = if (audioDelayMs == 0) {
+                "Bitstream passthrough remains available"
+            } else {
+                "Delays decoded audio; passthrough is disabled while active"
+            },
+            onPrevious = { onAudioDelayChanged((audioDelayMs - 25).coerceAtLeast(0)) },
+            onNext = { onAudioDelayChanged((audioDelayMs + 25).coerceAtMost(500)) },
+        )
+        SettingStepper(
+            title = "Subtitle delay",
+            value = if (subtitleDelayMs == 0) "Off" else "+${subtitleDelayMs} ms",
+            detail = "Use when subtitles appear before the dialogue",
+            onPrevious = { onSubtitleDelayChanged((subtitleDelayMs - 250).coerceAtLeast(0)) },
+            onNext = { onSubtitleDelayChanged((subtitleDelayMs + 250).coerceAtMost(5_000)) },
+        )
+
+        if (chapters.isNotEmpty()) {
+            Text(
+                "CHAPTERS",
+                color = MinovaCyan,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 25.dp, bottom = 8.dp),
+            )
+            chapters.forEach { chapter ->
+                SettingOption(
+                    title = chapter.title,
+                    detail = formatChapterTime(chapter.startTimeOffsetMs),
+                    selected = false,
+                    onClick = { onChapterSelected(chapter) },
+                )
+            }
+        }
         Spacer(Modifier.height(18.dp))
         SettingOption(
             title = "Close",
@@ -1341,6 +1515,52 @@ private fun SettingOption(
         }
         if (selected) Text("●", color = if (focused) Color.Black else MinovaCyan)
     }
+}
+
+@Composable
+private fun SettingStepper(
+    title: String,
+    value: String,
+    detail: String,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(7.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { onPrevious(); true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { onNext(); true }
+                    else -> false
+                }
+            }
+            .clip(shape)
+            .background(if (focused) MinovaSurface.copy(alpha = 0.78f) else MinovaSurface)
+            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.Transparent, shape)
+            .clickable(role = Role.Button, onClick = onNext)
+            .padding(horizontal = 15.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text(detail, color = MinovaMuted, style = MaterialTheme.typography.bodyMedium)
+        }
+        Text("‹  $value  ›", color = MinovaCyan, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+private fun formatChapterTime(timeMs: Long): String {
+    val totalSeconds = timeMs.coerceAtLeast(0L) / 1_000L
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "%d:%02d".format(minutes, seconds)
 }
 
 private fun audioDetail(

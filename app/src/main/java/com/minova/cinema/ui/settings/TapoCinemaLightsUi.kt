@@ -45,6 +45,7 @@ import androidx.tv.material3.Text
 import com.minova.cinema.tapo.TapoLight
 import com.minova.cinema.tapo.TapoLightsUiState
 import com.minova.cinema.ui.theme.MinovaCyan
+import com.minova.cinema.ui.theme.MinovaAmber
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
 
@@ -186,6 +187,29 @@ fun CinemaLightsSettingsScreen(
             }
             state.message?.let {
                 Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 12.dp))
+            }
+            if (state.localAccessBlockedCount > 0) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .border(1.dp, MinovaAmber.copy(alpha = 0.75f), RoundedCornerShape(12.dp))
+                        .background(MinovaAmber.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 16.dp, vertical = 11.dp),
+                ) {
+                    Text(
+                        "Local access is disabled on ${state.localAccessBlockedCount} Tapo device(s)",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        "For L630 lights, open the Tapo app: Me → Third-Party Services → " +
+                            "Third-Party Compatibility. Enable it, then choose Scan for lights again.",
+                        color = MinovaAmber,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
             Text(
                 when (state.lights.size) {

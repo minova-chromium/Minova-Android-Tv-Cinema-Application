@@ -12,6 +12,10 @@ import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.MediaCredit
 import com.minova.cinema.domain.MediaMarker
+import com.minova.cinema.domain.MediaChapter
+import com.minova.cinema.domain.MediaTechnicalInfo
+import com.minova.cinema.domain.PlaybackDiagnostics
+import com.minova.cinema.domain.PlexPlaybackMode
 import com.minova.cinema.domain.PlaybackSource
 import com.minova.cinema.domain.PlexLibrary
 import com.minova.cinema.domain.SubtitleStream
@@ -72,6 +76,53 @@ class PlexRepository(
 
     suspend fun loadPlayable(ratingKey: String): MediaContent? {
         return api.getMetadata(ratingKey).mediaContainer.metadata.firstOrNull()?.let(::toContent)
+    }
+
+    /** Reads Plex's live session decision, which is authoritative for Direct Play/Stream/Transcode. */
+    suspend fun loadPlaybackDiagnostics(
+        content: MediaContent,
+        sessionId: String?,
+        requestedQualityLabel: String,
+    ): PlaybackDiagnostics {
+        val sessions = api.getSessions().mediaContainer.metadata
+        val active = sessions.firstOrNull { metadata ->
+            (!sessionId.isNullOrBlank() && metadata.session?.id == sessionId) ||
+                metadata.ratingKey == content.ratingKey
+        }
+        val media = active?.media?.firstOrNull()
+        val transcode = active?.transcodeSession
+        val videoDecision = transcode?.videoDecision ?: media?.videoDecision
+        val audioDecision = transcode?.audioDecision ?: media?.audioDecision
+        val decisions = listOfNotNull(videoDecision, audioDecision, media?.containerDecision)
+            .map(String::lowercase)
+        val mode = when {
+            decisions.any { it == "transcode" } -> PlexPlaybackMode.Transcode
+            transcode != null || media?.protocol.equals("hls", true) ||
+                decisions.any { it == "copy" } -> PlexPlaybackMode.DirectStream
+            active != null -> PlexPlaybackMode.DirectPlay
+            requestedQualityLabel.equals("Original", true) -> PlexPlaybackMode.DirectPlay
+            else -> PlexPlaybackMode.Transcode
+        }
+        val reason = when (mode) {
+            PlexPlaybackMode.Transcode -> buildList {
+                if (!requestedQualityLabel.equals("Original", true)) {
+                    add("Quality was limited to $requestedQualityLabel")
+                }
+                if (videoDecision.equals("transcode", true)) add("Plex is converting the video")
+                if (audioDecision.equals("transcode", true)) add("Plex is converting the audio")
+                if (transcode?.hardwareEncoding?.isNotBlank() == true) add("hardware acceleration active")
+            }.joinToString(" · ").ifBlank { "Plex selected a compatible stream for this TV" }
+            PlexPlaybackMode.DirectStream -> "Original audio/video are being repackaged into a compatible container"
+            PlexPlaybackMode.DirectPlay -> "The TV is playing the original file without conversion"
+            PlexPlaybackMode.Unknown -> null
+        }
+        return PlaybackDiagnostics(
+            mode = mode,
+            reason = reason,
+            videoDecision = videoDecision,
+            audioDecision = audioDecision,
+            source = content.playback?.technicalInfo,
+        )
     }
 
     suspend fun loadTrailers(ratingKey: String): List<MediaContent> {
@@ -200,7 +251,25 @@ class PlexRepository(
         // includeGuids makes older Watchlist entries resolvable even when the
         // local Plex agent and Discover use different primary identifiers.
         val path = "library/sections/${library.key}/all?sort=titleSort:asc&includeGuids=1"
-        return api.getContainer(path).mediaContainer.metadata.map(::toContent)
+        val results = mutableListOf<MediaContent>()
+        val seenRatingKeys = mutableSetOf<String>()
+        var start = 0
+        repeat(MAX_LIBRARY_PAGES) {
+            val container = api.getContainer(path, start = start, size = LIBRARY_PAGE_SIZE)
+                .mediaContainer
+            val page = container.metadata
+            if (page.isEmpty()) return results
+            val mapped = page.map(::toContent).filter { seenRatingKeys.add(it.ratingKey) }
+            if (mapped.isEmpty()) return results
+            results += mapped
+            val nextStart = start + page.size
+            val total = container.totalSize
+            if (total != null && nextStart >= total) return results
+            if (total == null && page.size < LIBRARY_PAGE_SIZE) return results
+            if (nextStart <= start) return results
+            start = nextStart
+        }
+        return results
     }
 
     private suspend fun loadLibraries(libraries: List<PlexLibrary>): List<MediaContent> =
@@ -375,12 +444,24 @@ class PlexRepository(
                 )
             }
         val playback = part?.takeIf { it.id != null }?.let {
+            val media = metadata.media.firstOrNull { candidate ->
+                candidate.parts.any { candidatePart -> candidatePart.id == it.id }
+            } ?: metadata.media.firstOrNull()
             PlaybackSource(
                 partId = it.id!!,
                 directUrl = urls.authenticated(it.key),
                 metadataKey = metadata.key ?: "/library/metadata/${metadata.ratingKey}",
                 audioStreams = audioStreams,
                 subtitles = subtitleStreams,
+                technicalInfo = MediaTechnicalInfo(
+                    bitrateKbps = media?.bitrate,
+                    width = media?.width,
+                    height = media?.height,
+                    videoResolution = media?.videoResolution,
+                    videoCodec = media?.videoCodec,
+                    audioCodec = media?.audioCodec,
+                    container = media?.container ?: it.container,
+                ),
             )
         }
         val secondaryTitle = when (kind) {
@@ -462,6 +543,17 @@ class PlexRepository(
                     )
                 }
                 .sortedBy(MediaMarker::startTimeOffsetMs),
+            chapters = metadata.chapters
+                .filter { it.endTimeOffset > it.startTimeOffset }
+                .mapIndexed { index, chapter ->
+                    MediaChapter(
+                        title = chapter.title?.takeIf(String::isNotBlank) ?: "Chapter ${index + 1}",
+                        startTimeOffsetMs = chapter.startTimeOffset.coerceAtLeast(0L),
+                        endTimeOffsetMs = chapter.endTimeOffset.coerceAtLeast(0L),
+                    )
+                }
+                .sortedBy(MediaChapter::startTimeOffsetMs),
+            audienceRating = metadata.audienceRating ?: metadata.rating,
             playback = playback,
         )
     }
@@ -475,6 +567,8 @@ private const val WATCHLIST_PAGE_ATTEMPTS = 3
 private const val WATCHLIST_RETRY_DELAY_MS = 250L
 private const val WATCHLIST_GUID_BATCH_SIZE = 10
 private const val MAX_CINEMA_TRAILER_CANDIDATES = 16
+private const val LIBRARY_PAGE_SIZE = 200
+private const val MAX_LIBRARY_PAGES = 2_000
 
 private fun Metadata.identityKeys(): Set<String> = buildSet {
     listOfNotNull(guid, primaryGuid).mapNotNullTo(this, ::normalizeGuid)

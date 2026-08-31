@@ -42,11 +42,11 @@ class TapoDiscoveryManager(private val context: Context) {
         // was also found by the bounded TCP fallback.
         val endpoints = subnetEndpoints + broadcastEndpoints
         val semaphore = Semaphore(MAX_PARALLEL_AUTHENTICATIONS)
-        val lights = coroutineScope {
+        val attempts = coroutineScope {
             endpoints.map { (address, endpoint) ->
                 async(Dispatchers.IO) {
                     semaphore.withPermit {
-                        runCatching {
+                        val result = runCatching {
                             val client = TapoLocalClient(address, credentials, endpoint)
                             val info = client.getDeviceInfo()
                             DiscoveredTapoLight(
@@ -60,14 +60,20 @@ class TapoDiscoveryManager(private val context: Context) {
                                 ),
                                 client = client,
                             )
-                        }.getOrNull()
+                        }
+                        TapoDiscoveryAttempt(
+                            light = result.getOrNull(),
+                            failure = result.exceptionOrNull(),
+                        )
                     }
                 }
-            }.awaitAll().filterNotNull().sortedBy { it.light.nickname }
+            }.awaitAll()
         }
+        val lights = attempts.mapNotNull(TapoDiscoveryAttempt::light).sortedBy { it.light.nickname }
         return TapoDiscoveryResult(
             lights = lights,
             fallbackLightCount = lights.count { it.light.ipAddress !in broadcastEndpoints },
+            localAccessBlockedCount = attempts.count { it.failure.hasHttpStatus(403) },
         )
     }
 
@@ -240,6 +246,21 @@ class TapoDiscoveryManager(private val context: Context) {
         const val TCP_PROBE_TIMEOUT_MS = 220
         const val MAX_LOCAL_SUBNETS = 2
     }
+}
+
+private data class TapoDiscoveryAttempt(
+    val light: DiscoveredTapoLight?,
+    val failure: Throwable?,
+)
+
+private fun Throwable?.hasHttpStatus(statusCode: Int): Boolean {
+    var current = this
+    val seen = mutableSetOf<Throwable>()
+    while (current != null && seen.add(current)) {
+        if (current is TapoHttpException && current.statusCode == statusCode) return true
+        current = current.cause
+    }
+    return false
 }
 
 /** Parses the endpoint advertised in a TDP v2 response. Kept internal for protocol regression tests. */

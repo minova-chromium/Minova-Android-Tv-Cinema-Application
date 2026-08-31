@@ -2,6 +2,7 @@ package com.minova.cinema.ui.settings
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -16,11 +17,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -32,6 +40,10 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.window.Dialog
 import androidx.tv.material3.Button
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -41,6 +53,9 @@ import androidx.tv.material3.Text
 import com.minova.cinema.R
 import com.minova.cinema.home.LightingUiState
 import com.minova.cinema.tapo.TapoLightsUiState
+import com.minova.cinema.domain.PlexHomeProfile
+import com.minova.cinema.presentation.PlexProfilesUiState
+import com.minova.cinema.presentation.NetworkAssistantUiState
 import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
@@ -58,6 +73,8 @@ fun SettingsScreen(
     cinemaBumperConfigured: Boolean,
     lightingState: LightingUiState,
     tapoLightsState: TapoLightsUiState,
+    profilesState: PlexProfilesUiState,
+    networkAssistantState: NetworkAssistantUiState,
     onRefresh: () -> Unit,
     onChangeServer: () -> Unit,
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
@@ -75,7 +92,13 @@ fun SettingsScreen(
     onClearTapoCredentials: () -> Unit,
     onDiscoverTapoLights: () -> Unit,
     onTapoLightAssignmentChanged: (String, Boolean) -> Unit,
+    onRefreshProfiles: () -> Unit,
+    onSwitchProfile: (PlexHomeProfile, String?) -> Unit,
+    onRunNetworkTest: () -> Unit,
+    onRequestTvHomeChannels: () -> Unit,
 ) {
+    var pinProfile by remember { mutableStateOf<PlexHomeProfile?>(null) }
+    var pin by remember { mutableStateOf("") }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -124,6 +147,65 @@ fun SettingsScreen(
                 ) {
                     Button(onClick = onRefresh) { Text("Refresh library") }
                     OutlinedButton(onClick = onChangeServer) { Text("Change server") }
+                    OutlinedButton(onClick = onRequestTvHomeChannels) { Text("Add TV Home channels") }
+                }
+            }
+        }
+
+        item {
+            val profiles = when (profilesState) {
+                is PlexProfilesUiState.Ready -> profilesState.profiles
+                is PlexProfilesUiState.Switching -> profilesState.profiles
+                is PlexProfilesUiState.Error -> profilesState.profiles
+                PlexProfilesUiState.Loading -> emptyList()
+            }
+            SettingsCard(title = "Plex Home", subtitle = "Profiles, managed users and PIN protection") {
+                if (profiles.isNotEmpty()) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(profiles, key = PlexHomeProfile::uuid) { profile ->
+                        PlaybackToggleButton(
+                            title = profile.title,
+                            description = buildString {
+                                append(if (profile.isManaged) "Managed user" else if (profile.isAdmin) "Home admin" else "Home member")
+                                if (profile.isProtected) append(" · PIN")
+                            },
+                            checked = profile.isActive,
+                            onClick = {
+                                if (profile.isProtected) {
+                                    pin = ""
+                                    pinProfile = profile
+                                } else onSwitchProfile(profile, null)
+                            },
+                            modifier = Modifier.width(260.dp),
+                        )
+                    }
+                    }
+                } else {
+                    Text(
+                        if (profilesState is PlexProfilesUiState.Loading) "Loading Plex Home…" else "No Plex Home profiles found.",
+                        color = MinovaMuted,
+                        modifier = Modifier.padding(top = 18.dp, bottom = 8.dp),
+                    )
+                }
+                OutlinedButton(
+                    onClick = onRefreshProfiles,
+                    modifier = Modifier.padding(top = 12.dp),
+                ) { Text("Refresh profiles") }
+                when (profilesState) {
+                    is PlexProfilesUiState.Error -> Text(
+                        profilesState.message,
+                        color = Color(0xFFFFB4AB),
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    is PlexProfilesUiState.Switching -> Text(
+                        "Switching profile…",
+                        color = MinovaCyan,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    else -> Unit
                 }
             }
         }
@@ -184,6 +266,49 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+        }
+
+        item {
+            SettingsCard(
+                title = "Network & codec assistant",
+                subtitle = "Test this Plex connection and inspect the TV's decoders",
+            ) {
+                when (networkAssistantState) {
+                    NetworkAssistantUiState.Idle -> Text(
+                        "Run a short local transfer test for an automatic quality recommendation.",
+                        color = MinovaMuted,
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                    NetworkAssistantUiState.Testing -> Text(
+                        "Testing the Plex connection…",
+                        color = MinovaCyan,
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                    is NetworkAssistantUiState.Ready -> {
+                        Text(
+                            "${networkAssistantState.report.speedMbps} Mbps · ${networkAssistantState.report.recommendation}",
+                            color = MinovaCyan,
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(top = 16.dp),
+                        )
+                        Text(
+                            "${networkAssistantState.report.tvSummary}\nDecoders: ${networkAssistantState.report.supportedVideoCodecs.joinToString()}",
+                            color = MinovaMuted,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                    is NetworkAssistantUiState.Error -> Text(
+                        networkAssistantState.message,
+                        color = Color(0xFFFFB4AB),
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                }
+                Button(
+                    onClick = onRunNetworkTest,
+                    enabled = networkAssistantState !is NetworkAssistantUiState.Testing,
+                    modifier = Modifier.padding(top = 16.dp),
+                ) { Text(if (networkAssistantState is NetworkAssistantUiState.Testing) "Testing…" else "Run connection test") }
             }
         }
 
@@ -264,6 +389,59 @@ fun SettingsScreen(
                     onDiscover = onDiscoverTapoLights,
                     onAssignmentChanged = onTapoLightAssignmentChanged,
                 )
+            }
+        }
+    }
+
+    pinProfile?.let { profile ->
+        PlexPinDialog(
+            profile = profile,
+            pin = pin,
+            onPinChanged = { pin = it.filter(Char::isDigit).take(4) },
+            onConfirm = {
+                onSwitchProfile(profile, pin)
+                pinProfile = null
+            },
+            onDismiss = { pinProfile = null },
+        )
+    }
+}
+
+@Composable
+private fun PlexPinDialog(
+    profile: PlexHomeProfile,
+    pin: String,
+    onPinChanged: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.55f)
+                .background(Color(0xFF111821), RoundedCornerShape(22.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(22.dp))
+                .padding(28.dp),
+        ) {
+            Text("Unlock ${profile.title}", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+            Text("Enter the four-digit Plex Home PIN.", color = MinovaMuted, modifier = Modifier.padding(top = 6.dp))
+            BasicTextField(
+                value = pin,
+                onValueChange = onPinChanged,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.headlineMedium.copy(color = Color.White),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 20.dp)
+                    .background(Color(0xFF1B2633), RoundedCornerShape(12.dp))
+                    .border(1.dp, MinovaCyan, RoundedCornerShape(12.dp))
+                    .padding(16.dp),
+            )
+            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = onConfirm, enabled = pin.length == 4) { Text("Switch profile") }
+                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
             }
         }
     }

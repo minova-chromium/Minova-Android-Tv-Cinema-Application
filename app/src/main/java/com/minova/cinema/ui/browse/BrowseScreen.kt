@@ -2,6 +2,10 @@ package com.minova.cinema.ui.browse
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -45,6 +49,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -77,6 +82,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -179,9 +185,7 @@ fun BrowseScreen(
         )
     }
     val homeShelves = remember(catalog) {
-        buildHomeDiscoveryShelves(
-            (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey),
-        )
+        buildHomeDiscoveryShelves(catalog)
     }
     var highlightedContent by remember(tab) {
         mutableStateOf(heroCandidates.firstOrNull())
@@ -192,6 +196,7 @@ fun BrowseScreen(
     val firstContinueFocus = remember(tab) { FocusRequester() }
     val firstGenreFocus = remember(tab) { FocusRequester() }
     val firstPosterFocus = remember(tab, selectedGenre) { FocusRequester() }
+    val firstGridPosterFocus = remember(tab, selectedGenre) { FocusRequester() }
 
     LaunchedEffect(gridGenres, selectedGenre) {
         if (selectedGenre != null && gridGenres.none { it.equals(selectedGenre, ignoreCase = true) }) {
@@ -233,6 +238,8 @@ fun BrowseScreen(
     Box(Modifier.fillMaxSize().background(MinovaBlack)) {
         val requestFirstContentFocus = {
             when {
+                tab != BrowseTab.Home && layout == BrowseLayout.Grid && filteredGridItems.isNotEmpty() ->
+                    firstGridPosterFocus.requestFocus()
                 (if (tab == BrowseTab.Home) homeFeatured.getOrNull(homeFeaturedIndex) else highlightedContent) != null ->
                     heroFocus.requestFocus()
                 continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
@@ -271,6 +278,7 @@ fun BrowseScreen(
             CatalogGrid(
                 media = filteredGridItems,
                 emptyMessage = emptyMessage,
+                firstCardFocusRequester = firstGridPosterFocus,
                 onOpen = onOpen,
             )
         } else {
@@ -342,7 +350,8 @@ private fun buildFeaturedCarousel(media: List<MediaContent>): List<MediaContent>
     ).take(10)
 }
 
-private fun buildHomeDiscoveryShelves(media: List<MediaContent>): List<DiscoveryShelf> {
+private fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoveryShelf> {
+    val media = (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey)
     if (media.isEmpty()) return emptyList()
     val recentlyAdded = media.sortedWith(
         compareByDescending<MediaContent> { it.addedAtEpochSeconds ?: Long.MIN_VALUE }
@@ -358,7 +367,54 @@ private fun buildHomeDiscoveryShelves(media: List<MediaContent>): List<Discovery
             genreGroups.getOrPut(genre) { mutableListOf() }.add(content)
         }
     }
+    val history = (media.filter(MediaContent::isWatched) + catalog.continueWatching)
+        .distinctBy(MediaContent::ratingKey)
+    val preferredGenres = history.flatMap(MediaContent::genres)
+        .groupingBy { it.lowercase(Locale.ROOT) }
+        .eachCount()
+        .entries
+        .sortedByDescending(Map.Entry<String, Int>::value)
+        .map(Map.Entry<String, Int>::key)
+    val watchedKeys = history.mapTo(mutableSetOf(), MediaContent::ratingKey)
+    val topPicks = media.asSequence()
+        .filterNot { it.ratingKey in watchedKeys }
+        .map { item ->
+            val affinity = item.genres.sumOf { genre ->
+                val index = preferredGenres.indexOf(genre.lowercase(Locale.ROOT))
+                if (index < 0) 0 else (preferredGenres.size - index).coerceAtMost(8)
+            }
+            item to (affinity * 10 + ((item.audienceRating ?: 0.0) * 2).toInt())
+        }
+        .sortedByDescending(Pair<MediaContent, Int>::second)
+        .map(Pair<MediaContent, Int>::first)
+        .take(30)
+        .toList()
+    val recentReference = history.maxByOrNull { it.addedAtEpochSeconds ?: Long.MIN_VALUE }
+    val becauseYouWatched = recentReference?.let { watched ->
+        val genres = watched.genres.map { it.lowercase(Locale.ROOT) }.toSet()
+        media.filter { candidate ->
+            candidate.ratingKey !in watchedKeys && candidate.genres.any {
+                it.lowercase(Locale.ROOT) in genres
+            }
+        }.sortedByDescending { it.audienceRating ?: 0.0 }.take(30)
+    }.orEmpty()
+    val unfinishedSeries = catalog.continueWatching.filter {
+        it.kind == MediaKind.Episode || it.kind == MediaKind.Show || it.kind == MediaKind.Season
+    }
     return buildList {
+        if (topPicks.isNotEmpty()) add(DiscoveryShelf("top-picks", "Top Picks for You", topPicks))
+        if (becauseYouWatched.isNotEmpty() && recentReference != null) {
+            add(
+                DiscoveryShelf(
+                    "because-${recentReference.ratingKey}",
+                    "Because You Watched ${recentReference.title}",
+                    becauseYouWatched,
+                ),
+            )
+        }
+        if (unfinishedSeries.isNotEmpty()) {
+            add(DiscoveryShelf("finish-series", "Finish Your Series", unfinishedSeries))
+        }
         add(DiscoveryShelf("recently-added", "Recently Added", recentlyAdded.take(30)))
         add(DiscoveryShelf("new-releases", "New Releases", newReleases.take(30)))
         genreGroups.forEach { (genre, titles) ->
@@ -478,6 +534,7 @@ private fun HeaderIconItem(
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
+            .testTag("header-action-$contentDescription")
             .padding(horizontal = 3.dp)
             .size(44.dp)
             .clip(RoundedCornerShape(7.dp))
@@ -632,6 +689,7 @@ private fun HeaderItem(label: String, selected: Boolean, onDown: () -> Unit, onC
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
+            .testTag("header-tab-$label")
             .padding(horizontal = 3.dp)
             .clip(RoundedCornerShape(7.dp))
             .onFocusChanged { focused = it.isFocused }
@@ -848,7 +906,13 @@ private fun CinematicBrowser(
                                     val first = content.ratingKey == continueWatching.first().ratingKey
                                     ContinueCard(
                                         content = content,
-                                        modifier = if (first) Modifier.focusRequester(firstContinueFocus) else Modifier,
+                                        modifier = if (first) {
+                                            Modifier
+                                                .testTag("browse-first-continue")
+                                                .focusRequester(firstContinueFocus)
+                                        } else {
+                                            Modifier
+                                        },
                                         onOpen = onOpen,
                                         onFocused = onHighlighted,
                                         onUp = { heroFocus.requestFocus() },
@@ -905,7 +969,13 @@ private fun CinematicBrowser(
                             GenrePill(
                                 label = genre ?: "All",
                                 selected = genre == selectedGenre,
-                                modifier = if (first) Modifier.focusRequester(firstGenreFocus) else Modifier,
+                                modifier = if (first) {
+                                    Modifier
+                                        .testTag("browse-first-genre")
+                                        .focusRequester(firstGenreFocus)
+                                } else {
+                                    Modifier
+                                },
                                 onFocused = { contentBrowsing = true },
                                 onUp = {
                                     pendingContentBrowsing = false
@@ -946,6 +1016,78 @@ private fun CinematicBrowser(
                         }
                     }
                 }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = !homeMode && !contentBrowsing && media.isNotEmpty(),
+            enter = fadeIn(tween(420)),
+            exit = fadeOut(tween(180)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 22.dp),
+        ) {
+            BrowseCatalogCue(
+                browseTitle = browseTitle,
+                itemCount = media.size,
+            )
+        }
+    }
+}
+
+/**
+ * The movie/series hero deliberately uses the whole screen. This persistent,
+ * focus-neutral handle makes the hidden catalog discoverable without adding a
+ * second row of controls or stealing a D-Pad press from the hero actions.
+ */
+@Composable
+private fun BrowseCatalogCue(
+    browseTitle: String,
+    itemCount: Int,
+) {
+    val transition = rememberInfiniteTransition(label = "browse_catalog_hint")
+    val arrowOffset by transition.animateFloat(
+        initialValue = -1f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "browse_catalog_hint_arrow",
+    )
+    val title = browseTitle.removePrefix("Browse ").lowercase(Locale.ROOT)
+    Box(
+        modifier = Modifier
+            .testTag("browse-catalog-cue")
+            .clip(RoundedCornerShape(18.dp))
+            .border(1.dp, MinovaWhite.copy(alpha = 0.18f), RoundedCornerShape(18.dp))
+            .background(MinovaNightDeep.copy(alpha = 0.92f))
+            .padding(horizontal = 22.dp, vertical = 10.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Image(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(MinovaCyan),
+                modifier = Modifier
+                    .size(24.dp)
+                    .graphicsLayer { translationY = arrowOffset },
+            )
+            Column {
+                Text(
+                    "Press Down to browse $title",
+                    color = MinovaWhite,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "$itemCount titles · genres · A–Z grid",
+                    color = MinovaMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }
@@ -1107,7 +1249,10 @@ private fun HeroContent(
                 },
                 icon = Icons.Default.PlayArrow,
                 primary = true,
-                modifier = Modifier.focusRequester(focusRequester).onPreviewKeyEvent { event ->
+                modifier = Modifier
+                    .testTag("hero-primary-action")
+                    .focusRequester(focusRequester)
+                    .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when (event.key) {
                         Key.DirectionLeft -> if (carouselCount > 1) {
@@ -1343,6 +1488,7 @@ private fun CinematicPosterCard(
 private fun CatalogGrid(
     media: List<MediaContent>,
     emptyMessage: String,
+    firstCardFocusRequester: FocusRequester,
     onOpen: (MediaContent) -> Unit,
 ) {
     if (media.isEmpty()) return EmptyMessage(emptyMessage)
@@ -1362,8 +1508,10 @@ private fun CatalogGrid(
     val gridState = rememberLazyGridState()
     val alphabetState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val cardFocusRequesters = remember(sortedMedia) {
-        sortedMedia.associate { it.ratingKey to FocusRequester() }
+    val cardFocusRequesters = remember(sortedMedia, firstCardFocusRequester) {
+        sortedMedia.mapIndexed { index, content ->
+            content.ratingKey to if (index == 0) firstCardFocusRequester else FocusRequester()
+        }.toMap()
     }
     val bucketFocusRequesters = remember(sortedMedia) {
         AlphabetBuckets.associateWith { FocusRequester() }
@@ -1415,6 +1563,7 @@ private fun CatalogGrid(
                     content = content,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(if (index == 0) Modifier.testTag("catalog-grid-first-card") else Modifier)
                         .focusRequester(cardFocusRequesters.getValue(content.ratingKey))
                         .onPreviewKeyEvent { event ->
                             if (

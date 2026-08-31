@@ -3,6 +3,8 @@ package com.minova.cinema.presentation
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaContent
+import com.minova.cinema.domain.PlexHomeProfile
+import com.minova.cinema.data.PlaybackCapabilityReport
 
 sealed interface CinemaUiState {
     data class Onboarding(
@@ -42,4 +44,18 @@ sealed interface MovieDetailUiState {
         val trailers: List<MediaContent>,
     ) : MovieDetailUiState
     data class Error(val movie: MediaContent, val message: String) : MovieDetailUiState
+}
+
+sealed interface PlexProfilesUiState {
+    data object Loading : PlexProfilesUiState
+    data class Ready(val profiles: List<PlexHomeProfile>) : PlexProfilesUiState
+    data class Switching(val profiles: List<PlexHomeProfile>, val targetUuid: String) : PlexProfilesUiState
+    data class Error(val message: String, val profiles: List<PlexHomeProfile> = emptyList()) : PlexProfilesUiState
+}
+
+sealed interface NetworkAssistantUiState {
+    data object Idle : NetworkAssistantUiState
+    data object Testing : NetworkAssistantUiState
+    data class Ready(val report: PlaybackCapabilityReport) : NetworkAssistantUiState
+    data class Error(val message: String) : NetworkAssistantUiState
 }

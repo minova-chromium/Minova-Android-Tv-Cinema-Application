@@ -6,6 +6,26 @@ import org.junit.Test
 
 class PlexExtrasParsingTest {
     @Test
+    fun playbackMetadataParsesChaptersAndPlexSessionDecisions() {
+        val response = Gson().fromJson(
+            """
+            {"MediaContainer":{"Metadata":[{
+              "ratingKey":"7",
+              "Chapter":[{"title":"Opening","startTimeOffset":0,"endTimeOffset":60000}],
+              "Session":{"id":"session-7"},
+              "TranscodeSession":{"videoDecision":"transcode","audioDecision":"copy"}
+            }]}}
+            """.trimIndent(),
+            PlexLibraryResponse::class.java,
+        )
+
+        val metadata = response.mediaContainer.metadata.single()
+        assertEquals("Opening", metadata.chapters.single().title)
+        assertEquals("session-7", metadata.session?.id)
+        assertEquals("transcode", metadata.transcodeSession?.videoDecision)
+    }
+
+    @Test
     fun metadataIncludeExtrasResponseExposesTrailer() {
         val response = Gson().fromJson(
             """

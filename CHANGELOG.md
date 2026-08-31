@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.8.0 — 2026-09-01
+
+### Playback intelligence, profiles, TV Home, and performance
+
+- Added live Plex playback diagnostics showing Direct Play, Direct Stream, or Transcoding, the converted stream components, and the active decision reason.
+- Added Plex-powered Skip Intro, chapter seeking, positive subtitle timing correction, and manual audio-delay correction with a clear passthrough warning.
+- Added paged 200-title Plex library requests, a private token-free metadata cache, and Coil artwork prefetching to reduce first-load waits and artwork flashes.
+- Added personalized Top Picks, Because You Watched, and Finish Your Series shelves using Plex watch history, ratings, genres, and real server artwork.
+- Added Android TV Home Continue Watching and Plex Watchlist channels with title deep links and a foreground Settings action for launcher approval.
+- Added Plex Home profile discovery and switching, including managed users and four-digit PIN-protected profiles.
+- Added a Plex connection-speed and TV codec assistant with an automatic quality recommendation.
+- Expanded Tapo L630 support with KLAP v2/SHIP discovery handling and clear guidance when Tapo's Third-Party Compatibility switch is disabled.
+- Smoothed Tapo Cinema Room fades with 100 ms synchronized cosine easing and exact deadline compensation.
+- Added large-library pagination, playback-decision, marker/chapter, lighting-ramp, and emulator D-pad regression tests.
+
 ## 2.7.0 — 2026-08-31
 
 ### Cinematic browsing and broader Tapo compatibility

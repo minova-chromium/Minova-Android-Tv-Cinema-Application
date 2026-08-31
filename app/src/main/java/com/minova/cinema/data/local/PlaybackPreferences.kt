@@ -11,6 +11,8 @@ data class PlaybackSettings(
     val cinemaModeEnabled: Boolean = false,
     val cinemaTrailersEnabled: Boolean = true,
     val cinemaBumperUri: String? = null,
+    val audioDelayMs: Int = 0,
+    val subtitleDelayMs: Int = 0,
 )
 
 /** Persistent living-room playback preferences, independent of Plex login data. */
@@ -30,6 +32,8 @@ class PlaybackPreferences(context: Context) {
         cinemaModeEnabled = preferences.getBoolean(KEY_CINEMA_MODE, false),
         cinemaTrailersEnabled = preferences.getBoolean(KEY_CINEMA_TRAILERS, true),
         cinemaBumperUri = preferences.getString(KEY_CINEMA_BUMPER_URI, null),
+        audioDelayMs = preferences.getInt(KEY_AUDIO_DELAY_MS, 0).coerceIn(0, 500),
+        subtitleDelayMs = preferences.getInt(KEY_SUBTITLE_DELAY_MS, 0).coerceIn(0, 5_000),
     )
 
     fun setAutoplayNextEpisode(enabled: Boolean): PlaybackSettings {
@@ -80,6 +84,16 @@ class PlaybackPreferences(context: Context) {
         return read()
     }
 
+    fun setAudioDelayMs(delayMs: Int): PlaybackSettings {
+        preferences.edit { putInt(KEY_AUDIO_DELAY_MS, delayMs.coerceIn(0, 500)) }
+        return read()
+    }
+
+    fun setSubtitleDelayMs(delayMs: Int): PlaybackSettings {
+        preferences.edit { putInt(KEY_SUBTITLE_DELAY_MS, delayMs.coerceIn(0, 5_000)) }
+        return read()
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "minova_cinema_playback"
         const val KEY_AUTOPLAY_NEXT = "autoplay_next_episode"
@@ -89,6 +103,8 @@ class PlaybackPreferences(context: Context) {
         const val KEY_CINEMA_MODE = "cinema_mode_enabled"
         const val KEY_CINEMA_TRAILERS = "cinema_trailers_enabled"
         const val KEY_CINEMA_BUMPER_URI = "cinema_bumper_uri"
+        const val KEY_AUDIO_DELAY_MS = "audio_delay_ms"
+        const val KEY_SUBTITLE_DELAY_MS = "subtitle_delay_ms"
         const val DEFAULT_INACTIVITY_TIMEOUT_MS = 3L * 60L * 60L * 1_000L
         const val MIN_INACTIVITY_TIMEOUT_MS = 30L * 60L * 1_000L
         const val MAX_INACTIVITY_TIMEOUT_MS = 6L * 60L * 60L * 1_000L

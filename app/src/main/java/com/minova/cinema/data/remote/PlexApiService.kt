@@ -2,6 +2,7 @@ package com.minova.cinema.data.remote
 
 import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Path
 import retrofit2.http.PUT
 import retrofit2.http.Query
@@ -12,12 +13,20 @@ interface PlexApiService {
     suspend fun getLibrarySections(): PlexLibraryResponse
 
     @GET
-    suspend fun getContainer(@Url path: String): PlexLibraryResponse
+    suspend fun getContainer(
+        @Url path: String,
+        @Header("X-Plex-Container-Start") start: Int? = null,
+        @Header("X-Plex-Container-Size") size: Int? = null,
+    ): PlexLibraryResponse
+
+    @GET("status/sessions")
+    suspend fun getSessions(): PlexLibraryResponse
 
     @GET("library/metadata/{ratingKey}")
     suspend fun getMetadata(
         @Path("ratingKey") ratingKey: String,
         @Query("includeMarkers") includeMarkers: Int = 1,
+        @Query("includeChapters") includeChapters: Int = 1,
     ): PlexLibraryResponse
 
     @GET("library/metadata/{ratingKey}")
@@ -25,6 +34,7 @@ interface PlexApiService {
         @Path("ratingKey") ratingKey: String,
         @Query("includeExtras") includeExtras: Int = 1,
         @Query("includeMarkers") includeMarkers: Int = 1,
+        @Query("includeChapters") includeChapters: Int = 1,
     ): PlexLibraryResponse
 
     @GET("library/sections/{sectionId}/unwatched")

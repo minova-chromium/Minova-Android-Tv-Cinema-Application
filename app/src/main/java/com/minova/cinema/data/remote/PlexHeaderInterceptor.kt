@@ -9,7 +9,7 @@ class PlexHeaderInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val requestBuilder = chain.request().newBuilder()
         for ((name, value) in PlexConfig.requestHeaders(connection)) {
-            requestBuilder.header(name, value)
+            if (chain.request().header(name) == null) requestBuilder.header(name, value)
         }
         return chain.proceed(requestBuilder.build())
     }

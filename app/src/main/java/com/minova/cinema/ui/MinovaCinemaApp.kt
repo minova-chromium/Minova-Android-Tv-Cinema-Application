@@ -69,6 +69,8 @@ fun MinovaCinemaApp(
     ambientInactivityTracker: AmbientInactivityTracker,
     cinemaLightingController: CinemaLightingController,
     tapoLightsViewModel: TapoLightsViewModel,
+    deepLinkRatingKey: String? = null,
+    onDeepLinkConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -112,6 +114,8 @@ fun MinovaCinemaApp(
                 ambientInactivityTracker,
                 cinemaLightingController,
                 tapoLightsViewModel,
+                deepLinkRatingKey,
+                onDeepLinkConsumed,
             )
 
             (updateState as? UpdateUiState.Available)?.let { available ->
@@ -142,11 +146,15 @@ private fun MainScreen(
     ambientInactivityTracker: AmbientInactivityTracker,
     cinemaLightingController: CinemaLightingController,
     tapoLightsViewModel: TapoLightsViewModel,
+    deepLinkRatingKey: String?,
+    onDeepLinkConsumed: () -> Unit,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
+    val profilesState by viewModel.profiles.collectAsStateWithLifecycle()
+    val networkAssistantState by viewModel.networkAssistant.collectAsStateWithLifecycle()
     val lightingState by cinemaLightingController.state.collectAsStateWithLifecycle()
     val tapoLightsState by tapoLightsViewModel.state.collectAsStateWithLifecycle()
     val routes = rememberRoutes()
@@ -194,6 +202,25 @@ private fun MainScreen(
         )
         is CinemaUiState.Ready -> {
             val currentRoute = routes.last()
+
+            LaunchedEffect(deepLinkRatingKey, state.catalog) {
+                val ratingKey = deepLinkRatingKey ?: return@LaunchedEffect
+                val content = (
+                    state.catalog.movies + state.catalog.shows +
+                        state.catalog.continueWatching + state.catalog.myList
+                    ).firstOrNull { it.ratingKey == ratingKey }
+                if (content != null) {
+                    when (content.kind) {
+                        MediaKind.Show -> viewModel.loadShow(content)
+                        MediaKind.Movie -> viewModel.loadMovie(content)
+                        else -> Unit
+                    }
+                    routes.clear()
+                    routes.add(CinemaRoute.Browse)
+                    routes.add(CinemaRoute.Detail(content))
+                }
+                onDeepLinkConsumed()
+            }
 
             BackHandler(enabled = routes.size > 1) {
                 val leavingPlayer = routes.lastOrNull() is CinemaRoute.Player
@@ -327,6 +354,15 @@ private fun MainScreen(
                         onAudioStreamSelected = { audioId, onComplete ->
                             viewModel.selectAudio(route.plan.mainFeature, audioId, onComplete)
                         },
+                        initialAudioDelayMs = playbackSettings.audioDelayMs,
+                        initialSubtitleDelayMs = playbackSettings.subtitleDelayMs,
+                        onAudioDelayChanged = { delayMs ->
+                            playbackSettings = playbackPreferences.setAudioDelayMs(delayMs)
+                        },
+                        onSubtitleDelayChanged = { delayMs ->
+                            playbackSettings = playbackPreferences.setSubtitleDelayMs(delayMs)
+                        },
+                        onDiagnosticsRequested = viewModel::loadPlaybackDiagnostics,
                         onPlaybackEnded = { onReady ->
                             if (route.plan.mainFeature.kind == MediaKind.Extra) {
                                 // A trailer behaves like Plex's preview player:
@@ -353,6 +389,8 @@ private fun MainScreen(
                         cinemaBumperConfigured = !playbackSettings.cinemaBumperUri.isNullOrBlank(),
                         lightingState = lightingState,
                         tapoLightsState = tapoLightsState,
+                        profilesState = profilesState,
+                        networkAssistantState = networkAssistantState,
                         onRefresh = {
                             routes.clear()
                             routes.add(CinemaRoute.Browse)
@@ -390,6 +428,10 @@ private fun MainScreen(
                         onClearTapoCredentials = tapoLightsViewModel::clearCredentials,
                         onDiscoverTapoLights = tapoLightsViewModel::discover,
                         onTapoLightAssignmentChanged = tapoLightsViewModel::setAssigned,
+                        onRefreshProfiles = viewModel::refreshProfiles,
+                        onSwitchProfile = viewModel::switchProfile,
+                        onRunNetworkTest = viewModel::runNetworkAndCodecTest,
+                        onRequestTvHomeChannels = viewModel::requestTvHomeChannels,
                     )
                 }
             }

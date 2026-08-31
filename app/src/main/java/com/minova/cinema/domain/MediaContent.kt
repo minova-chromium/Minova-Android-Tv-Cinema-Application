@@ -46,12 +46,44 @@ data class MediaMarker(
     val isFinal: Boolean,
 )
 
+data class MediaChapter(
+    val title: String,
+    val startTimeOffsetMs: Long,
+    val endTimeOffsetMs: Long,
+)
+
+data class MediaTechnicalInfo(
+    val bitrateKbps: Int? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val videoResolution: String? = null,
+    val videoCodec: String? = null,
+    val audioCodec: String? = null,
+    val container: String? = null,
+)
+
+enum class PlexPlaybackMode(val label: String) {
+    DirectPlay("Direct Play"),
+    DirectStream("Direct Stream"),
+    Transcode("Transcoding"),
+    Unknown("Analyzing"),
+}
+
+data class PlaybackDiagnostics(
+    val mode: PlexPlaybackMode = PlexPlaybackMode.Unknown,
+    val reason: String? = null,
+    val videoDecision: String? = null,
+    val audioDecision: String? = null,
+    val source: MediaTechnicalInfo? = null,
+)
+
 data class PlaybackSource(
     val partId: Long,
     val directUrl: String,
     val metadataKey: String,
     val audioStreams: List<AudioStream>,
     val subtitles: List<SubtitleStream>,
+    val technicalInfo: MediaTechnicalInfo = MediaTechnicalInfo(),
 )
 
 data class MediaContent(
@@ -79,6 +111,8 @@ data class MediaContent(
     val isWatched: Boolean = false,
     val credits: List<MediaCredit> = emptyList(),
     val markers: List<MediaMarker> = emptyList(),
+    val chapters: List<MediaChapter> = emptyList(),
+    val audienceRating: Double? = null,
     val playback: PlaybackSource? = null,
 ) {
     val progress: Float

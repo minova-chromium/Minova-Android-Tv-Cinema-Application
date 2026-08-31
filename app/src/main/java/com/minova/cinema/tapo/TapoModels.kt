@@ -18,6 +18,7 @@ data class TapoLightsUiState(
     val hasCredentials: Boolean = false,
     val discovering: Boolean = false,
     val lights: List<TapoLight> = emptyList(),
+    val localAccessBlockedCount: Int = 0,
     val message: String? = null,
 )
 
@@ -36,4 +37,5 @@ internal data class TapoEndpointHint(
 internal data class TapoDiscoveryResult(
     val lights: List<DiscoveredTapoLight>,
     val fallbackLightCount: Int,
+    val localAccessBlockedCount: Int,
 )

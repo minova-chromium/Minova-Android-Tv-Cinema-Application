@@ -1,6 +1,7 @@
 package com.minova.cinema
 
 import android.os.Bundle
+import android.content.Intent
 import android.view.KeyEvent
 import android.view.Window
 import androidx.activity.ComponentActivity
@@ -9,6 +10,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.minova.cinema.presentation.CinemaViewModel
 import com.minova.cinema.presentation.TapoLightsViewModel
 import com.minova.cinema.update.UpdateInstaller
@@ -28,9 +32,11 @@ class MainActivity : ComponentActivity() {
     }
     private val ambientInactivityTracker = AmbientInactivityTracker()
     private lateinit var cinemaLightingController: CinemaLightingController
+    private var pendingDeepLinkRatingKey by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingDeepLinkRatingKey = intent.deepLinkRatingKey()
         cinemaLightingController = CinemaLightingProvider.create(applicationContext)
         cinemaLightingController.registerPermissionCaller(this)
         enableEdgeToEdge()
@@ -49,6 +55,8 @@ class MainActivity : ComponentActivity() {
                         ambientInactivityTracker,
                         cinemaLightingController,
                         tapoLightsViewModel,
+                        deepLinkRatingKey = pendingDeepLinkRatingKey,
+                        onDeepLinkConsumed = { pendingDeepLinkRatingKey = null },
                     )
                 }
             }
@@ -65,6 +73,12 @@ class MainActivity : ComponentActivity() {
         // If Android sent the user to "Install unknown apps", returning to
         // Minova Cinema continues the pending installation automatically.
         UpdateInstaller.resumePendingInstall(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingDeepLinkRatingKey = intent.deepLinkRatingKey()
     }
 
     override fun onDestroy() {
@@ -84,3 +98,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private fun Intent?.deepLinkRatingKey(): String? = this?.data
+    ?.takeIf { it.scheme == "minova" && it.host == "content" }
+    ?.pathSegments
+    ?.firstOrNull()
+    ?.takeIf(String::isNotBlank)

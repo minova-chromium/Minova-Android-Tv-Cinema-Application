@@ -5,7 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.minova.cinema.data.PlexRepository
+import com.minova.cinema.data.PlexProfileRepository
+import com.minova.cinema.data.PlaybackCapabilityAssistant
 import com.minova.cinema.data.local.PlexPreferences
+import com.minova.cinema.data.local.PlexCatalogCache
+import com.minova.cinema.data.local.PlexArtworkPrefetcher
 import com.minova.cinema.data.remote.PlexConfig
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexServiceFactory
@@ -13,6 +17,9 @@ import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.CinemaPlaybackPlan
 import com.minova.cinema.domain.MediaKind
+import com.minova.cinema.domain.PlaybackDiagnostics
+import com.minova.cinema.data.remote.PlaybackQuality
+import com.minova.cinema.tvhome.TvHomePublisher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +29,9 @@ import kotlinx.coroutines.launch
 
 class CinemaViewModel(
     private val preferences: PlexPreferences,
+    private val catalogCache: PlexCatalogCache,
+    private val artworkPrefetcher: PlexArtworkPrefetcher,
+    private val tvHomePublisher: TvHomePublisher,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<CinemaUiState>(CinemaUiState.Loading)
     val uiState: StateFlow<CinemaUiState> = _uiState.asStateFlow()
@@ -31,6 +41,12 @@ class CinemaViewModel(
 
     private val _movieDetail = MutableStateFlow<MovieDetailUiState>(MovieDetailUiState.Idle)
     val movieDetail: StateFlow<MovieDetailUiState> = _movieDetail.asStateFlow()
+
+    private val _profiles = MutableStateFlow<PlexProfilesUiState>(PlexProfilesUiState.Loading)
+    val profiles: StateFlow<PlexProfilesUiState> = _profiles.asStateFlow()
+
+    private val _networkAssistant = MutableStateFlow<NetworkAssistantUiState>(NetworkAssistantUiState.Idle)
+    val networkAssistant: StateFlow<NetworkAssistantUiState> = _networkAssistant.asStateFlow()
 
     private var connection: PlexConnection? = null
     private var repository: PlexRepository? = null
@@ -80,6 +96,70 @@ class CinemaViewModel(
         _uiState.value = CinemaUiState.Onboarding()
     }
 
+    fun refreshProfiles() {
+        val owner = preferences.readOwnerConnection() ?: return
+        viewModelScope.launch {
+            val previous = (_profiles.value as? PlexProfilesUiState.Ready)?.profiles.orEmpty()
+            runCatching {
+                PlexProfileRepository(owner, PlexServiceFactory.createHome(owner))
+                    .loadProfiles(preferences.readActiveProfileUuid())
+            }.onSuccess { _profiles.value = PlexProfilesUiState.Ready(it) }
+                .onFailure { _profiles.value = PlexProfilesUiState.Error(it.userMessage(), previous) }
+        }
+    }
+
+    fun switchProfile(profile: com.minova.cinema.domain.PlexHomeProfile, pin: String?) {
+        val owner = preferences.readOwnerConnection() ?: return
+        val currentProfiles = when (val current = _profiles.value) {
+            is PlexProfilesUiState.Ready -> current.profiles
+            is PlexProfilesUiState.Error -> current.profiles
+            is PlexProfilesUiState.Switching -> current.profiles
+            PlexProfilesUiState.Loading -> emptyList()
+        }
+        _profiles.value = PlexProfilesUiState.Switching(currentProfiles, profile.uuid)
+        viewModelScope.launch {
+            runCatching {
+                PlexProfileRepository(owner, PlexServiceFactory.createHome(owner)).switch(profile, pin)
+            }.onSuccess { switched ->
+                preferences.saveProfileConnection(switched, profile.uuid)
+                _profiles.value = PlexProfilesUiState.Ready(
+                    currentProfiles.map { it.copy(isActive = it.uuid == profile.uuid) },
+                )
+                connectInternal(switched, persist = false, onboarding = false)
+            }.onFailure {
+                val message = if (profile.isProtected) {
+                    "Plex rejected that PIN. Try again."
+                } else it.userMessage()
+                _profiles.value = PlexProfilesUiState.Error(message, currentProfiles)
+            }
+        }
+    }
+
+    fun runNetworkAndCodecTest() {
+        val ready = _uiState.value as? CinemaUiState.Ready ?: return
+        val currentRepository = repository ?: return
+        val sample = (ready.catalog.movies + ready.catalog.continueWatching)
+            .firstOrNull { it.kind == MediaKind.Movie || it.kind == MediaKind.Episode }
+            ?: return run {
+                _networkAssistant.value = NetworkAssistantUiState.Error("No playable media is available for a server speed test.")
+            }
+        _networkAssistant.value = NetworkAssistantUiState.Testing
+        viewModelScope.launch {
+            runCatching {
+                val playable = currentRepository.loadPlayable(sample.ratingKey)
+                    ?: error("Plex did not return a playable test item.")
+                val url = playable.playback?.directUrl
+                    ?: error("The selected Plex item has no direct media URL.")
+                PlaybackCapabilityAssistant().analyze(ready.connection, url)
+            }.onSuccess { _networkAssistant.value = NetworkAssistantUiState.Ready(it) }
+                .onFailure { _networkAssistant.value = NetworkAssistantUiState.Error(it.userMessage()) }
+        }
+    }
+
+    fun requestTvHomeChannels() {
+        tvHomePublisher.requestChannelsBrowsable()
+    }
+
     fun refresh(silent: Boolean = false) {
         val currentConnection = connection ?: return
         val currentRepository = repository ?: return
@@ -91,7 +171,11 @@ class CinemaViewModel(
             else _uiState.value = CinemaUiState.Loading
             try {
                 val catalog = applyLocalLibrary(currentRepository.loadCatalog())
+                catalogCache.write(currentConnection, catalog)
+                artworkPrefetcher.prefetch(catalog)
+                tvHomePublisher.publish(catalog)
                 _uiState.value = CinemaUiState.Ready(catalog, currentConnection)
+                refreshProfiles()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -368,6 +452,20 @@ class CinemaViewModel(
         }
     }
 
+    fun loadPlaybackDiagnostics(
+        content: MediaContent,
+        sessionId: String?,
+        quality: PlaybackQuality,
+        onReady: (PlaybackDiagnostics) -> Unit,
+    ) {
+        val currentRepository = repository ?: return
+        viewModelScope.launch {
+            runCatching {
+                currentRepository.loadPlaybackDiagnostics(content, sessionId, quality.label)
+            }.onSuccess(onReady)
+        }
+    }
+
     private fun connectInternal(
         newConnection: PlexConnection,
         persist: Boolean,
@@ -375,24 +473,36 @@ class CinemaViewModel(
     ) {
         catalogJob?.cancel()
         watchlistJob?.cancel()
+        val cached = if (onboarding) null else catalogCache.read(newConnection)
         catalogJob = viewModelScope.launch {
-            _uiState.value = if (onboarding) CinemaUiState.Onboarding(connecting = true)
-            else CinemaUiState.Loading
+            _uiState.value = when {
+                onboarding -> CinemaUiState.Onboarding(connecting = true)
+                cached != null -> CinemaUiState.Ready(cached, newConnection, refreshing = true)
+                else -> CinemaUiState.Loading
+            }
             try {
                 val newRepository = PlexRepository(
                     connection = newConnection,
                     api = PlexServiceFactory.create(newConnection),
                     watchlistApi = PlexServiceFactory.createWatchlist(newConnection),
                 )
-                val catalog = applyLocalLibrary(newRepository.loadCatalog())
+                // Cached browsing can resolve details immediately while the
+                // paged background refresh is still in progress.
                 connection = newConnection
                 repository = newRepository
+                val catalog = applyLocalLibrary(newRepository.loadCatalog())
                 if (persist) preferences.saveConnection(newConnection)
+                catalogCache.write(newConnection, catalog)
+                artworkPrefetcher.prefetch(catalog)
+                tvHomePublisher.publish(catalog)
                 _uiState.value = CinemaUiState.Ready(catalog, newConnection)
+                refreshProfiles()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
-                _uiState.value = if (onboarding) {
+                _uiState.value = if (cached != null) {
+                    CinemaUiState.Ready(cached, newConnection, refreshing = false)
+                } else if (onboarding) {
                     CinemaUiState.Onboarding(error = error.userMessage())
                 } else {
                     CinemaUiState.Error(error.userMessage())
@@ -417,12 +527,21 @@ class CinemaViewModel(
     }
 
     class Factory(context: Context) : ViewModelProvider.Factory {
-        private val preferences = PlexPreferences(context)
+        private val appContext = context.applicationContext
+        private val preferences = PlexPreferences(appContext)
+        private val catalogCache = PlexCatalogCache(appContext)
+        private val artworkPrefetcher = PlexArtworkPrefetcher(appContext)
+        private val tvHomePublisher = TvHomePublisher(appContext)
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(CinemaViewModel::class.java))
-            return CinemaViewModel(preferences) as T
+            return CinemaViewModel(
+                preferences,
+                catalogCache,
+                artworkPrefetcher,
+                tvHomePublisher,
+            ) as T
         }
     }
 }

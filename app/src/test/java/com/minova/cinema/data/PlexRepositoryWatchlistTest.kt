@@ -8,6 +8,11 @@ import com.minova.cinema.data.remote.PlexApiService
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexLibraryResponse
 import com.minova.cinema.data.remote.PlexWatchlistApiService
+import com.minova.cinema.data.remote.TranscodeSession
+import com.minova.cinema.data.remote.Session
+import com.minova.cinema.domain.MediaContent
+import com.minova.cinema.domain.MediaKind
+import com.minova.cinema.domain.PlexPlaybackMode
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -17,6 +22,70 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
 class PlexRepositoryWatchlistTest {
+    @Test
+    fun `live Plex session reports transcode components and reason`() = runBlocking {
+        val api = FakePlexApi(emptyList(), emptyMap()).apply {
+            sessionsResponse = PlexLibraryResponse(
+                MediaContainer(
+                    metadata = listOf(
+                        Metadata(
+                            ratingKey = "42",
+                            session = Session(id = "session-42"),
+                            transcodeSession = TranscodeSession(
+                                videoDecision = "transcode",
+                                audioDecision = "copy",
+                                protocol = "hls",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+        val repository = PlexRepository(
+            PlexConnection("http://127.0.0.1:32400/", "token"),
+            api,
+            FakeWatchlistApi(emptyMap(), 0),
+        )
+        val content = MediaContent(
+            ratingKey = "42",
+            title = "Test",
+            secondaryTitle = null,
+            summary = null,
+            tagline = null,
+            year = 2026,
+            durationMs = 1_000L,
+            viewOffsetMs = 0L,
+            posterUrl = null,
+            backdropUrl = null,
+            contentRating = null,
+            kind = MediaKind.Movie,
+        )
+
+        val result = repository.loadPlaybackDiagnostics(content, "session-42", "1080p")
+
+        assertEquals(PlexPlaybackMode.Transcode, result.mode)
+        assertTrue(result.reason.orEmpty().contains("converting the video"))
+        assertEquals("copy", result.audioDecision)
+    }
+
+    @Test
+    fun `large libraries are fetched in stable 200 item pages`() = runBlocking {
+        val media = (1..450).map { index ->
+            Metadata(ratingKey = index.toString(), title = "Movie $index", type = "movie")
+        }
+        val api = FakePlexApi(media, emptyMap())
+        val repository = PlexRepository(
+            connection = PlexConnection("http://127.0.0.1:32400/", "token"),
+            api = api,
+            watchlistApi = FakeWatchlistApi(emptyMap(), 0),
+        )
+
+        val catalog = repository.loadCatalog()
+
+        assertEquals(450, catalog.movies.size)
+        assertEquals(listOf(0, 200, 400), api.containerStarts)
+    }
+
     @Test
     fun watchlistIsPaginatedAndResolvedThroughTheLocalServer() = runBlocking {
         val first = movie(
@@ -180,6 +249,8 @@ private class FakePlexApi(
     private val resolvedItems: Map<String, Metadata>,
 ) : PlexApiService {
     val resolveRequests = mutableListOf<String>()
+    val containerStarts = mutableListOf<Int>()
+    var sessionsResponse: PlexLibraryResponse = PlexLibraryResponse()
 
     override suspend fun getLibrarySections(): PlexLibraryResponse = PlexLibraryResponse(
         MediaContainer(
@@ -187,8 +258,20 @@ private class FakePlexApi(
         ),
     )
 
-    override suspend fun getContainer(path: String): PlexLibraryResponse =
-        PlexLibraryResponse(MediaContainer(size = libraryItems.size, metadata = libraryItems))
+    override suspend fun getContainer(path: String, start: Int?, size: Int?): PlexLibraryResponse {
+        val pageStart = start ?: 0
+        val pageSize = size ?: libraryItems.size
+        containerStarts += pageStart
+        val page = libraryItems.drop(pageStart).take(pageSize)
+        return PlexLibraryResponse(
+            MediaContainer(
+                size = page.size,
+                offset = pageStart,
+                totalSize = libraryItems.size,
+                metadata = page,
+            ),
+        )
+    }
 
     override suspend fun resolveMetadataGuids(
         guids: String,
@@ -205,12 +288,14 @@ private class FakePlexApi(
 
     override suspend fun getOnDeck(): PlexLibraryResponse = PlexLibraryResponse()
 
-    override suspend fun getMetadata(ratingKey: String, includeMarkers: Int) = unused()
+    override suspend fun getMetadata(ratingKey: String, includeMarkers: Int, includeChapters: Int) = unused()
     override suspend fun getMetadataWithExtras(
         ratingKey: String,
         includeExtras: Int,
         includeMarkers: Int,
+        includeChapters: Int,
     ) = unused()
+    override suspend fun getSessions() = sessionsResponse
     override suspend fun getUnwatchedMovies(sectionId: String) = unused()
     override suspend fun getChildren(ratingKey: String) = unused()
     override suspend fun getExtras(ratingKey: String) = unused()

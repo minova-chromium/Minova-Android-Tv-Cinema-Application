@@ -1,5 +1,6 @@
 package com.minova.cinema.tapo
 
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -12,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.roundToInt
 
 /** Coordinates discovery, assignment persistence, and synchronized fades. */
 class TapoLightsRepository(
@@ -94,10 +98,17 @@ class TapoLightsRepository(
                         hasCredentials = true,
                         discovering = false,
                         lights = lights,
+                        localAccessBlockedCount = discovery.localAccessBlockedCount,
                         message = if (lights.isEmpty()) {
-                            "No compatible Tapo lights were found using KLAP or legacy local control. " +
-                                "Confirm the TV and lights are on the same LAN, the Tapo login is correct, " +
-                                "and client isolation is disabled."
+                            if (discovery.localAccessBlockedCount > 0) {
+                                "${discovery.localAccessBlockedCount} Tapo device(s) answered on the LAN but " +
+                                    "blocked third-party local control. Enable Third-Party Compatibility in " +
+                                    "the Tapo app, then scan again."
+                            } else {
+                                "No compatible Tapo lights were found using KLAP or legacy local control. " +
+                                    "Confirm the TV and lights are on the same LAN, the Tapo login is correct, " +
+                                    "and client isolation is disabled."
+                            }
                         } else {
                             val suffix = if (lights.size == 1) "light" else "lights"
                             buildString {
@@ -106,6 +117,9 @@ class TapoLightsRepository(
                                     append(" The local fallback scan found ")
                                     append(discovery.fallbackLightCount)
                                     append(" that did not answer the broadcast.")
+                                }
+                                if (discovery.localAccessBlockedCount > 0) {
+                                    append(" ${discovery.localAccessBlockedCount} more Tapo device(s) blocked local control.")
                                 }
                             }
                         },
@@ -188,21 +202,29 @@ class TapoLightsRepository(
     private suspend fun fade(targets: List<FadeTarget>, durationMs: Long) {
         if (targets.isEmpty()) return
         val steps = (durationMs / STEP_INTERVAL_MS).toInt().coerceAtLeast(1)
+        val startedAt = SystemClock.elapsedRealtime()
         for (step in 1..steps) {
-            val fraction = step.toFloat() / steps
             coroutineScope {
                 targets.map { target ->
                     async(Dispatchers.IO) {
-                        val brightness = (
-                            target.startBrightness +
-                                (target.targetBrightness - target.startBrightness) * fraction
-                            ).toInt().coerceIn(0, 100)
+                        val brightness = easedBrightness(
+                            target.startBrightness,
+                            target.targetBrightness,
+                            step,
+                            steps,
+                        )
+                        if (lastCommandedBrightness[target.ipAddress] == brightness) {
+                            return@async
+                        }
                         runCatching { target.client.setBrightness(brightness) }
                             .onSuccess { lastCommandedBrightness[target.ipAddress] = brightness }
                     }
                 }.awaitAll()
             }
-            if (step < steps) delay(STEP_INTERVAL_MS)
+            if (step < steps) {
+                val nextDeadline = startedAt + (step + 1L) * durationMs / steps
+                delay((nextDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L))
+            }
         }
     }
 
@@ -216,7 +238,15 @@ class TapoLightsRepository(
     private companion object {
         const val DIM_DURATION_MS = 4_000L
         const val RESTORE_DURATION_MS = 1_500L
-        const val STEP_INTERVAL_MS = 200L
+        const val STEP_INTERVAL_MS = 100L
         const val MIN_ON_BRIGHTNESS = 1
     }
+}
+
+/** Pure ramp used by both production fades and regression tests. */
+internal fun easedBrightness(start: Int, target: Int, step: Int, steps: Int): Int {
+    val safeSteps = steps.coerceAtLeast(1)
+    val linearFraction = step.coerceIn(0, safeSteps).toDouble() / safeSteps.toDouble()
+    val easedFraction = (1.0 - cos(PI * linearFraction)) / 2.0
+    return (start + (target - start) * easedFraction).roundToInt().coerceIn(0, 100)
 }

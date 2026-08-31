@@ -40,4 +40,18 @@ object PlexServiceFactory {
             .build()
             .create(PlexWatchlistApiService::class.java)
     }
+
+    fun createHome(connection: PlexConnection): PlexHomeApiService {
+        val client = OkHttpClient.Builder()
+            .addInterceptor(PlexHeaderInterceptor(connection))
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl("https://plex.tv/")
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create(GsonBuilder().create()))
+            .build()
+            .create(PlexHomeApiService::class.java)
+    }
 }

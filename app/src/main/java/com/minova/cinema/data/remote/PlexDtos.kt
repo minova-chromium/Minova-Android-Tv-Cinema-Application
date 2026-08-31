@@ -13,6 +13,8 @@ data class MediaContainer(
     @SerializedName("totalSize") val totalSize: Int? = null,
     @SerializedName("title1") val title: String? = null,
     @SerializedName("friendlyName") val friendlyName: String? = null,
+    @SerializedName("decisionCode") val decisionCode: Int? = null,
+    @SerializedName("decisionText") val decisionText: String? = null,
     @SerializedName("Directory") val directories: List<Directory> = emptyList(),
     @SerializedName("Hub") val hubs: List<Hub> = emptyList(),
     @SerializedName("Metadata") val metadata: List<Metadata> = emptyList(),
@@ -66,6 +68,9 @@ data class Metadata(
     @SerializedName("childCount") val childCount: Int? = null,
     @SerializedName("leafCount") val leafCount: Int? = null,
     @SerializedName("viewedLeafCount") val viewedLeafCount: Int? = null,
+    @SerializedName("audienceRating") val audienceRating: Double? = null,
+    @SerializedName("rating") val rating: Double? = null,
+    @SerializedName("sessionKey") val sessionKey: String? = null,
     @SerializedName("OnDeck") val onDeck: Metadata? = null,
     @SerializedName("Guid") val guids: List<GuidTag> = emptyList(),
     @SerializedName("Genre") val genres: List<Tag> = emptyList(),
@@ -74,8 +79,34 @@ data class Metadata(
     @SerializedName("Writer") val writers: List<PersonTag> = emptyList(),
     @SerializedName("Producer") val producers: List<PersonTag> = emptyList(),
     @SerializedName("Marker") val markers: List<Marker> = emptyList(),
+    @SerializedName("Chapter") val chapters: List<Chapter> = emptyList(),
     @SerializedName("Media") val media: List<Media> = emptyList(),
+    @SerializedName("Session") val session: Session? = null,
+    @SerializedName("TranscodeSession") val transcodeSession: TranscodeSession? = null,
     @SerializedName("Extras") val extras: Hub? = null,
+)
+
+data class Chapter(
+    @SerializedName("id") val id: Long? = null,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("startTimeOffset") val startTimeOffset: Long = 0L,
+    @SerializedName("endTimeOffset") val endTimeOffset: Long = 0L,
+)
+
+data class Session(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("location") val location: String? = null,
+    @SerializedName("bandwidth") val bandwidth: Int? = null,
+)
+
+data class TranscodeSession(
+    @SerializedName("key") val key: String? = null,
+    @SerializedName("videoDecision") val videoDecision: String? = null,
+    @SerializedName("audioDecision") val audioDecision: String? = null,
+    @SerializedName("container") val container: String? = null,
+    @SerializedName("protocol") val protocol: String? = null,
+    @SerializedName("transcodeHwRequested") val hardwareRequested: Boolean? = null,
+    @SerializedName("transcodeHwEncoding") val hardwareEncoding: String? = null,
 )
 
 data class GuidTag(
@@ -110,6 +141,10 @@ data class Media(
     @SerializedName("videoCodec") val videoCodec: String? = null,
     @SerializedName("audioCodec") val audioCodec: String? = null,
     @SerializedName("container") val container: String? = null,
+    @SerializedName("videoDecision") val videoDecision: String? = null,
+    @SerializedName("audioDecision") val audioDecision: String? = null,
+    @SerializedName("containerDecision") val containerDecision: String? = null,
+    @SerializedName("protocol") val protocol: String? = null,
     @SerializedName("Part") val parts: List<Part> = emptyList(),
 )
 

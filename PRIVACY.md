@@ -4,11 +4,11 @@ Minova Cinema is a local Plex client. It does not require a Minova account and t
 
 ## Data stored on the device
 
-The Plex server address and token entered during setup are stored in the application’s private local preferences. The app also stores a local set of items dismissed from Continue Watching. Clearing app data or uninstalling the app removes these values.
+The Plex server address and token entered during setup are stored in the application’s private local preferences. The app also stores the selected Plex Home profile, a token-free metadata and artwork cache, Android TV Home channel identifiers, playback preferences, and a local set of items dismissed from Continue Watching. Clearing app data or uninstalling the app removes these values.
 
 ## Network requests
 
-The app contacts the Plex server configured by the user to request metadata, artwork, playback streams, progress updates, watched state, and stream selections. Plex watchlist features can also use Plex-operated endpoints. Those services are governed by Plex’s own terms and privacy policy.
+The app contacts the Plex server configured by the user to request metadata, artwork, playback streams, progress updates, watched state, stream selections, playback decisions, and a short user-requested connection-speed sample. Plex Home profile switching and watchlist features can also use Plex-operated endpoints. Those services are governed by Plex’s own terms and privacy policy.
 
 ## Protect the Plex token
 

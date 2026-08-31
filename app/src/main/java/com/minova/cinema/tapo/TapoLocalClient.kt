@@ -27,6 +27,11 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
+internal class TapoHttpException(
+    val statusCode: Int,
+    val requestPath: String,
+) : IllegalStateException("Tapo request failed ($statusCode) at $requestPath.")
+
 /**
  * Local Tapo client supporting both current KLAP devices and older
  * Secure-Passthrough (RSA + AES) devices behind one API.
@@ -330,7 +335,9 @@ internal class TapoLocalClient(
         cookie?.let { builder.header("Cookie", it) }
         val client = if (url.isHttps) localHttpsClient else httpClient
         return client.newCall(builder.build()).execute().use { response ->
-            check(response.isSuccessful) { "Tapo request failed (${response.code}) at ${url.encodedPath}." }
+            if (!response.isSuccessful) {
+                throw TapoHttpException(response.code, url.encodedPath)
+            }
             HttpResponse(
                 body = response.body?.bytes() ?: error("Tapo returned an empty response."),
                 cookie = response.headers.values("Set-Cookie")

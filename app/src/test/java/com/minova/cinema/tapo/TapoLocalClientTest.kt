@@ -9,8 +9,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetSocketAddress
+import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.KeyFactory
+import java.security.MessageDigest
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
@@ -141,6 +143,77 @@ class TapoLocalClientTest {
         }
     }
 
+    @Test
+    fun authenticatesAndQueriesAnL630StyleKlapV2Device() = runBlocking {
+        val credentials = TapoCredentials("owner@example.test", "case-sensitive-password")
+        val remoteSeed = ByteArray(16) { (it + 31).toByte() }
+        val authHash = sha256(
+            sha1(credentials.email.toByteArray()) + sha1(credentials.password.toByteArray()),
+        )
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        var localSeed: ByteArray? = null
+
+        server.createContext("/") { exchange ->
+            when (exchange.requestURI.path) {
+                "/app/handshake1" -> {
+                    val local = exchange.requestBody.use { it.readBytes() }
+                    localSeed = local
+                    exchange.responseHeaders.add("Set-Cookie", "TP_SESSIONID=klap-v2; TIMEOUT=86400")
+                    exchange.respondBytes(200, remoteSeed + sha256(local + remoteSeed + authHash))
+                }
+
+                "/app/handshake2" -> {
+                    val local = checkNotNull(localSeed)
+                    val actual = exchange.requestBody.use { it.readBytes() }
+                    assertTrue(actual.contentEquals(sha256(remoteSeed + local + authHash)))
+                    exchange.respondBytes(200, ByteArray(0))
+                }
+
+                "/app/request" -> {
+                    val local = checkNotNull(localSeed)
+                    val sequence = exchange.requestURI.query.substringAfter("seq=").toInt()
+                    val cipher = TestKlapCipher(local, remoteSeed, authHash)
+                    val request = gson.fromJson(
+                        cipher.decrypt(exchange.requestBody.use { it.readBytes() }, sequence),
+                        JsonObject::class.java,
+                    )
+                    assertEquals("get_device_info", request.get("method").asString)
+                    val response = gson.toJson(
+                        mapOf(
+                            "error_code" to 0,
+                            "result" to mapOf(
+                                "nickname" to "Cinema Spot",
+                                "model" to "L630",
+                                "device_on" to true,
+                                "brightness" to 64,
+                            ),
+                        ),
+                    )
+                    exchange.respondBytes(200, cipher.encrypt(response, sequence))
+                }
+
+                else -> exchange.respond(404, "{}")
+            }
+        }
+        server.start()
+
+        try {
+            val client = TapoLocalClient(
+                ipAddress = "127.0.0.1",
+                credentials = credentials,
+                endpointHint = TapoEndpointHint("http", server.address.port),
+            )
+
+            val info = client.getDeviceInfo()
+
+            assertEquals("Cinema Spot", info.nickname)
+            assertEquals("L630", info.model)
+            assertEquals(64, info.brightness)
+        } finally {
+            server.stop(0)
+        }
+    }
+
     private fun encrypt(plain: String, key: ByteArray, iv: ByteArray): String =
         Base64.getEncoder().encodeToString(
             Cipher.getInstance("AES/CBC/PKCS5Padding").run {
@@ -159,13 +232,60 @@ class TapoLocalClientTest {
         )
 
     private fun HttpExchange.respond(status: Int, json: String) {
-        val bytes = json.toByteArray(StandardCharsets.UTF_8)
-        responseHeaders.add("Content-Type", "application/json")
+        respondBytes(status, json.toByteArray(StandardCharsets.UTF_8), "application/json")
+    }
+
+    private fun HttpExchange.respondBytes(
+        status: Int,
+        bytes: ByteArray,
+        contentType: String = "application/octet-stream",
+    ) {
+        responseHeaders.add("Content-Type", contentType)
         sendResponseHeaders(status, bytes.size.toLong())
         responseBody.use { it.write(bytes) }
     }
 
+    private class TestKlapCipher(
+        localSeed: ByteArray,
+        remoteSeed: ByteArray,
+        authHash: ByteArray,
+    ) {
+        private val key = sha256("lsk".toByteArray() + localSeed + remoteSeed + authHash)
+            .copyOfRange(0, 16)
+        private val ivMaterial = sha256("iv".toByteArray() + localSeed + remoteSeed + authHash)
+        private val ivPrefix = ivMaterial.copyOfRange(0, 12)
+        private val signatureKey = sha256("ldk".toByteArray() + localSeed + remoteSeed + authHash)
+            .copyOfRange(0, 28)
+
+        fun decrypt(payload: ByteArray, sequence: Int): String {
+            val sequenceBytes = ByteBuffer.allocate(4).putInt(sequence).array()
+            val cipherText = payload.copyOfRange(32, payload.size)
+            assertTrue(
+                payload.copyOfRange(0, 32).contentEquals(
+                    sha256(signatureKey + sequenceBytes + cipherText),
+                ),
+            )
+            val plain = Cipher.getInstance("AES/CBC/PKCS5Padding").run {
+                init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(ivPrefix + sequenceBytes))
+                doFinal(cipherText)
+            }
+            return String(plain, StandardCharsets.UTF_8)
+        }
+
+        fun encrypt(plain: String, sequence: Int): ByteArray {
+            val sequenceBytes = ByteBuffer.allocate(4).putInt(sequence).array()
+            val cipherText = Cipher.getInstance("AES/CBC/PKCS5Padding").run {
+                init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(ivPrefix + sequenceBytes))
+                doFinal(plain.toByteArray(StandardCharsets.UTF_8))
+            }
+            return sha256(signatureKey + sequenceBytes + cipherText) + cipherText
+        }
+    }
+
     private companion object {
         val gson = Gson()
+
+        fun sha1(input: ByteArray): ByteArray = MessageDigest.getInstance("SHA-1").digest(input)
+        fun sha256(input: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(input)
     }
 }
