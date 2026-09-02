@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0D121A">
+  <meta name="description" content="Connect Minova Cinema to your Plex server and set up local TP-Link Tapo cinema lights, with step-by-step instructions and troubleshooting.">
+  <title>Plex &amp; Tapo Setup Guide — Minova Cinema</title>
+  <meta property="og:title" content="Plex &amp; Tapo Setup Guide — Minova Cinema">
+  <meta property="og:description" content="From your Plex library to your cinema lights. A step-by-step setup guide for Minova Cinema on Android TV.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/assets/og-card.png">
+  <meta property="og:url" content="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/setup.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/setup.html">
+  <link rel="icon" href="assets/minova-symbol-color.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header" data-header>
+    <div class="header-brand-group">
+      <a class="ecosystem-home" href="https://minova-chromium.github.io/Minova-Main/" aria-label="Return to Minova home"><span class="home-glyph" aria-hidden="true"></span></a>
+      <a class="brand" href="index.html" aria-label="Minova Cinema home"><img class="brand-symbol" src="assets/minova-symbol-color.svg" alt=""><img class="brand-lockup" src="assets/minova-cinema-wordmark.png" alt="Minova Cinema"></a>
+    </div>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle><span></span><span></span><span></span><span class="sr-only">Menu</span></button>
+    <nav id="site-nav" class="site-nav" aria-label="Primary" data-nav><a href="index.html">Cinema</a><a href="setup.html" aria-current="page">Setup guide</a><a href="feedback.html">Feedback</a><a class="nav-source" href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application">Source</a></nav>
+  </header>
+  <main id="main" class="guide-page">
+    <div class="guide-intro">
+      <p class="eyebrow"><span></span> The setup guide</p>
+      <h1>Your library.<br>Your lights.<br><em>Ready for movie night.</em></h1>
+      <p>Connect Plex first. Then, if you have compatible Tapo lights, choose the ones you want Minova Cinema to dim. No Minova account is needed.</p>
+      <p class="guide-version">For Minova Cinema 2.8.1 · Android TV 10 or newer</p>
+    </div>
+    <nav class="guide-jumps" aria-label="Guide sections">
+      <a href="#plex"><span>01</span><b>Connect Plex</b><small>Server address &amp; token <span aria-hidden="true">↓</span></small></a>
+      <a href="#tapo"><span>02</span><b>Connect Tapo lights</b><small>Your Cinema Room <span aria-hidden="true">↓</span></small></a>
+      <a href="#troubleshooting"><span>03</span><b>Need a hand?</b><small>Common setup problems <span aria-hidden="true">↓</span></small></a>
+    </nav>
+
+    <aside class="guide-notice"><strong>Keep your credentials private.</strong> Enter your Plex token and Tapo password only in the app on your TV—not on this website. Never include them in screenshots, public issues, or feedback.</aside>
+
+    <section id="plex" class="guide-section" aria-labelledby="plex-title">
+      <div class="section-label"><span>01</span> Your Plex library</div>
+      <h2 id="plex-title">Connect your <em>Plex server.</em></h2>
+      <p class="guide-section-intro">You'll need a running Plex Media Server with your libraries already added, a phone or computer, and Minova Cinema on your TV. Keep the TV and server on the same trusted home network.</p>
+      <ol class="guide-steps">
+        <li><h3>Find the server's local IP address</h3><p>Look for the computer or NAS running Plex in your router's connected-device list, or check that device's network settings. Use the server's address—not the TV's address or your public internet address.</p><p>Keep the server powered on and awake while you watch.</p></li>
+        <li><h3>Check that Plex opens on your home network</h3><p>On a phone or computer connected to the same network, open <code>http://YOUR-SERVER-IP:32400/web</code>, replacing <code>YOUR-SERVER-IP</code> with the address you found. Sign in and check that your library appears.</p><p>The usual Plex port is <code>32400</code>. If your installation uses a different port, use that instead. See <a href="https://support.plex.tv/articles/200264746-quick-start-step-by-step-guides/">Plex's official server setup guide</a>.</p></li>
+        <li><h3>Find your X-Plex-Token</h3><p>In Plex Web, sign in to the account that can access your server. Open a movie or episode from your own library, open its media information menu, and choose <strong>View XML</strong>. Depending on the Plex Web version, the information menu may be called <strong>Get Info</strong> or <strong>Media Info</strong>.</p><p>In the new page's address bar, locate <code>X-Plex-Token=</code>. Copy only the value after the equals sign, stopping before the next <code>&amp;</code> if there is one. Do not copy the whole URL or the words <code>X-Plex-Token=</code>.</p><p>Plex describes this as a temporary token; you may need a fresh one if access expires or is revoked. Follow <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/">Plex's official token instructions</a> if the menu differs. Use a token from your own server's media, not Plex's free streaming catalog.</p></li>
+        <li><h3>Enter the two values on your TV</h3><p>Open Minova Cinema. On <strong>Connect your Plex library</strong>, fill in:</p><dl class="guide-fields"><dt>Plex server</dt><dd><code>http://YOUR-SERVER-IP:32400</code><br>Use the base address only, without <code>/web</code>, a media path, or a token.</dd><dt>X-Plex-Token</dt><dd>The token value you copied. This is not your Plex password, profile PIN, or a claim code.</dd></dl><p>Select <strong>Connect</strong> and allow the initial library and artwork to load. Use the D-pad to move between fields and OK to select.</p></li>
+        <li><h3>Check a movie, then you're ready</h3><p>Open a title and press <strong>Play</strong>. To reconnect later, open the gear icon → <strong>Plex server</strong> → <strong>Change server</strong>. Use <strong>Refresh library</strong> after adding media to Plex.</p></li>
+      </ol>
+      <aside class="guide-notice"><strong>Local setup doesn't require port forwarding.</strong> Do not expose Plex or disable your firewall just to follow this guide. If your server requires secure connections, use its valid HTTPS address and certificate; don't turn off certificate checks.</aside>
+    </section>
+
+    <section id="tapo" class="guide-section" aria-labelledby="tapo-title">
+      <div class="section-label"><span>02</span> Optional cinema lighting</div>
+      <h2 id="tapo-title">Choose your <em>Tapo lights.</em></h2>
+      <p class="guide-section-intro">Minova controls compatible Tapo bulbs directly on your home network. This route does not require connecting Google Home. Device firmware and local-access settings affect compatibility; support is not guaranteed for every Tapo device.</p>
+      <ol class="guide-steps">
+        <li><h3>Set up the bulbs in the Tapo app first</h3><p>Add each bulb to your TP-Link account using the official Tapo phone app. Give it a recognizable name, such as “Sofa lamp,” and check that you can turn it on and adjust its brightness there. Leave the wall switch on so the bulb stays reachable.</p><p>The <a href="https://www.tp-link.com/us/home-networking/smart-bulb/tapo-l630/">Tapo L630 GU10 uses 2.4 GHz Wi-Fi</a>. Your TV can use Ethernet or 5 GHz, provided your router lets those devices communicate on the same local network. Avoid guest networks or isolated IoT networks for this setup.</p></li>
+        <li><h3>Check Third-Party Compatibility</h3><p>In the Tapo phone app, open <strong>Me → Third-Party Services → Third-Party Compatibility</strong>. The Me page may be accessed from your profile picture. Where this option is available, review TP-Link's warning and enable it only if you accept the security trade-off.</p><p>This is especially worth checking when an L630 is visible but rejects local control. TP-Link warns that the setting can reduce device security and does not guarantee compatibility. Read <a href="https://www.tp-link.com/us/support/faq/4416/">TP-Link's explanation before enabling it</a>. Menu availability varies by app and firmware version.</p></li>
+        <li><h3>Connect Tapo inside Minova Cinema</h3><p>On the TV, open the gear icon → <strong>Cinema lights</strong>. Move to <strong>TP-LINK TAPO · LOCAL CINEMA LIGHTS</strong> and select <strong>Connect Tapo</strong>.</p><p>Enter your <strong>Tapo email</strong> and <strong>Tapo password</strong>, matching the account used in the Tapo app, including capitalization. This is your TP-Link login, not your Wi-Fi password. Select <strong>Save and scan</strong>.</p><p>The login is encrypted in the app's private storage on the TV and used for local device authentication. A saved login alone does not mean a bulb has successfully connected.</p></li>
+        <li><h3>Select only the lights in your Cinema Room</h3><p>Wait for scanning to finish. The list shows each reachable compatible light's friendly name, model, and IP address. Use D-pad Up/Down to browse; press OK on a light to check or uncheck it. Only check the lights you want affected during playback.</p><p>Selections save automatically. Choose <strong>Done</strong> when finished. Later, use <strong>Configure Tapo lights</strong> and <strong>Scan for lights</strong> to refresh the list. Minova's Cinema Room selection is separate from any room or group in the Tapo app.</p></li>
+        <li><h3>Enable Cinema Mode and test one movie</h3><p>Open <strong>Settings → Cinema Mode</strong> and turn on <strong>Cinema Mode</strong>. You can leave <strong>Play trailers</strong> off and leave the local bumper unselected if you only want the lighting effect.</p><p>Turn your selected bulbs on at a comfortable brightness, then start a movie. Minova attempts a roughly four-second fade to off. Pause or exit playback and allow about 1.5 seconds for the previously lit bulbs to return to their saved brightness. Network and bulb response times can change the pace.</p><p>Bulbs that were already off are left off. Keep an unselected light available if you need safe lighting in the room.</p></li>
+      </ol>
+      <figure class="guide-capture capture"><a class="screenshot-link" href="assets/app-settings.jpg" aria-label="Open full-size Minova settings screenshot"><img src="assets/app-settings.jpg" width="1920" height="1080" loading="lazy" decoding="async" alt="Minova Cinema Control Room: Cinema Mode and Cinema lights appear in the settings sidebar"></a><figcaption>Look for Cinema Mode and Cinema lights in the Control Room sidebar.</figcaption></figure>
+      <aside class="guide-notice"><strong>To stop automatic lighting:</strong> turn off Cinema Mode, uncheck the lights, or use <strong>Configure Tapo lights → Disconnect</strong> to remove the saved Tapo login from this TV. Recheck the selected lights if you reconnect later.</aside>
+    </section>
+
+    <section id="troubleshooting" class="guide-section" aria-labelledby="help-title">
+      <div class="section-label"><span>03</span> Troubleshooting</div>
+      <h2 id="help-title">Not connected <em>yet?</em></h2>
+      <div class="faq-list guide-faq">
+        <details><summary>Plex won't connect or the connection times out<span></span></summary><p>First test the server's <code>/web</code> address from another device on the same network. Check the server is awake, Plex is running, and the address and port are correct. On the TV, <code>localhost</code> or <code>127.0.0.1</code> refers to the TV—not your server. Check firewall rules for local Plex access without disabling the firewall. A VPN or guest-network isolation can also prevent the connection.</p></details>
+        <details><summary>Plex reports unauthorized, or a working login stopped working<span></span></summary><p>Recheck the token for missing characters, spaces, or an accidentally copied URL. Get a fresh token while signed into an account with access to that server, then use <strong>Settings → Plex server → Change server</strong>. Revoked or temporary tokens can stop working; reinstalling the app isn't necessary.</p></details>
+        <details><summary>Plex connects, but the library is empty<span></span></summary><p>Check that the same account can see those libraries in Plex Web. Confirm the server has completed its library scan, then use <strong>Refresh library</strong> in Minova. A different or restricted Plex profile may have access to fewer libraries.</p></details>
+        <details><summary>Tapo shows “Connected” but no lights—or only one<span></span></summary><p>“Connected” means Minova has saved a Tapo login. Bulbs must still be discovered and authenticated individually. Wait until scanning finishes and check the compatible-light count. If several are listed, use D-pad Down to scroll through them. If the count is one, scrolling won't reveal the missing bulbs: check their power, account, network, and compatibility settings, then scan again.</p></details>
+        <details><summary>My L630 is on 2.4 GHz but still won't appear<span></span></summary><p>The Wi-Fi band alone doesn't establish local access. Check Third-Party Compatibility in the Tapo app, confirm the same TP-Link account owns the bulb, and review guest-network, client-isolation, or IoT-network rules. A bulb working through Tapo's cloud does not prove that the TV can reach it locally. Minova tries both modern KLAP and legacy local authentication automatically; there is no protocol switch to choose.</p></details>
+        <details><summary>“Local access is disabled” or a 403 error appears<span></span></summary><p>Check the Third-Party Compatibility setting and TP-Link's warning linked above. Re-enter the correct Tapo login if needed and choose <strong>Scan for lights</strong> again. A 403 can have more than one cause; if it persists, report the bulb model, hardware/firmware version, app version, and the exact error without including credentials.</p></details>
+        <details><summary>The bulbs appear, but nothing dims<span></span></summary><p>Check at least one bulb in the Cinema Room list, enable Cinema Mode, and start a movie. For a visible test, that bulb must already be on. If its IP address changed, rescan and select the new entry. A DHCP reservation in your router can keep the bulb's address stable. If lights flicker or change unexpectedly, check for competing Tapo schedules or other lighting automations.</p></details>
+        <details><summary>Do I need Google Home or to open ports on my router?<span></span></summary><p>No Google Home connection is needed for Minova's Tapo path. Do not forward bulb-control ports to the internet. On advanced networks, local discovery uses UDP 20002 and control uses the local HTTP/HTTPS endpoint advertised by the bulb. Ask the network administrator about device-to-device access rather than opening broad firewall rules.</p></details>
+      </div>
+      <div class="guide-help"><h3>Still stuck?</h3><p>Tell us your Minova version, TV model, and the exact message. For Tapo, include the bulb model and firmware version. Remove tokens, passwords, personal account details, and private addresses from any screenshots.</p><a class="button button-primary" href="feedback.html">Send setup feedback</a><a class="text-link" href="privacy.html">How your data is handled <span aria-hidden="true">→</span></a></div>
+    </section>
+  </main>
+  <footer><a class="brand footer-brand" href="index.html"><img src="assets/minova-symbol-color.svg" alt=""><img src="assets/minova-cinema-wordmark.png" alt="Minova Cinema"></a><p>Part of the Minova family. Built for your living room.</p><nav aria-label="Footer"><a href="index.html">Cinema</a><a href="setup.html">Setup guide</a><a href="feedback.html">Feedback</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a></nav><small>© <span data-year></span> Minova. Independent of Plex and TP-Link. Media artwork belongs to its respective rights holders.</small></footer>
+</body>
+</html>
