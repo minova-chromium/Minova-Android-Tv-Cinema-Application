@@ -36,10 +36,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.tv.material3.Button
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.minova.cinema.tapo.TapoLight
@@ -56,6 +54,7 @@ fun TapoCinemaLightsSection(
     onClearCredentials: () -> Unit,
     onDiscover: () -> Unit,
     onAssignmentChanged: (String, Boolean) -> Unit,
+    entryModifier: Modifier = Modifier,
 ) {
     var settingsVisible by remember { mutableStateOf(false) }
     var loginVisible by remember { mutableStateOf(false) }
@@ -82,15 +81,16 @@ fun TapoCinemaLightsSection(
         modifier = Modifier.padding(top = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Button(
+        SettingsPrimaryButton(
             onClick = {
                 if (state.hasCredentials) settingsVisible = true else loginVisible = true
             },
+            modifier = entryModifier,
         ) {
             Text(if (state.hasCredentials) "Configure Tapo lights" else "Connect Tapo")
         }
         if (state.hasCredentials) {
-            OutlinedButton(onClick = { loginVisible = true }) { Text("Change Tapo login") }
+            SettingsSecondaryButton(onClick = { loginVisible = true }) { Text("Change Tapo login") }
         }
     }
     state.message?.let { message ->
@@ -166,7 +166,7 @@ fun CinemaLightsSettingsScreen(
                     .padding(top = 18.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Button(
+                SettingsPrimaryButton(
                     onClick = onDiscover,
                     enabled = !state.discovering,
                     modifier = Modifier
@@ -175,13 +175,13 @@ fun CinemaLightsSettingsScreen(
                 ) {
                     Text(if (state.discovering) "Scanning…" else "Scan for lights")
                 }
-                OutlinedButton(onClick = onChangeLogin, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onChangeLogin, modifier = Modifier.weight(1f)) {
                     Text("Change login")
                 }
-                OutlinedButton(onClick = onClearCredentials, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onClearCredentials, modifier = Modifier.weight(1f)) {
                     Text("Disconnect")
                 }
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text("Done")
                 }
             }
@@ -341,11 +341,11 @@ private fun TapoLoginDialog(
                 modifier = Modifier.padding(top = 22.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Button(
+                SettingsPrimaryButton(
                     onClick = { onSave(email, password) },
                     enabled = email.isNotBlank() && password.isNotBlank(),
                 ) { Text("Save and scan") }
-                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+                SettingsSecondaryButton(onClick = onDismiss) { Text("Cancel") }
             }
         }
     }

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
@@ -79,28 +80,111 @@ class BrowseScreenNavigationTest {
         compose.onNodeWithTag("hero-primary-action").assertIsFocused()
     }
 
-    private fun showBrowseScreen(includeContinueWatching: Boolean = false) {
-        val movie = MediaContent(
-            ratingKey = "movie-1",
-            title = "Alpha Movie",
-            secondaryTitle = null,
-            summary = "A test movie used to verify television focus navigation.",
-            tagline = null,
-            year = 2026,
-            durationMs = 7_200_000L,
-            viewOffsetMs = 0L,
-            posterUrl = null,
-            backdropUrl = null,
-            contentRating = "PG-13",
-            kind = MediaKind.Movie,
-            genres = listOf("Drama"),
-        )
+    @Test
+    fun multipleHomeShelvesRemainNavigableAfterRepeatedUpDownMoves() {
+        showBrowseScreen(includeContinueWatching = true, mediaCount = 14)
+        compose.onNodeWithTag("header-tab-Home")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("hero-primary-action")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("browse-first-continue")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+
+        waitUntilFocused("browse-shelf-top-picks-movie-2")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-because-movie-1-movie-2")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-recently-added-movie-1")
+        compose.onRoot().performKeyInput {
+            pressKey(Key.DirectionUp)
+            pressKey(Key.DirectionUp)
+        }
+        waitUntilFocused("browse-shelf-top-picks-movie-2")
+
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionUp) }
+        waitUntilFocused("browse-first-continue")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-top-picks-movie-2")
+    }
+
+    @Test
+    fun horizontalBrowsingCanReturnUpAndDownWithoutHeaderLock() {
+        showBrowseScreen(includeContinueWatching = true, mediaCount = 14)
+        compose.onNodeWithTag("header-tab-Home")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("hero-primary-action")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("browse-first-continue")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-top-picks-movie-2")
+
+        compose.onRoot().performKeyInput {
+            repeat(4) { pressKey(Key.DirectionRight) }
+            pressKey(Key.DirectionUp)
+        }
+        waitUntilFocused("browse-first-continue")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-top-picks-movie-6")
+    }
+
+    @Test
+    fun eachShelfRestoresItsOwnHorizontalPositionAfterVerticalNavigation() {
+        showBrowseScreen(includeContinueWatching = true, mediaCount = 14)
+        compose.onNodeWithTag("header-tab-Home")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("hero-primary-action")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("browse-first-continue")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-top-picks-movie-2")
+
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-because-movie-1-movie-2")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-recently-added-movie-1")
+        compose.onRoot().performKeyInput { repeat(4) { pressKey(Key.DirectionRight) } }
+        waitUntilFocused("browse-shelf-recently-added-movie-5")
+
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-new-releases-movie-1")
+        compose.onRoot().performKeyInput { repeat(2) { pressKey(Key.DirectionRight) } }
+        waitUntilFocused("browse-shelf-new-releases-movie-3")
+
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionUp) }
+        waitUntilFocused("browse-shelf-recently-added-movie-5")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-new-releases-movie-3")
+    }
+
+    private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1) {
+        val movies = List(mediaCount) { index ->
+            MediaContent(
+                ratingKey = "movie-${index + 1}",
+                title = "Movie ${index + 1}",
+                secondaryTitle = null,
+                summary = "A test movie used to verify television focus navigation.",
+                tagline = null,
+                year = 2026 - index,
+                durationMs = 7_200_000L,
+                viewOffsetMs = 0L,
+                posterUrl = null,
+                backdropUrl = null,
+                contentRating = "PG-13",
+                kind = MediaKind.Movie,
+                genres = listOf("Drama"),
+                addedAtEpochSeconds = 2_000L - index,
+            )
+        }
+        val movie = movies.first()
         compose.setContent {
             MinovaCinemaTheme {
                 BrowseScreen(
                     catalog = CinemaCatalog(
                         serverName = "Navigation test",
-                        movies = listOf(movie),
+                        movies = movies,
                         shows = emptyList(),
                         continueWatching = if (includeContinueWatching) {
                             listOf(movie.copy(viewOffsetMs = 1_800_000L))

@@ -1,7 +1,12 @@
 package com.minova.cinema.data
 
+import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexHomeApiService
+import com.minova.cinema.data.remote.PlexHomeUserDto
 import com.minova.cinema.domain.PlexHomeProfile
 import java.net.URI
 
@@ -10,7 +15,7 @@ class PlexProfileRepository(
     private val service: PlexHomeApiService,
 ) {
     suspend fun loadProfiles(activeUuid: String?): List<PlexHomeProfile> {
-        val users = service.getHomeUsers()
+        val users = parsePlexHomeUsers(service.getHomeUsers())
         val resolvedActiveUuid = activeUuid ?: users.firstOrNull { it.admin }?.uuid
         return users.map { user ->
             PlexHomeProfile(
@@ -46,5 +51,35 @@ class PlexProfileRepository(
             baseUrl = ownerConnection.baseUrl,
             token = matchingServer?.accessToken?.takeIf(String::isNotBlank) ?: switchedToken,
         )
+    }
+}
+
+/** Plex has returned both a bare array and several object-wrapped variants. */
+internal fun parsePlexHomeUsers(root: JsonElement): List<PlexHomeUserDto> {
+    fun JsonObject.arrayNamed(vararg names: String): JsonArray? =
+        entrySet().firstOrNull { (name, value) ->
+            names.any { it.equals(name, ignoreCase = true) } && value.isJsonArray
+        }?.value?.asJsonArray
+
+    val users = when {
+        root.isJsonArray -> root.asJsonArray
+        root.isJsonObject -> {
+            val objectRoot = root.asJsonObject
+            objectRoot.arrayNamed("users", "User")
+                ?: objectRoot.entrySet()
+                    .firstOrNull { it.key.equals("MediaContainer", ignoreCase = true) }
+                    ?.value
+                    ?.takeIf { it.isJsonObject }
+                    ?.asJsonObject
+                    ?.arrayNamed("users", "User")
+        }
+        else -> null
+    } ?: return emptyList()
+
+    val gson = Gson()
+    return users.mapNotNull { element ->
+        runCatching { gson.fromJson(element, PlexHomeUserDto::class.java) }
+            .getOrNull()
+            ?.takeIf { it.uuid.isNotBlank() }
     }
 }

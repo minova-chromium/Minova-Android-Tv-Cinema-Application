@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.8.1 — 2026-09-02
+
+### Focus reliability, playback completion, profiles, and Settings polish
+
+- Rebuilt Settings as focused category-detail pages with cleaner cards, stronger text hierarchy, category icons, saved confirmations, and deterministic D-pad entry and return behavior.
+- Fixed Home shelf navigation so moving between Recently Added, New Releases, and other rows restores the exact title previously focused in each shelf instead of jumping back to the beginning.
+- Added multi-shelf Android TV stress tests using larger title sets, repeated horizontal movement, and rapid Up/Down traversal to prevent header lockups and lost focus.
+- Fixed Skip Credits and natural movie completion so playback exits cleanly to Home instead of remaining on a black frame.
+- Ensured Cinema Mode lights return to their captured pre-playback on/off state and brightness when playback finishes or Skip Credits is used.
+- Fixed Plex Home profile discovery for servers that return users inside wrapped JSON objects while retaining compatibility with the earlier array response.
+
 ## 2.8.0 — 2026-09-01
 
 ### Playback intelligence, profiles, TV Home, and performance

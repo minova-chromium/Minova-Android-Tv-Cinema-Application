@@ -34,8 +34,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -57,6 +59,7 @@ import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -107,6 +110,7 @@ import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
 import com.minova.cinema.ui.theme.MinovaWhite
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -761,9 +765,14 @@ private fun CinematicBrowser(
 
     LaunchedEffect(contentBrowsing, restoreHomeFocus) {
         if (!contentBrowsing && restoreHomeFocus) {
-            delay(360)
-            if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
-            else heroFocus.requestFocus()
+            // The hero/Continue area re-enters composition immediately. Move
+            // focus on the next frame instead of leaving a 360 ms window in
+            // which fast D-Pad input can escape to the header.
+            delay(32)
+            runCatching {
+                if (continueWatching.isNotEmpty()) firstContinueFocus.requestFocus()
+                else heroFocus.requestFocus()
+            }
             restoreHomeFocus = false
         }
     }
@@ -774,7 +783,7 @@ private fun CinematicBrowser(
             // until the complete D-Pad press has settled. Removing it during
             // KeyDown could make Compose dispatch the remaining key sequence
             // as a click on the title that just gained focus.
-            delay(140)
+            delay(40)
             contentBrowsing = true
             pendingContentBrowsing = false
         }
@@ -784,10 +793,11 @@ private fun CinematicBrowser(
         if (revealCatalogAndFocus) {
             // Let the D-Pad key-up finish on the current card, then reveal the
             // catalog and move focus once its controls are in composition.
-            delay(140)
+            delay(40)
             contentBrowsing = true
-            delay(180)
+            delay(40)
             when {
+                homeMode && homeShelves.isNotEmpty() -> firstGenreFocus.requestFocus()
                 quickGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
                 media.isNotEmpty() -> firstPosterFocus.requestFocus()
             }
@@ -883,7 +893,7 @@ private fun CinematicBrowser(
                                 onDown = {
                                     when {
                                         continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
-                                        homeMode && homeShelves.isNotEmpty() -> firstGenreFocus.requestFocus()
+                                        homeMode && homeShelves.isNotEmpty() -> revealCatalogAndFocus = true
                                         !homeMode -> revealCatalogAndFocus = true
                                     }
                                 },
@@ -917,7 +927,7 @@ private fun CinematicBrowser(
                                         onFocused = onHighlighted,
                                         onUp = { heroFocus.requestFocus() },
                                         onDown = {
-                                            if (homeMode && homeShelves.isNotEmpty()) firstGenreFocus.requestFocus()
+                                            if (homeMode && homeShelves.isNotEmpty()) revealCatalogAndFocus = true
                                             else revealCatalogAndFocus = true
                                         },
                                     )
@@ -1104,20 +1114,40 @@ private fun HomeDiscoveryFeed(
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val rowFocusRequesters = remember(shelves) {
-        shelves.mapIndexed { index, _ -> if (index == 0) firstFocusRequester else FocusRequester() }
+    var focusMoveJob by remember { mutableStateOf<Job?>(null) }
+    val shelfIdentity = shelves.map { shelf ->
+        shelf.key to shelf.media.map(MediaContent::ratingKey)
+    }
+    val itemFocusRequesters = remember(shelfIdentity) {
+        shelves.associate { shelf ->
+            shelf.key to shelf.media.map { FocusRequester() }
+        }.toMap()
+    }
+    val lastFocusedIndices = remember(shelfIdentity) {
+        mutableStateMapOf<String, Int>().apply {
+            shelves.forEach { shelf -> put(shelf.key, 0) }
+        }
+    }
+    val rowListStates = remember(shelves.map(DiscoveryShelf::key)) {
+        shelves.associate { it.key to LazyListState() }
     }
 
     fun focusRow(index: Int) {
         if (index !in shelves.indices) return
-        if (listState.layoutInfo.visibleItemsInfo.any { it.index == index }) {
-            rowFocusRequesters[index].requestFocus()
-            return
-        }
-        scope.launch {
-            listState.animateScrollToItem(index)
-            delay(80)
-            rowFocusRequesters[index].requestFocus()
+        focusMoveJob?.cancel()
+        focusMoveJob = scope.launch {
+            val shelf = shelves[index]
+            val targetIndex = lastFocusedIndices.getValue(shelf.key)
+                .coerceIn(shelf.media.indices)
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                listState.animateScrollToItem(index)
+            }
+            val rowState = rowListStates.getValue(shelf.key)
+            if (rowState.layoutInfo.visibleItemsInfo.none { it.index == targetIndex }) {
+                rowState.scrollToItem(targetIndex)
+            }
+            delay(32)
+            itemFocusRequesters.getValue(shelf.key)[targetIndex].requestFocus()
         }
     }
 
@@ -1132,23 +1162,43 @@ private fun HomeDiscoveryFeed(
             Column {
                 SectionHeading(shelf.title)
                 LazyRow(
+                    state = rowListStates.getValue(shelf.key),
                     modifier = Modifier.focusGroup(),
                     contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 3.dp, bottom = 5.dp),
                     horizontalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
-                    items(shelf.media, key = { "${shelf.key}-${it.ratingKey}" }) { content ->
-                        val first = content.ratingKey == shelf.media.first().ratingKey
+                    itemsIndexed(
+                        items = shelf.media,
+                        key = { _, content -> "${shelf.key}-${content.ratingKey}" },
+                    ) { itemIndex, content ->
                         CinematicPosterCard(
                             content = content,
                             width = 108.dp,
-                            modifier = if (first) {
-                                Modifier.focusRequester(rowFocusRequesters[shelfIndex])
-                            } else Modifier,
+                            modifier = Modifier
+                                .testTag("browse-shelf-${shelf.key}-${content.ratingKey}")
+                                .focusRequester(itemFocusRequesters.getValue(shelf.key)[itemIndex])
+                                .then(
+                                    if (
+                                        shelfIndex == 0 &&
+                                        itemIndex == lastFocusedIndices.getValue(shelf.key)
+                                    ) {
+                                        Modifier.focusRequester(firstFocusRequester)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                             onOpen = onOpen,
-                            onFocused = onHighlighted,
+                            onFocused = {
+                                lastFocusedIndices[shelf.key] = itemIndex
+                                onHighlighted(it)
+                            },
                             onUp = {
-                                if (shelfIndex == 0) onUpFromFirst()
-                                else focusRow(shelfIndex - 1)
+                                if (shelfIndex == 0) {
+                                    focusMoveJob?.cancel()
+                                    onUpFromFirst()
+                                } else {
+                                    focusRow(shelfIndex - 1)
+                                }
                             },
                             onDown = { focusRow(shelfIndex + 1) },
                         )

@@ -1,5 +1,6 @@
 package com.minova.cinema.data.remote
 
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -9,7 +10,7 @@ import retrofit2.http.Header
 
 interface PlexHomeApiService {
     @GET("api/v2/home/users")
-    suspend fun getHomeUsers(): List<PlexHomeUserDto>
+    suspend fun getHomeUsers(): JsonElement
 
     @POST("api/v2/home/users/{uuid}/switch")
     suspend fun switchUser(

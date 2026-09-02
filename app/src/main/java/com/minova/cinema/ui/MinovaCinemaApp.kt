@@ -373,7 +373,13 @@ private fun MainScreen(
                                 }
                                 onReady(null)
                             } else {
-                                viewModel.finishPlaybackAndLoadNext(route.plan.mainFeature, onReady)
+                                viewModel.finishPlaybackAndLoadNext(route.plan.mainFeature) { next ->
+                                    if (next == null && routes.lastOrNull() is CinemaRoute.Player) {
+                                        routes.removeAt(routes.lastIndex)
+                                        viewModel.refresh(silent = true)
+                                    }
+                                    onReady(next)
+                                }
                             }
                         },
                         onPlayNext = ::playNext,

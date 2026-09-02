@@ -401,6 +401,17 @@ fun PlayerScreen(
         player.play()
     }
 
+    fun completePlayback() {
+        if (endHandled) return
+        endHandled = true
+        controlsVisible = false
+        nextUpLoading = content.kind == MediaKind.Episode
+        latestPlaybackEnded { resolvedNext ->
+            nextUpLoading = false
+            nextEpisode = resolvedNext
+        }
+    }
+
     // Tracks can change after preparation, a Plex transcode change, or a new
     // period in an HLS stream. Rebuild the D-pad menu from Player.Tracks each
     // time so selection is always based on Media3's real active track groups.
@@ -537,13 +548,7 @@ fun PlayerScreen(
                     }
                 }
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
-                    endHandled = true
-                    controlsVisible = false
-                    nextUpLoading = content.kind == MediaKind.Episode
-                    latestPlaybackEnded { resolvedNext ->
-                        nextUpLoading = false
-                        nextEpisode = resolvedNext
-                    }
+                    completePlayback()
                 }
             }
 
@@ -912,7 +917,17 @@ fun PlayerScreen(
                     player.seekTo(target)
                     playbackPositionMs = target
                     onUserInteraction()
-                    playerView?.requestFocus()
+                    if (activeIntroMarker == null) {
+                        // Plex credit markers can end exactly at the final
+                        // frame, where some TV decoders never emit STATE_ENDED.
+                        // Complete explicitly so movies return Home and an
+                        // episode can resolve its Next Up item.
+                        player.pause()
+                        latestProgress(target, duration, "stopped")
+                        completePlayback()
+                    } else {
+                        playerView?.requestFocus()
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
