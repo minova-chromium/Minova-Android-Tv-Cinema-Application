@@ -33,10 +33,13 @@ class MainActivity : ComponentActivity() {
     private val ambientInactivityTracker = AmbientInactivityTracker()
     private lateinit var cinemaLightingController: CinemaLightingController
     private var pendingDeepLinkRatingKey by mutableStateOf<String?>(null)
+    private var isTrailerRecordingMode by mutableStateOf(false)
+    private var disablePlexTrailersForCapture by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingDeepLinkRatingKey = intent.deepLinkRatingKey()
+        updatePromoCaptureFlags(intent)
         cinemaLightingController = CinemaLightingProvider.create(applicationContext)
         cinemaLightingController.registerPermissionCaller(this)
         enableEdgeToEdge()
@@ -57,6 +60,8 @@ class MainActivity : ComponentActivity() {
                         tapoLightsViewModel,
                         deepLinkRatingKey = pendingDeepLinkRatingKey,
                         onDeepLinkConsumed = { pendingDeepLinkRatingKey = null },
+                        isTrailerRecordingMode = isTrailerRecordingMode,
+                        disablePlexTrailersForCapture = disablePlexTrailersForCapture,
                     )
                 }
             }
@@ -79,11 +84,25 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingDeepLinkRatingKey = intent.deepLinkRatingKey()
+        updatePromoCaptureFlags(intent)
     }
 
     override fun onDestroy() {
         cinemaLightingController.release()
         super.onDestroy()
+    }
+
+    private fun updatePromoCaptureFlags(intent: Intent) {
+        // Capture-only UI is never enabled in a release build, even if another
+        // application sends a forged extra to the exported launcher Activity.
+        isTrailerRecordingMode = BuildConfig.DEBUG && intent.getBooleanExtra(
+            PromoCaptureContract.EXTRA_PROMO_RECORDING,
+            false,
+        )
+        disablePlexTrailersForCapture = isTrailerRecordingMode && intent.getBooleanExtra(
+            PromoCaptureContract.EXTRA_DISABLE_PLEX_TRAILERS,
+            true,
+        )
     }
 
     private class AmbientWindowCallback(

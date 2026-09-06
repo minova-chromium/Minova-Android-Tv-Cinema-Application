@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.update
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.PI
 import kotlin.math.cos
@@ -35,6 +37,35 @@ class TapoLightsRepository(
     private val lastCommandedBrightness = ConcurrentHashMap<String, Int>()
     private var fadeJob: Job? = null
     private var lastPlaybackState: Boolean? = null
+    private var testJob: Job? = null
+
+    fun testLights() {
+        if (_state.value.testing || _state.value.discovering || lastPlaybackState == true) return
+        val selected = assignedIps.toList()
+        if (selected.isEmpty()) {
+            _state.update { it.copy(message = "Select your Cinema Room lights first.") }
+            return
+        }
+        _state.update { it.copy(testing = true, testResults = emptyMap()) }
+        testJob = scope.launch {
+            try {
+                fadeJob?.join()
+                coroutineScope {
+                    selected.map { ip -> async(Dispatchers.IO) {
+                        fun report(status: String) { _state.update { it.copy(testResults = it.testResults + (ip to status)) } }
+                        val client = clients[ip]
+                        if (client == null) report("Not discovered — scan for lights again")
+                        else runCatching {
+                            testCinemaLight(object : TestableCinemaLight {
+                                override suspend fun snapshot() = client.getDeviceInfo()
+                                override suspend fun brightness(value: Int) { client.setBrightness(value) }
+                            }, ::report)
+                        }
+                    } }.awaitAll()
+                }
+            } finally { _state.update { it.copy(testing = false) } }
+        }
+    }
 
     init {
         scope.launch {
@@ -53,6 +84,7 @@ class TapoLightsRepository(
     }
 
     fun saveCredentials(email: String, password: String) {
+        if (_state.value.testing) return
         runCatching { authManager.save(email, password) }
             .onSuccess {
                 clients.clear()
@@ -69,6 +101,7 @@ class TapoLightsRepository(
     }
 
     fun clearCredentials() {
+        if (_state.value.testing) return
         fadeJob?.cancel()
         authManager.clear()
         clients.clear()
@@ -77,6 +110,7 @@ class TapoLightsRepository(
     }
 
     fun discover() {
+        if (_state.value.testing || _state.value.discovering) return
         val credentials = authManager.read()
         if (credentials == null) {
             _state.value = _state.value.copy(
@@ -135,6 +169,7 @@ class TapoLightsRepository(
     }
 
     fun setAssigned(ipAddress: String, assigned: Boolean) {
+        if (_state.value.testing) return
         scope.launch {
             preferences.setAssigned(ipAddress, assigned)
         }
@@ -149,6 +184,7 @@ class TapoLightsRepository(
         lastPlaybackState = playing
         fadeJob?.cancel()
         fadeJob = scope.launch {
+            testJob?.cancelAndJoin()
             if (playing) fadeDownForCinema() else restoreAfterCinema()
         }
     }

@@ -2,6 +2,14 @@ package com.minova.cinema.ui.browse
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.printToLog
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.foundation.layout.Column
+import com.minova.cinema.ui.settings.SettingsSecondaryButton
+import androidx.tv.material3.Text
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -93,7 +101,7 @@ class BrowseScreenNavigationTest {
 
         waitUntilFocused("browse-shelf-top-picks-movie-2")
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
-        waitUntilFocused("browse-shelf-because-movie-1-movie-2")
+        waitUntilFocused("browse-shelf-because-you-watched-movie-2")
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         waitUntilFocused("browse-shelf-recently-added-movie-1")
         compose.onRoot().performKeyInput {
@@ -142,7 +150,7 @@ class BrowseScreenNavigationTest {
         waitUntilFocused("browse-shelf-top-picks-movie-2")
 
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
-        waitUntilFocused("browse-shelf-because-movie-1-movie-2")
+        waitUntilFocused("browse-shelf-because-you-watched-movie-2")
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         waitUntilFocused("browse-shelf-recently-added-movie-1")
         compose.onRoot().performKeyInput { repeat(4) { pressKey(Key.DirectionRight) } }
@@ -159,7 +167,71 @@ class BrowseScreenNavigationTest {
         waitUntilFocused("browse-shelf-new-releases-movie-3")
     }
 
-    private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1) {
+    @Test
+    fun thousandTitleGridSurvivesRepeatedDirectionChanges() {
+        showBrowseScreen(mediaCount = 1000)
+        compose.onNodeWithTag("header-tab-Movies").performClick()
+        compose.onNodeWithTag("header-action-Row view. Switch to grid view").performClick()
+        compose.onNodeWithTag("catalog-grid-first-card").performSemanticsAction(SemanticsActions.RequestFocus)
+        repeat(8) {
+            compose.onRoot().performKeyInput { repeat(3) { pressKey(Key.DirectionRight) }; pressKey(Key.DirectionDown) }
+            compose.waitForIdle()
+            compose.onRoot().performKeyInput { pressKey(Key.DirectionUp); repeat(3) { pressKey(Key.DirectionLeft) } }
+            compose.waitForIdle()
+        }
+        compose.onNodeWithTag("catalog-grid-first-card").assertIsFocused()
+    }
+
+    @Test
+    fun longOkOpensActionsWithoutOpeningDetails() {
+        showBrowseScreen(mediaCount = 30)
+        compose.onNodeWithTag("header-tab-Movies").performClick()
+        compose.onNodeWithTag("header-action-Row view. Switch to grid view").performClick()
+        compose.onNodeWithTag("catalog-grid-first-card").performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { keyDown(Key.DirectionCenter); advanceEventTime(800); keyUp(Key.DirectionCenter) }
+        compose.onNodeWithText("More information").assertIsDisplayed()
+        compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.onNodeWithText("Close").assertDoesNotExist()
+        compose.onNodeWithTag("catalog-grid-first-card").assertIsFocused()
+    }
+
+    @Test
+    fun switchingTabsRestoresExactGridTitle() {
+        showBrowseScreen(mediaCount = 100)
+        compose.onNodeWithTag("header-tab-Movies").performClick()
+        compose.onNodeWithTag("header-action-Row view. Switch to grid view").performClick()
+        compose.onNodeWithTag("catalog-grid-first-card").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onRoot().performKeyInput { repeat(2) { pressKey(Key.DirectionRight) } }
+        val expected = compose.onAllNodes(isFocused()).fetchSemanticsNodes().single().config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+        compose.onNodeWithTag("header-tab-Home").performClick()
+        compose.onNodeWithTag("header-tab-Movies").performClick()
+        compose.waitForIdle()
+        val restored = compose.onAllNodes(isFocused()).fetchSemanticsNodes().single().config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+        org.junit.Assert.assertEquals(expected, restored)
+    }
+
+    @Test
+    fun detailReturnRestoresDeepShelfPositionAfterRefresh() {
+        showBrowseScreen(includeContinueWatching = true, mediaCount = 200, simulateNavigation = true)
+        compose.onNodeWithTag("header-tab-Home").performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown); pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-top-picks-movie-2")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown); pressKey(Key.DirectionDown) }
+        waitUntilFocused("browse-shelf-recently-added-movie-1")
+        repeat(12) { compose.onRoot().performKeyInput { pressKey(Key.DirectionRight) }; compose.waitForIdle() }
+        waitUntilFocused("browse-shelf-recently-added-movie-13")
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.onNodeWithText("Return from details").performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { pressKey(Key.DirectionCenter) }
+        try { waitUntilFocused("browse-shelf-recently-added-movie-13") }
+        catch (error: Throwable) { compose.onRoot().printToLog("MinovaReturnTree"); throw error }
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown); pressKey(Key.DirectionUp) }
+        waitUntilFocused("browse-shelf-recently-added-movie-13")
+    }
+
+    private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false) {
         val movies = List(mediaCount) { index ->
             MediaContent(
                 ratingKey = "movie-${index + 1}",
@@ -181,10 +253,18 @@ class BrowseScreenNavigationTest {
         val movie = movies.first()
         compose.setContent {
             MinovaCinemaTheme {
+                var details by remember { mutableStateOf(false) }
+                var refreshed by remember { mutableStateOf(false) }
+                val holder = rememberSaveableStateHolder()
+                if (details) {
+                    SettingsSecondaryButton(onClick = { refreshed = true; details = false }) { Text("Return from details") }
+                } else holder.SaveableStateProvider("browse") {
                 BrowseScreen(
                     catalog = CinemaCatalog(
                         serverName = "Navigation test",
-                        movies = movies,
+                        movies = if (refreshed) listOf(movies.first().copy(
+                            ratingKey = "newly-added", title = "Newly Added While Away", addedAtEpochSeconds = 99_999L,
+                        )) + movies else movies,
                         shows = emptyList(),
                         continueWatching = if (includeContinueWatching) {
                             listOf(movie.copy(viewOffsetMs = 1_800_000L))
@@ -192,12 +272,13 @@ class BrowseScreenNavigationTest {
                             emptyList()
                         },
                     ),
-                    onOpen = {},
+                    onOpen = { if (simulateNavigation) details = true },
                     onPlay = {},
                     onToggleMyList = {},
                     onSettings = {},
                     onWatchlistRefresh = {},
                 )
+                }
             }
         }
     }

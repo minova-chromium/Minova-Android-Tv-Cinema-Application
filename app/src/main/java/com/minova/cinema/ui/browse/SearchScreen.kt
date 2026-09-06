@@ -61,7 +61,7 @@ internal fun SearchScreen(
     shows: List<MediaContent>,
     onOpen: (MediaContent) -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var fieldFocused by remember { mutableStateOf(false) }
     val fieldFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current

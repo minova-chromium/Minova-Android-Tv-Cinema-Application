@@ -18,6 +18,10 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import com.minova.cinema.data.local.BrowsePreferences
+import com.minova.cinema.ui.browse.HomeCustomizationDialog
+import com.minova.cinema.ui.browse.buildHomeDiscoveryShelves
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,6 +75,8 @@ fun MinovaCinemaApp(
     tapoLightsViewModel: TapoLightsViewModel,
     deepLinkRatingKey: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
+    isTrailerRecordingMode: Boolean = false,
+    disablePlexTrailersForCapture: Boolean = false,
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -116,6 +122,8 @@ fun MinovaCinemaApp(
                 tapoLightsViewModel,
                 deepLinkRatingKey,
                 onDeepLinkConsumed,
+                isTrailerRecordingMode,
+                disablePlexTrailersForCapture,
             )
 
             (updateState as? UpdateUiState.Available)?.let { available ->
@@ -148,6 +156,8 @@ private fun MainScreen(
     tapoLightsViewModel: TapoLightsViewModel,
     deepLinkRatingKey: String?,
     onDeepLinkConsumed: () -> Unit,
+    isTrailerRecordingMode: Boolean,
+    disablePlexTrailersForCapture: Boolean,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -202,6 +212,22 @@ private fun MainScreen(
         )
         is CinemaUiState.Ready -> {
             val currentRoute = routes.last()
+            val profileKey = state.connection.baseUrl + "\u0000" +
+                (com.minova.cinema.data.local.PlexPreferences(context).readActiveProfileUuid() ?: "owner")
+            val browsePreferences = remember(profileKey) { BrowsePreferences(context, profileKey) }
+            var homePreferences by remember(profileKey) { mutableStateOf(browsePreferences.read()) }
+            var customizeHome by remember { mutableStateOf(false) }
+            val browseStateHolder = rememberSaveableStateHolder()
+            val browseStateKey = remember(profileKey) {
+                java.security.MessageDigest.getInstance("SHA-256").digest(profileKey.toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+            }
+            if (customizeHome) HomeCustomizationDialog(
+                shelves = buildHomeDiscoveryShelves(state.catalog).map { it.key to it.title },
+                preferences = homePreferences,
+                onSave = { homePreferences = it; browsePreferences.save(it) },
+                onDismiss = { customizeHome = false },
+            )
 
             LaunchedEffect(deepLinkRatingKey, state.catalog) {
                 val ratingKey = deepLinkRatingKey ?: return@LaunchedEffect
@@ -237,16 +263,17 @@ private fun MainScreen(
                 routes.add(CinemaRoute.Detail(content))
             }
 
-            fun play(content: MediaContent) {
+            fun play(content: MediaContent, fromBeginning: Boolean = false) {
                 viewModel.resolvePlaybackPlan(
                     content = content,
                     cinemaModeEnabled = playbackSettings.cinemaModeEnabled,
-                    cinemaTrailersEnabled = playbackSettings.cinemaTrailersEnabled,
+                    cinemaTrailersEnabled = playbackSettings.cinemaTrailersEnabled &&
+                        !disablePlexTrailersForCapture,
                     bumperUri = playbackSettings.cinemaBumperUri,
                 ) { plan ->
                     if (plan != null) {
                         lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
-                        routes.add(CinemaRoute.Player(plan))
+                        routes.add(CinemaRoute.Player(if (fromBeginning) plan.copy(mainFeature = plan.mainFeature.copy(viewOffsetMs = 0L)) else plan))
                     }
                 }
             }
@@ -267,14 +294,17 @@ private fun MainScreen(
                 label = "cinema_navigation",
             ) { route ->
                 when (route) {
-                    CinemaRoute.Browse -> BrowseScreen(
+                    CinemaRoute.Browse -> browseStateHolder.SaveableStateProvider(browseStateKey) { BrowseScreen(
                         catalog = state.catalog,
                         onOpen = ::open,
-                        onPlay = ::play,
+                        onPlay = { play(it) },
                         onToggleMyList = viewModel::toggleMyList,
                         onSettings = { routes.add(CinemaRoute.Settings) },
                         onWatchlistRefresh = viewModel::refreshWatchlist,
-                    )
+                        homePreferences = homePreferences,
+                        onPlayFromBeginning = { play(it, true) },
+                        onSetWatched = viewModel::setWatched,
+                    ) }
                     is CinemaRoute.Detail -> {
                         val detailedMovie = (movieDetail as? MovieDetailUiState.Ready)
                             ?.takeIf { it.movie.ratingKey == route.content.ratingKey }
@@ -293,8 +323,8 @@ private fun MainScreen(
                             isInContinueWatching = state.catalog.continueWatching.any {
                                 it.ratingKey == route.content.ratingKey
                             },
-                            onPlay = ::play,
-                            onPlayTrailer = ::play,
+                            onPlay = { play(it) },
+                            onPlayTrailer = { play(it) },
                             onWatchedChanged = { watched ->
                                 viewModel.setWatched(route.content, watched)
                             },
@@ -305,7 +335,7 @@ private fun MainScreen(
                             // Episode cards are playback actions. Resolve the
                             // full Plex metadata and enter the player directly
                             // instead of opening a second detail screen.
-                            onOpenEpisode = ::play,
+                            onOpenEpisode = { play(it) },
                             onSeasonSelected = viewModel::selectSeason,
                         )
                     }
@@ -314,6 +344,13 @@ private fun MainScreen(
                         preRollTrailers = route.plan.trailers,
                         bumperUri = route.plan.bumperUri,
                         cinemaModeActive = route.plan.cinemaModeActive,
+                        showMinovaTrailerPreRoll = (
+                            route.plan.cinemaModeActive && route.plan.trailers.isNotEmpty()
+                            ) || (
+                            isTrailerRecordingMode &&
+                                route.plan.mainFeature.kind == MediaKind.Movie
+                            ),
+                        isTrailerRecordingMode = isTrailerRecordingMode,
                         connection = state.connection,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
                         inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
@@ -438,6 +475,8 @@ private fun MainScreen(
                         onSwitchProfile = viewModel::switchProfile,
                         onRunNetworkTest = viewModel::runNetworkAndCodecTest,
                         onRequestTvHomeChannels = viewModel::requestTvHomeChannels,
+                        onCustomizeHome = { customizeHome = true },
+                        onTestTapoLights = tapoLightsViewModel::testLights,
                     )
                 }
             }

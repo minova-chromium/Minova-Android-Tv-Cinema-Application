@@ -55,6 +55,7 @@ fun TapoCinemaLightsSection(
     onDiscover: () -> Unit,
     onAssignmentChanged: (String, Boolean) -> Unit,
     entryModifier: Modifier = Modifier,
+    onTestLights: () -> Unit = {},
 ) {
     var settingsVisible by remember { mutableStateOf(false) }
     var loginVisible by remember { mutableStateOf(false) }
@@ -121,6 +122,7 @@ fun TapoCinemaLightsSection(
                 settingsVisible = false
             },
             onAssignmentChanged = onAssignmentChanged,
+            onTestLights = onTestLights,
         )
     }
 }
@@ -134,6 +136,7 @@ fun CinemaLightsSettingsScreen(
     onChangeLogin: () -> Unit,
     onClearCredentials: () -> Unit,
     onAssignmentChanged: (String, Boolean) -> Unit,
+    onTestLights: () -> Unit = {},
 ) {
     val firstFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
@@ -168,22 +171,33 @@ fun CinemaLightsSettingsScreen(
             ) {
                 SettingsPrimaryButton(
                     onClick = onDiscover,
-                    enabled = !state.discovering,
+                    enabled = !state.discovering && !state.testing,
                     modifier = Modifier
                         .weight(1f)
                         .focusRequester(firstFocus),
                 ) {
                     Text(if (state.discovering) "Scanning…" else "Scan for lights")
                 }
-                SettingsSecondaryButton(onClick = onChangeLogin, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onChangeLogin, enabled = !state.testing, modifier = Modifier.weight(1f)) {
                     Text("Change login")
                 }
-                SettingsSecondaryButton(onClick = onClearCredentials, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onClearCredentials, enabled = !state.testing, modifier = Modifier.weight(1f)) {
                     Text("Disconnect")
                 }
                 SettingsSecondaryButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
                     Text("Done")
                 }
+            }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+            SettingsSecondaryButton(onClick = onTestLights,
+                enabled = !state.testing && !state.discovering && state.lights.any { it.isAssigned },
+                modifier = Modifier.padding(top = 12.dp)) {
+                Text(if (state.testing) "Testing — restoring automatically…" else "Test dim and restore")
             }
             state.message?.let {
                 Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 12.dp))
@@ -221,13 +235,7 @@ fun CinemaLightsSettingsScreen(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 16.dp, bottom = 10.dp),
             )
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
+                }
                 itemsIndexed(
                     items = state.lights,
                     key = { _, light -> light.ipAddress },
@@ -235,9 +243,12 @@ fun CinemaLightsSettingsScreen(
                     TapoLightRow(
                         light = light,
                         onClick = {
-                            onAssignmentChanged(light.ipAddress, !light.isAssigned)
+                            if (!state.testing) onAssignmentChanged(light.ipAddress, !light.isAssigned)
                         },
                     )
+                    state.testResults[light.ipAddress]?.let { result ->
+                        Text(result, color = MinovaCyan, modifier = Modifier.padding(start = 18.dp, bottom = 8.dp))
+                    }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }

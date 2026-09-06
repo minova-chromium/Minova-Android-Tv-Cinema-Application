@@ -118,6 +118,8 @@ fun SettingsScreen(
     onSwitchProfile: (PlexHomeProfile, String?) -> Unit,
     onRunNetworkTest: () -> Unit,
     onRequestTvHomeChannels: () -> Unit,
+    onCustomizeHome: () -> Unit = {},
+    onTestTapoLights: () -> Unit = {},
 ) {
     var pinProfile by remember { mutableStateOf<PlexHomeProfile?>(null) }
     var pin by remember { mutableStateOf("") }
@@ -308,6 +310,9 @@ fun SettingsScreen(
         }
 
                 SettingsSection.Playback -> item {
+            SettingsSecondaryButton(onClick = onCustomizeHome, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                Text("Customize home screen · shelves & opening tab")
+            }
             SettingsCard(
                 title = "Playback",
                 subtitle = "Autoplay and viewing safeguards",
@@ -373,6 +378,14 @@ fun SettingsScreen(
         }
 
                 SettingsSection.Network -> item {
+            val artwork = com.minova.cinema.ui.browse.ArtworkMetrics.snapshot()
+            val loaded = artwork.filter { it.success }
+            val p95 = loaded.map { it.elapsedMs }.sorted().let { times ->
+                times.getOrNull(((times.size - 1) * 0.95).toInt()) ?: 0L
+            }
+            Text("Artwork · ${loaded.size} loaded · ${loaded.count { it.source == "MEMORY_CACHE" }} memory hits · " +
+                "${artwork.count { !it.success }} errors · p95 ${p95}ms", color = MinovaMuted,
+                modifier = Modifier.padding(bottom = 12.dp))
             SettingsCard(
                 title = "Network & codec assistant",
                 subtitle = "Test this Plex connection and inspect the TV's decoders",
@@ -445,7 +458,7 @@ fun SettingsScreen(
                     )
                     PlaybackToggleButton(
                         title = "Play trailers",
-                        description = "Two random unwatched Plex movie trailers",
+                        description = "Minova presentation, then up to two unwatched Plex movie trailers",
                         checked = cinemaTrailersEnabled,
                         onClick = {
                             onCinemaTrailersChanged(!cinemaTrailersEnabled)
@@ -509,6 +522,7 @@ fun SettingsScreen(
                     onSaveCredentials = onSaveTapoCredentials,
                     onClearCredentials = onClearTapoCredentials,
                     onDiscover = onDiscoverTapoLights,
+                    onTestLights = onTestTapoLights,
                     onAssignmentChanged = { ip, assigned ->
                         onTapoLightAssignmentChanged(ip, assigned)
                         savedMessage = "Tapo light selection saved"
@@ -618,6 +632,15 @@ internal fun SettingsSecondaryButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
+        // The default outlined border keeps its capsule shape even when the
+        // container is rectangular. Use the same clean surface in every state.
+        border = ButtonDefaults.border(
+            border = androidx.tv.material3.Border.None,
+            focusedBorder = androidx.tv.material3.Border.None,
+            pressedBorder = androidx.tv.material3.Border.None,
+            disabledBorder = androidx.tv.material3.Border.None,
+            focusedDisabledBorder = androidx.tv.material3.Border.None,
+        ),
         shape = ButtonDefaults.shape(
             shape = RoundedCornerShape(12.dp),
             focusedShape = RoundedCornerShape(12.dp),

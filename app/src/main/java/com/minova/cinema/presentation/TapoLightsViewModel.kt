@@ -25,6 +25,7 @@ class TapoLightsViewModel(application: Application) : AndroidViewModel(applicati
     fun saveCredentials(email: String, password: String) = repository.saveCredentials(email, password)
     fun clearCredentials() = repository.clearCredentials()
     fun discover() = repository.discover()
+    fun testLights() = repository.testLights()
     fun setAssigned(ipAddress: String, assigned: Boolean) =
         repository.setAssigned(ipAddress, assigned)
 
@@ -38,4 +39,3 @@ class TapoLightsViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 }
-

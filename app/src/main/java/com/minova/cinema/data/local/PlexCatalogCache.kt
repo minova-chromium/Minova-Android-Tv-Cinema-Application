@@ -45,7 +45,10 @@ class PlexCatalogCache(context: Context) {
     }
 
     private fun cacheFile(connection: PlexConnection): File {
-        val key = connection.baseUrl.lowercase().hashCode().toUInt().toString(16)
+        // Isolate managed-profile libraries; never persist the token itself.
+        val key = java.security.MessageDigest.getInstance("SHA-256")
+            .digest((connection.baseUrl + "\u0000" + connection.token).toByteArray())
+            .joinToString("") { "%02x".format(it) }
         return File(directory, "$key.json")
     }
 

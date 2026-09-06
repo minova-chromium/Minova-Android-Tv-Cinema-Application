@@ -9,7 +9,6 @@ import com.minova.cinema.data.PlexProfileRepository
 import com.minova.cinema.data.PlaybackCapabilityAssistant
 import com.minova.cinema.data.local.PlexPreferences
 import com.minova.cinema.data.local.PlexCatalogCache
-import com.minova.cinema.data.local.PlexArtworkPrefetcher
 import com.minova.cinema.data.remote.PlexConfig
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexServiceFactory
@@ -30,7 +29,6 @@ import kotlinx.coroutines.launch
 class CinemaViewModel(
     private val preferences: PlexPreferences,
     private val catalogCache: PlexCatalogCache,
-    private val artworkPrefetcher: PlexArtworkPrefetcher,
     private val tvHomePublisher: TvHomePublisher,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<CinemaUiState>(CinemaUiState.Loading)
@@ -171,10 +169,11 @@ class CinemaViewModel(
             else _uiState.value = CinemaUiState.Loading
             try {
                 val catalog = applyLocalLibrary(currentRepository.loadCatalog())
-                catalogCache.write(currentConnection, catalog)
-                artworkPrefetcher.prefetch(catalog)
-                tvHomePublisher.publish(catalog)
                 _uiState.value = CinemaUiState.Ready(catalog, currentConnection)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    catalogCache.write(currentConnection, catalog)
+                    tvHomePublisher.publish(catalog)
+                }
                 refreshProfiles()
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -473,8 +472,10 @@ class CinemaViewModel(
     ) {
         catalogJob?.cancel()
         watchlistJob?.cancel()
-        val cached = if (onboarding) null else catalogCache.read(newConnection)
         catalogJob = viewModelScope.launch {
+            val cached = if (onboarding) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                catalogCache.read(newConnection)
+            }
             _uiState.value = when {
                 onboarding -> CinemaUiState.Onboarding(connecting = true)
                 cached != null -> CinemaUiState.Ready(cached, newConnection, refreshing = true)
@@ -492,10 +493,11 @@ class CinemaViewModel(
                 repository = newRepository
                 val catalog = applyLocalLibrary(newRepository.loadCatalog())
                 if (persist) preferences.saveConnection(newConnection)
-                catalogCache.write(newConnection, catalog)
-                artworkPrefetcher.prefetch(catalog)
-                tvHomePublisher.publish(catalog)
                 _uiState.value = CinemaUiState.Ready(catalog, newConnection)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    catalogCache.write(newConnection, catalog)
+                    tvHomePublisher.publish(catalog)
+                }
                 refreshProfiles()
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -530,7 +532,6 @@ class CinemaViewModel(
         private val appContext = context.applicationContext
         private val preferences = PlexPreferences(appContext)
         private val catalogCache = PlexCatalogCache(appContext)
-        private val artworkPrefetcher = PlexArtworkPrefetcher(appContext)
         private val tvHomePublisher = TvHomePublisher(appContext)
 
         @Suppress("UNCHECKED_CAST")
@@ -539,7 +540,6 @@ class CinemaViewModel(
             return CinemaViewModel(
                 preferences,
                 catalogCache,
-                artworkPrefetcher,
                 tvHomePublisher,
             ) as T
         }

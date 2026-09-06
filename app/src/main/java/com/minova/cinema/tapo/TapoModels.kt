@@ -20,6 +20,8 @@ data class TapoLightsUiState(
     val lights: List<TapoLight> = emptyList(),
     val localAccessBlockedCount: Int = 0,
     val message: String? = null,
+    val testing: Boolean = false,
+    val testResults: Map<String, String> = emptyMap(),
 )
 
 internal data class TapoDeviceInfo(

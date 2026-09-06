@@ -128,6 +128,8 @@ fun PlayerScreen(
     preRollTrailers: List<MediaContent>,
     bumperUri: String?,
     cinemaModeActive: Boolean,
+    showMinovaTrailerPreRoll: Boolean,
+    isTrailerRecordingMode: Boolean,
     connection: PlexConnection,
     autoplayNextEpisode: Boolean,
     inactivityCheckEnabled: Boolean,
@@ -217,6 +219,9 @@ fun PlayerScreen(
     var mainResumeApplied by remember(content.ratingKey) { mutableStateOf(false) }
     var activePlaylistIndex by remember(content.ratingKey) { mutableStateOf(0) }
     var activePlaylistTitle by remember(content.ratingKey) { mutableStateOf(content.title) }
+    var minovaPreRollVisible by remember(content.ratingKey, showMinovaTrailerPreRoll) {
+        mutableStateOf(showMinovaTrailerPreRoll)
+    }
     var lastAppliedSourceKey by remember(content.ratingKey) { mutableStateOf("") }
     var lastDiagnosticsKey by remember(content.ratingKey) { mutableStateOf("") }
     val settingsFocusRequester = remember { FocusRequester() }
@@ -358,7 +363,9 @@ fun PlayerScreen(
         content.ratingKey,
         playableTrailers,
         localBumperUri,
+        minovaPreRollVisible,
     ) {
+        if (minovaPreRollVisible) return@LaunchedEffect
         val items = buildList {
             playableTrailers.forEach { add(trailerMediaItem(it)) }
             localBumperUri?.let { add(bumperMediaItem(it)) }
@@ -1035,6 +1042,13 @@ fun PlayerScreen(
                 },
                 onTimeout = onInactivityTimeout,
                 modifier = Modifier.align(Alignment.Center),
+            )
+        }
+
+        if (minovaPreRollVisible) {
+            MinovaTrailerPreRoll(
+                showRecordingDisclaimer = isTrailerRecordingMode,
+                onFinished = { minovaPreRollVisible = false },
             )
         }
     }

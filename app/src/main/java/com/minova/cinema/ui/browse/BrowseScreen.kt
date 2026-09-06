@@ -56,6 +56,14 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewHeadline
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.ui.platform.LocalContext
+import com.minova.cinema.data.local.HomeLayoutPreferences
+import com.minova.cinema.data.local.orderedShelfKeys
+import com.minova.cinema.data.local.PlexArtworkPrefetcher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -124,7 +132,7 @@ private enum class BrowseLayout { Rows, Grid }
 private const val GridColumnCount = 5
 private val AlphabetBuckets = listOf("#") + ('A'..'Z').map(Char::toString)
 
-private data class DiscoveryShelf(
+internal data class DiscoveryShelf(
     val key: String,
     val title: String,
     val media: List<MediaContent>,
@@ -138,10 +146,17 @@ fun BrowseScreen(
     onToggleMyList: (MediaContent) -> Unit,
     onSettings: () -> Unit,
     onWatchlistRefresh: () -> Unit,
+    homePreferences: HomeLayoutPreferences = HomeLayoutPreferences(),
+    onPlayFromBeginning: (MediaContent) -> Unit = onPlay,
+    onSetWatched: (MediaContent, Boolean) -> Unit = { _, _ -> },
 ) {
-    var tab by remember { mutableStateOf(BrowseTab.Home) }
-    var layout by remember { mutableStateOf(BrowseLayout.Rows) }
-    var selectedGenre by remember(tab) { mutableStateOf<String?>(null) }
+    var tab by rememberSaveable { mutableStateOf(BrowseTab.entries.firstOrNull { it.name == homePreferences.openingTab } ?: BrowseTab.Home) }
+    var layout by rememberSaveable { mutableStateOf(BrowseLayout.Rows) }
+    var genresByTab by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }
+    val selectedGenre = genresByTab[tab.name]
+    fun selectGenre(genre: String?) {
+        genresByTab = HashMap(genresByTab).apply { if (genre == null) remove(tab.name) else put(tab.name, genre) }
+    }
     var filterOpen by remember { mutableStateOf(false) }
     val browseItems = remember(catalog, tab) {
         when (tab) {
@@ -188,14 +203,15 @@ fun BrowseScreen(
             (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey),
         )
     }
-    val homeShelves = remember(catalog) {
-        buildHomeDiscoveryShelves(catalog)
+    val homeShelves = remember(catalog, homePreferences) {
+        val shelves = buildHomeDiscoveryShelves(catalog)
+        orderedShelfKeys(shelves.map { it.key }, homePreferences).map { key -> shelves.first { it.key == key } }
     }
     var highlightedContent by remember(tab) {
         mutableStateOf(heroCandidates.firstOrNull())
     }
     var pendingHighlightedContent by remember(tab) { mutableStateOf<MediaContent?>(null) }
-    var homeFeaturedIndex by remember { mutableStateOf(0) }
+    var homeFeaturedIndex by rememberSaveable { mutableStateOf(0) }
     val heroFocus = remember(tab) { FocusRequester() }
     val firstContinueFocus = remember(tab) { FocusRequester() }
     val firstGenreFocus = remember(tab) { FocusRequester() }
@@ -204,7 +220,7 @@ fun BrowseScreen(
 
     LaunchedEffect(gridGenres, selectedGenre) {
         if (selectedGenre != null && gridGenres.none { it.equals(selectedGenre, ignoreCase = true) }) {
-            selectedGenre = null
+            selectGenre(null)
         }
     }
 
@@ -239,16 +255,31 @@ fun BrowseScreen(
         }
     }
 
+    val tabStateHolder = rememberSaveableStateHolder()
+    var lastFocusKeys by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }
+    val focusMemory = remember(tab) { BrowseFocusMemory(lastFocusKeys[tab.name], lastFocusKeys[tab.name] != null) }
+    focusMemory.onFocus = { key -> lastFocusKeys = HashMap(lastFocusKeys).apply { put(tab.name, key) } }
+    var quickContent by remember { mutableStateOf<MediaContent?>(null) }
+    var prefetchContent by remember { mutableStateOf<MediaContent?>(null) }
+    var prefetchSequence by remember { mutableStateOf<List<MediaContent>>(emptyList()) }
+    val context = LocalContext.current
+    val prefetcher = remember(context) { PlexArtworkPrefetcher(context) }
+    LaunchedEffect(tab, prefetchContent?.ratingKey, prefetchSequence) {
+        prefetchContent?.let { prefetcher.prefetch(prefetchSequence, it.ratingKey) }
+    }
+    CompositionLocalProvider(LocalBrowseFocus provides focusMemory,
+        LocalQuickActions provides { content -> quickContent = content },
+        LocalArtworkSequence provides filteredGridItems,
+        LocalArtworkNeighbours provides { sequence, content -> prefetchSequence = sequence; prefetchContent = content }) {
     Box(Modifier.fillMaxSize().background(MinovaBlack)) {
         val requestFirstContentFocus = {
-            when {
-                tab != BrowseTab.Home && layout == BrowseLayout.Grid && filteredGridItems.isNotEmpty() ->
-                    firstGridPosterFocus.requestFocus()
-                (if (tab == BrowseTab.Home) homeFeatured.getOrNull(homeFeaturedIndex) else highlightedContent) != null ->
-                    heroFocus.requestFocus()
-                continueWatching.isNotEmpty() -> firstContinueFocus.requestFocus()
-                gridGenres.isNotEmpty() -> firstGenreFocus.requestFocus()
-                filteredGridItems.isNotEmpty() -> firstPosterFocus.requestFocus()
+            // An expanded catalog removes the hero from composition. Only
+            // request attached focus targets; never trap Down on the header.
+            val candidates = if (tab != BrowseTab.Home && layout == BrowseLayout.Grid) {
+                listOf(firstGridPosterFocus)
+            } else listOf(heroFocus, firstContinueFocus, firstGenreFocus, firstPosterFocus)
+            for (candidate in candidates) {
+                if (runCatching { candidate.requestFocus() }.getOrDefault(false)) break
             }
             Unit
         }
@@ -272,6 +303,7 @@ fun BrowseScreen(
             BrowseTab.MyList -> "No titles from this Plex server are in your Watchlist."
             BrowseTab.Search -> "Search your Plex library."
         }
+        tabStateHolder.SaveableStateProvider(tab.name + layout.name) {
         if (tab == BrowseTab.Search) {
             SearchScreen(
                 movies = catalog.movies,
@@ -319,7 +351,7 @@ fun BrowseScreen(
                 onPlay = onPlay,
                 isInMyList = { content -> catalog.myList.any { it.ratingKey == content.ratingKey } },
                 onToggleMyList = onToggleMyList,
-                onGenreSelected = { selectedGenre = it },
+                onGenreSelected = { selectGenre(it) },
                 heroFocus = heroFocus,
                 firstContinueFocus = firstContinueFocus,
                 firstGenreFocus = firstGenreFocus,
@@ -330,18 +362,30 @@ fun BrowseScreen(
             )
         }
 
+        }
+        quickContent?.let { content ->
+            fun dismissActions() { quickContent = null; focusMemory.restore = true }
+            TitleActionsDialog(content, catalog.myList.any { it.ratingKey == content.ratingKey },
+                onDismiss = ::dismissActions,
+                onOpen = { dismissActions(); onOpen(content) },
+                onPlay = { restart -> dismissActions(); if (restart) onPlayFromBeginning(content) else onPlay(content) },
+                onWatchlist = { onToggleMyList(content); dismissActions() },
+                onWatched = { onSetWatched(content, !content.isWatched); dismissActions() })
+        }
         if (filterOpen) {
             GenreFilterDialog(
                 genres = gridGenres,
                 selectedGenre = selectedGenre,
                 onGenreSelected = { genre ->
-                    selectedGenre = genre
+                    selectGenre(genre)
                     filterOpen = false
                 },
                 onDismiss = { filterOpen = false },
             )
         }
     }
+}
+
 }
 
 private fun buildFeaturedCarousel(media: List<MediaContent>): List<MediaContent> {
@@ -354,7 +398,7 @@ private fun buildFeaturedCarousel(media: List<MediaContent>): List<MediaContent>
     ).take(10)
 }
 
-private fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoveryShelf> {
+internal fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoveryShelf> {
     val media = (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey)
     if (media.isEmpty()) return emptyList()
     val recentlyAdded = media.sortedWith(
@@ -410,7 +454,7 @@ private fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoveryShe
         if (becauseYouWatched.isNotEmpty() && recentReference != null) {
             add(
                 DiscoveryShelf(
-                    "because-${recentReference.ratingKey}",
+                    "because-you-watched",
                     "Because You Watched ${recentReference.title}",
                     becauseYouWatched,
                 ),
@@ -753,10 +797,13 @@ private fun CinematicBrowser(
                 ?.let(::add)
         }
     }
-    var contentBrowsing by remember(homeMode) { mutableStateOf(false) }
+    var contentBrowsing by rememberSaveable(homeMode) { mutableStateOf(false) }
     var pendingContentBrowsing by remember(homeMode) { mutableStateOf(false) }
     var revealCatalogAndFocus by remember(homeMode) { mutableStateOf(false) }
     var restoreHomeFocus by remember { mutableStateOf(false) }
+    val continueRowState = rememberLazyListState()
+    val genreRowState = rememberLazyListState()
+    val posterRowState = rememberLazyListState()
     val catalogScrimAlpha by animateFloatAsState(
         targetValue = if (!homeMode && contentBrowsing) 0.34f else 0f,
         animationSpec = tween(420, easing = FastOutSlowInEasing),
@@ -807,35 +854,7 @@ private fun CinematicBrowser(
 
     Box(Modifier.fillMaxSize().background(MinovaBlack)) {
         if (hero != null) {
-            AnimatedContent(
-                targetState = hero,
-                transitionSpec = {
-                    fadeIn(
-                        animationSpec = tween(
-                            durationMillis = 460,
-                            delayMillis = 190,
-                            easing = FastOutSlowInEasing,
-                        ),
-                    ) togetherWith fadeOut(
-                        animationSpec = tween(
-                            durationMillis = 190,
-                            easing = FastOutSlowInEasing,
-                        ),
-                    )
-                },
-                contentKey = { it.ratingKey },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .align(Alignment.TopCenter),
-                label = "featured_backdrop_fade_through",
-            ) { content ->
-                AsyncImage(
-                    model = content.backdropUrl ?: content.posterUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+            StableBackdrop(hero.backdropUrl ?: hero.posterUrl, Modifier.fillMaxSize())
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.horizontalGradient(
@@ -908,6 +927,7 @@ private fun CinematicBrowser(
                         Column(Modifier.height(153.dp)) {
                             SectionHeading("Continue Watching")
                             LazyRow(
+                                state = continueRowState,
                                 modifier = Modifier.focusGroup(),
                                 contentPadding = PaddingValues(horizontal = 34.dp, vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -970,6 +990,7 @@ private fun CinematicBrowser(
                 Column {
                     SectionHeading(browseTitle)
                     LazyRow(
+                        state = genreRowState,
                         modifier = Modifier.fillMaxWidth().height(42.dp).focusGroup(),
                         contentPadding = PaddingValues(horizontal = 34.dp, vertical = 7.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1006,6 +1027,7 @@ private fun CinematicBrowser(
                         )
                     } else {
                         LazyRow(
+                            state = posterRowState,
                             modifier = Modifier.focusGroup(),
                             contentPadding = PaddingValues(start = 34.dp, end = 34.dp, top = 10.dp, bottom = 22.dp),
                             horizontalArrangement = Arrangement.spacedBy(11.dp),
@@ -1123,13 +1145,34 @@ private fun HomeDiscoveryFeed(
             shelf.key to shelf.media.map { FocusRequester() }
         }.toMap()
     }
-    val lastFocusedIndices = remember(shelfIdentity) {
+    val lastFocusedIndices = rememberSaveable(saver = mapSaver(
+        save = { it.toMap() }, restore = { saved -> mutableStateMapOf<String, Int>().apply { saved.forEach { (key, value) -> put(key, value as Int) } } },
+    )) {
         mutableStateMapOf<String, Int>().apply {
             shelves.forEach { shelf -> put(shelf.key, 0) }
         }
     }
-    val rowListStates = remember(shelves.map(DiscoveryShelf::key)) {
-        shelves.associate { it.key to LazyListState() }
+    val rowListStates = shelves.associate { shelf ->
+        shelf.key to androidx.compose.runtime.key(shelf.key) { rememberLazyListState() }
+    }
+    var lastFocusedKeys by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }
+    val focusMemory = LocalBrowseFocus.current
+    fun targetIndex(shelf: DiscoveryShelf): Int {
+        val byKey = shelf.media.indexOfFirst { it.ratingKey == lastFocusedKeys[shelf.key] }
+        return if (byKey >= 0) byKey else (lastFocusedIndices[shelf.key] ?: 0).coerceIn(shelf.media.indices)
+    }
+    LaunchedEffect(shelfIdentity) {
+        if (focusMemory.restore) {
+            val shelfIndex = shelves.indexOfFirst { shelf ->
+                shelf.media.any { focusMemory.lastKey == "${shelf.key}:poster-${it.ratingKey}" }
+            }
+            if (shelfIndex >= 0) {
+                val shelf = shelves[shelfIndex]
+                val index = shelf.media.indexOfFirst { focusMemory.lastKey == "${shelf.key}:poster-${it.ratingKey}" }
+                listState.scrollToItem(shelfIndex)
+                rowListStates.getValue(shelf.key).scrollToItem(index)
+            }
+        }
     }
 
     fun focusRow(index: Int) {
@@ -1137,8 +1180,7 @@ private fun HomeDiscoveryFeed(
         focusMoveJob?.cancel()
         focusMoveJob = scope.launch {
             val shelf = shelves[index]
-            val targetIndex = lastFocusedIndices.getValue(shelf.key)
-                .coerceIn(shelf.media.indices)
+            val targetIndex = targetIndex(shelf)
             if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
                 listState.animateScrollToItem(index)
             }
@@ -1171,6 +1213,7 @@ private fun HomeDiscoveryFeed(
                         items = shelf.media,
                         key = { _, content -> "${shelf.key}-${content.ratingKey}" },
                     ) { itemIndex, content ->
+                        CompositionLocalProvider(LocalShelfIdentity provides shelf.key, LocalArtworkSequence provides shelf.media) {
                         CinematicPosterCard(
                             content = content,
                             width = 108.dp,
@@ -1180,7 +1223,7 @@ private fun HomeDiscoveryFeed(
                                 .then(
                                     if (
                                         shelfIndex == 0 &&
-                                        itemIndex == lastFocusedIndices.getValue(shelf.key)
+                                        itemIndex == targetIndex(shelf)
                                     ) {
                                         Modifier.focusRequester(firstFocusRequester)
                                     } else {
@@ -1190,6 +1233,7 @@ private fun HomeDiscoveryFeed(
                             onOpen = onOpen,
                             onFocused = {
                                 lastFocusedIndices[shelf.key] = itemIndex
+                                lastFocusedKeys = HashMap(lastFocusedKeys).apply { put(shelf.key, it.ratingKey) }
                                 onHighlighted(it)
                             },
                             onUp = {
@@ -1202,6 +1246,7 @@ private fun HomeDiscoveryFeed(
                             },
                             onDown = { focusRow(shelfIndex + 1) },
                         )
+                        }
                     }
                 }
             }
@@ -1503,11 +1548,11 @@ private fun CinematicPosterCard(
             .border(if (focused) 3.dp else 1.dp, if (focused) MinovaCyan else MinovaWhite.copy(alpha = 0.16f), shape)
             .clip(shape)
             .background(MinovaSurface)
-            .clickable(role = Role.Button) { onOpen(content) },
+            .mediaInteraction("poster-${content.ratingKey}", content, onOpen),
     ) {
-        AsyncImage(
-            model = content.posterUrl,
-            contentDescription = content.title,
+        BrowseArtwork(
+            url = content.posterUrl,
+            description = content.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
@@ -1556,6 +1601,13 @@ private fun CatalogGrid(
         }
     }
     val gridState = rememberLazyGridState()
+    val focusMemory = LocalBrowseFocus.current
+    LaunchedEffect(sortedMedia) {
+        if (focusMemory.restore) {
+            val restoredIndex = sortedMedia.indexOfFirst { focusMemory.lastKey == "catalog:grid-${it.ratingKey}" }
+            if (restoredIndex >= 0) gridState.scrollToItem(restoredIndex)
+        }
+    }
     val alphabetState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val cardFocusRequesters = remember(sortedMedia, firstCardFocusRequester) {
@@ -1566,7 +1618,7 @@ private fun CatalogGrid(
     val bucketFocusRequesters = remember(sortedMedia) {
         AlphabetBuckets.associateWith { FocusRequester() }
     }
-    var returnIndex by remember(sortedMedia) { mutableStateOf(0) }
+    var returnIndex by rememberSaveable { mutableStateOf(0) }
 
     fun requestCardFocus(index: Int) {
         val safeIndex = index.coerceIn(sortedMedia.indices)
@@ -1755,12 +1807,12 @@ internal fun PosterCard(
             .border(if (focused) 3.dp else 1.dp, if (focused) MinovaCyan else MinovaSurfaceRaised, shape)
             .clip(shape)
             .background(MinovaSurface)
-            .clickable(role = Role.Button) { onOpen(content) },
+            .mediaInteraction("grid-${content.ratingKey}", content, onOpen),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MinovaBlack)) {
-            AsyncImage(
-                model = content.posterUrl,
-                contentDescription = content.title,
+            BrowseArtwork(
+                url = content.posterUrl,
+                description = content.title,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -1826,11 +1878,11 @@ private fun ContinueCard(
             .border(if (focused) 3.dp else 1.dp, if (focused) MinovaCyan else MinovaSurfaceRaised, shape)
             .clip(shape)
             .background(MinovaSurface)
-            .clickable(role = Role.Button) { onOpen(content) },
+            .mediaInteraction("continue-${content.ratingKey}", content, onOpen),
     ) {
-        AsyncImage(
-            model = content.backdropUrl ?: content.posterUrl,
-            contentDescription = content.title,
+        BrowseArtwork(
+            url = content.backdropUrl ?: content.posterUrl,
+            description = content.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )

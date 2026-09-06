@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.8.2 — 2026-09-06
+
+### Artwork loading, browsing continuity, and personal settings
+
+- Prioritized visible artwork, replaced catalog-wide prefetching with cancellable two-title look-ahead, and retained the previous decoded backdrop until its replacement loads.
+- Moved metadata cache work off the UI thread and isolated cached catalogs by Plex connection credentials.
+- Preserved browse position, selected genres, and focused titles across tabs and detail navigation, including refreshed shelves with newly inserted titles.
+- Added per-profile Home shelf ordering and visibility, plus a preferred opening tab.
+- Added hold-OK title actions for playback, restarting, watched state, Watchlist, and details.
+- Added a Tapo dim-and-restore test with per-light results and original-brightness restoration, including cancellation cleanup.
+- Added aggregate artwork diagnostics and expanded automated coverage for large libraries, D-pad focus restoration, cache reuse, Home customization, and Tapo settings.
+- Added the Minova theatrical pre-roll; promotional capture-only text remains disabled in release builds.
+
 ## 2.8.1 — 2026-09-02
 
 ### Focus reliability, playback completion, profiles, and Settings polish
