@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.3 — 2026-09-07
+
+- Fixed releasing a held OK button automatically selecting Play after the title-actions popup opens. The popup now ignores inherited key repeats and releases until a fresh activation press starts inside it.
+- Added real Android-window input tests for held OK with and without repeat events, verifying that playback starts only after a separate new press, plus unit coverage for canceled and mismatched key gestures.
+
 ## 2.8.2 — 2026-09-06
 
 ### Artwork loading, browsing continuity, and personal settings

@@ -20,7 +20,7 @@ internal val LocalArtworkNeighbours = staticCompositionLocalOf<(List<MediaConten
 internal val LocalArtworkSequence = staticCompositionLocalOf<List<MediaContent>> { emptyList() }
 internal val LocalShelfIdentity = staticCompositionLocalOf { "catalog" }
 
-/** Long OK uses Foundation's key long-press handling: releasing it never opens details too. */
+/** Foundation recognizes long OK; TitleActionsDialog consumes the opening gesture's tail. */
 internal fun Modifier.mediaInteraction(key: String, content: MediaContent, onOpen: (MediaContent) -> Unit): Modifier = composed {
     val memory = LocalBrowseFocus.current
     val uniqueKey = LocalShelfIdentity.current + ":" + key

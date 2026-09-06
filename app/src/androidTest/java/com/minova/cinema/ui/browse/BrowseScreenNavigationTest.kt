@@ -1,6 +1,11 @@
 package com.minova.cinema.ui.browse
 
 import androidx.activity.ComponentActivity
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.KeyCharacterMap
+import android.view.KeyEvent
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.printToLog
@@ -26,6 +31,8 @@ import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 
 /** D-Pad regression coverage for the browse entry points that have broken on TV. */
 class BrowseScreenNavigationTest {
@@ -197,6 +204,63 @@ class BrowseScreenNavigationTest {
     }
 
     @Test
+    fun physicalHeldOkReleaseDoesNotActivateDialogButFreshPressDoes() {
+        verifyPhysicalHeldOkRelease(sendRepeats = true)
+    }
+
+    @Test
+    fun physicalHeldOkReleaseWithoutRepeatsAlsoWaitsForFreshPress() {
+        verifyPhysicalHeldOkRelease(sendRepeats = false)
+    }
+
+    private fun verifyPhysicalHeldOkRelease(sendRepeats: Boolean) {
+        var playRequests = 0
+        showBrowseScreen(mediaCount = 30, onPlayRequested = { playRequests++ })
+        compose.onNodeWithTag("header-tab-Movies").performClick()
+        compose.onNodeWithTag("header-action-Row view. Switch to grid view").performClick()
+        compose.onNodeWithTag("catalog-grid-first-card")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitForIdle()
+
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun send(downAt: Long, action: Int, repeat: Int = 0) {
+            assertTrue(automation.injectInputEvent(KeyEvent(
+                downAt, SystemClock.uptimeMillis(), action, KeyEvent.KEYCODE_DPAD_CENTER,
+                repeat, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+                if (repeat == 1) KeyEvent.FLAG_LONG_PRESS else 0, InputDevice.SOURCE_DPAD,
+            ), true))
+        }
+        val heldAt = SystemClock.uptimeMillis()
+        send(heldAt, KeyEvent.ACTION_DOWN)
+        try {
+            compose.waitUntil(5_000) {
+                compose.onAllNodes(androidx.compose.ui.test.hasText("More information"))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            // Unlike performKeyInput on the poster, these events enter the NEW
+            // Android dialog window, exactly as a physical remote release does.
+            compose.onNodeWithText("Play", useUnmergedTree = true)
+                .assertIsDisplayed()
+            if (sendRepeats) {
+                send(heldAt, KeyEvent.ACTION_DOWN, repeat = 1)
+                send(heldAt, KeyEvent.ACTION_DOWN, repeat = 2)
+            }
+        } finally {
+            send(heldAt, KeyEvent.ACTION_UP)
+        }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals("Releasing held OK must not start playback", 0, playRequests) }
+        compose.onNodeWithText("More information").assertIsDisplayed()
+
+        val freshAt = SystemClock.uptimeMillis()
+        send(freshAt, KeyEvent.ACTION_DOWN)
+        send(freshAt, KeyEvent.ACTION_UP)
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals("A new OK press should still select Play", 1, playRequests) }
+        compose.onNodeWithText("More information").assertDoesNotExist()
+    }
+
+    @Test
     fun switchingTabsRestoresExactGridTitle() {
         showBrowseScreen(mediaCount = 100)
         compose.onNodeWithTag("header-tab-Movies").performClick()
@@ -231,7 +295,8 @@ class BrowseScreenNavigationTest {
         waitUntilFocused("browse-shelf-recently-added-movie-13")
     }
 
-    private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false) {
+    private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false,
+        onPlayRequested: () -> Unit = {}) {
         val movies = List(mediaCount) { index ->
             MediaContent(
                 ratingKey = "movie-${index + 1}",
@@ -273,7 +338,7 @@ class BrowseScreenNavigationTest {
                         },
                     ),
                     onOpen = { if (simulateNavigation) details = true },
-                    onPlay = {},
+                    onPlay = { onPlayRequested() },
                     onToggleMyList = {},
                     onSettings = {},
                     onWatchlistRefresh = {},

@@ -1,5 +1,6 @@
 package com.minova.cinema.ui.browse
 
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -25,8 +27,18 @@ import com.minova.cinema.ui.theme.*
 internal fun TitleActionsDialog(content: MediaContent, saved: Boolean, onDismiss: () -> Unit,
     onOpen: () -> Unit, onPlay: (Boolean) -> Unit, onWatchlist: () -> Unit, onWatched: () -> Unit) {
     val first = remember { FocusRequester() }
+    val activationGuard = remember { DialogActivationKeyGuard() }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        LazyColumn(Modifier.width(500.dp).heightIn(max = 450.dp)
+        LazyColumn(Modifier.onPreviewKeyEvent { event ->
+            val key = event.nativeKeyEvent
+            when (key.keyCode) {
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BUTTON_A ->
+                    activationGuard.consume(key.keyCode, key.action == KeyEvent.ACTION_DOWN,
+                        key.repeatCount, key.isCanceled)
+                else -> false
+            }
+        }.width(500.dp).heightIn(max = 450.dp)
             .background(MinovaNightDeep, RoundedCornerShape(18.dp)).padding(26.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { Text(content.title, color = MinovaWhite) }
