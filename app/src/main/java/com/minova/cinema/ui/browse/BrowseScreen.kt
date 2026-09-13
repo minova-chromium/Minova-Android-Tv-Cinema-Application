@@ -149,6 +149,9 @@ fun BrowseScreen(
     homePreferences: HomeLayoutPreferences = HomeLayoutPreferences(),
     onPlayFromBeginning: (MediaContent) -> Unit = onPlay,
     onSetWatched: (MediaContent, Boolean) -> Unit = { _, _ -> },
+    onDiscover: () -> Unit = {},
+    onHighlighted: (MediaContent?) -> Unit = {},
+    onResetPlaybackPreferences: (MediaContent) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(BrowseTab.entries.firstOrNull { it.name == homePreferences.openingTab } ?: BrowseTab.Home) }
     var layout by rememberSaveable { mutableStateOf(BrowseLayout.Rows) }
@@ -158,6 +161,11 @@ fun BrowseScreen(
         genresByTab = HashMap(genresByTab).apply { if (genre == null) remove(tab.name) else put(tab.name, genre) }
     }
     var filterOpen by remember { mutableStateOf(false) }
+    var advancedFilters by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }
+    val advanced = remember(tab, advancedFilters) {
+        runCatching { com.google.gson.Gson().fromJson(advancedFilters[tab.name], com.minova.cinema.domain.LibraryFilter::class.java) }.getOrNull()
+            ?: com.minova.cinema.domain.LibraryFilter()
+    }
     val browseItems = remember(catalog, tab) {
         when (tab) {
             BrowseTab.Home -> (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey)
@@ -188,12 +196,8 @@ fun BrowseScreen(
             .distinctBy { it.lowercase() }
             .sortedWith(String.CASE_INSENSITIVE_ORDER)
     }
-    val filteredGridItems = remember(browseItems, selectedGenre) {
-        selectedGenre?.let { genre ->
-            browseItems.filter { item ->
-                item.genres.any { it.equals(genre, ignoreCase = true) }
-            }
-        } ?: browseItems
+    val filteredGridItems = remember(browseItems, selectedGenre, advanced) {
+        com.minova.cinema.domain.filterLibrary(browseItems, advanced.copy(genre = selectedGenre))
     }
     val heroCandidates = remember(continueWatching, filteredGridItems) {
         (continueWatching + filteredGridItems).distinctBy(MediaContent::ratingKey)
@@ -212,6 +216,9 @@ fun BrowseScreen(
     }
     var pendingHighlightedContent by remember(tab) { mutableStateOf<MediaContent?>(null) }
     var homeFeaturedIndex by rememberSaveable { mutableStateOf(0) }
+    LaunchedEffect(tab, homeFeaturedIndex, highlightedContent) {
+        onHighlighted(if (tab == BrowseTab.Home) homeFeatured.getOrNull(homeFeaturedIndex) else highlightedContent)
+    }
     val heroFocus = remember(tab) { FocusRequester() }
     val firstContinueFocus = remember(tab) { FocusRequester() }
     val firstGenreFocus = remember(tab) { FocusRequester() }
@@ -248,7 +255,9 @@ fun BrowseScreen(
         homeFeaturedIndex = homeFeaturedIndex.coerceIn(0, (homeFeatured.lastIndex).coerceAtLeast(0))
     }
 
-    LaunchedEffect(tab, homeFeatured.size, homeFeaturedIndex) {
+    val reduceBrowseMotion = com.minova.cinema.ui.experience.LocalExperienceSettings.current.reducedMotion
+    LaunchedEffect(tab, homeFeatured.size, homeFeaturedIndex, reduceBrowseMotion) {
+        if (reduceBrowseMotion) return@LaunchedEffect
         if (tab == BrowseTab.Home && homeFeatured.size > 1) {
             delay(15_000)
             homeFeaturedIndex = (homeFeaturedIndex + 1) % homeFeatured.size
@@ -287,12 +296,13 @@ fun BrowseScreen(
             selectedTab = tab,
             layout = layout,
             showLayout = tab != BrowseTab.Home && tab != BrowseTab.Search,
-            showFilter = tab != BrowseTab.Home && gridGenres.isNotEmpty(),
-            filterActive = selectedGenre != null,
+            showFilter = tab != BrowseTab.Home && tab != BrowseTab.Search,
+            filterActive = selectedGenre != null || advanced != com.minova.cinema.domain.LibraryFilter(),
             onTabSelected = { tab = it },
             onLayoutChanged = { layout = it },
             onFilter = { filterOpen = true },
             onSettings = onSettings,
+            onDiscover = onDiscover,
             onDown = requestFirstContentFocus,
         )
 
@@ -370,17 +380,18 @@ fun BrowseScreen(
                 onOpen = { dismissActions(); onOpen(content) },
                 onPlay = { restart -> dismissActions(); if (restart) onPlayFromBeginning(content) else onPlay(content) },
                 onWatchlist = { onToggleMyList(content); dismissActions() },
-                onWatched = { onSetWatched(content, !content.isWatched); dismissActions() })
+                onWatched = { onSetWatched(content, !content.isWatched); dismissActions() },
+                onResetPlaybackPreferences = { onResetPlaybackPreferences(content); dismissActions() })
         }
         if (filterOpen) {
-            GenreFilterDialog(
-                genres = gridGenres,
-                selectedGenre = selectedGenre,
-                onGenreSelected = { genre ->
-                    selectGenre(genre)
+            com.minova.cinema.ui.experience.LibraryFilterDialog(
+                items = browseItems,
+                initial = advanced.copy(genre = selectedGenre),
+                onApply = { filter ->
+                    selectGenre(filter.genre)
+                    advancedFilters = HashMap(advancedFilters).apply { put(tab.name, com.google.gson.Gson().toJson(filter.copy(genre = null))) }
                     filterOpen = false
                 },
-                onDismiss = { filterOpen = false },
             )
         }
     }
@@ -483,6 +494,7 @@ private fun Header(
     onFilter: () -> Unit,
     onSettings: () -> Unit,
     onDown: () -> Unit,
+    onDiscover: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -535,6 +547,10 @@ private fun Header(
             }
         }
         Spacer(Modifier.weight(1f))
+        if (selectedTab == BrowseTab.Home) HeaderIconItem(
+            icon = Icons.Default.Apps, contentDescription = "Discover: Movie Night, collections and history",
+            selected = false, onDown = onDown, onClick = onDiscover,
+        )
         if (showLayout) {
             HeaderIconItem(
                 icon = if (layout == BrowseLayout.Rows) Icons.Default.ViewHeadline else Icons.Default.Apps,
@@ -785,6 +801,7 @@ private fun CinematicBrowser(
     firstPosterFocus: FocusRequester,
     onHighlighted: (MediaContent) -> Unit,
 ) {
+    val reducedMotion = com.minova.cinema.ui.experience.LocalExperienceSettings.current.reducedMotion
     if (hero == null && continueWatching.isEmpty() && media.isEmpty()) return EmptyMessage(emptyMessage)
 
     val quickGenres = remember(genres, selectedGenre) {
@@ -806,7 +823,7 @@ private fun CinematicBrowser(
     val posterRowState = rememberLazyListState()
     val catalogScrimAlpha by animateFloatAsState(
         targetValue = if (!homeMode && contentBrowsing) 0.34f else 0f,
-        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        animationSpec = tween(if (reducedMotion) 0 else 420, easing = FastOutSlowInEasing),
         label = "catalog_backdrop_scrim",
     )
 
@@ -855,6 +872,9 @@ private fun CinematicBrowser(
     Box(Modifier.fillMaxSize().background(MinovaBlack)) {
         if (hero != null) {
             StableBackdrop(hero.backdropUrl ?: hero.posterUrl, Modifier.fillMaxSize())
+            if (com.minova.cinema.ui.experience.LocalExperienceSettings.current.highContrast) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
+            }
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.horizontalGradient(
@@ -889,12 +909,12 @@ private fun CinematicBrowser(
         Column(Modifier.fillMaxSize().padding(top = 58.dp)) {
             AnimatedVisibility(
                 visible = !contentBrowsing,
-                enter = fadeIn(tween(320)) + expandVertically(
-                    animationSpec = tween(460),
+                enter = fadeIn(tween(if (reducedMotion) 0 else 320)) + expandVertically(
+                    animationSpec = tween(if (reducedMotion) 0 else 460),
                     expandFrom = Alignment.Top,
                 ),
-                exit = fadeOut(tween(300)) + shrinkVertically(
-                    animationSpec = tween(460),
+                exit = fadeOut(tween(if (reducedMotion) 0 else 300)) + shrinkVertically(
+                    animationSpec = tween(if (reducedMotion) 0 else 460),
                     shrinkTowards = Alignment.Top,
                 ),
             ) {
@@ -978,12 +998,12 @@ private fun CinematicBrowser(
                 )
             } else AnimatedVisibility(
                 visible = contentBrowsing,
-                enter = fadeIn(tween(360)) + expandVertically(
-                    animationSpec = tween(460, easing = FastOutSlowInEasing),
+                enter = fadeIn(tween(if (reducedMotion) 0 else 360)) + expandVertically(
+                    animationSpec = tween(if (reducedMotion) 0 else 460, easing = FastOutSlowInEasing),
                     expandFrom = Alignment.Top,
                 ),
-                exit = fadeOut(tween(220)) + shrinkVertically(
-                    animationSpec = tween(360, easing = FastOutSlowInEasing),
+                exit = fadeOut(tween(if (reducedMotion) 0 else 220)) + shrinkVertically(
+                    animationSpec = tween(if (reducedMotion) 0 else 360, easing = FastOutSlowInEasing),
                     shrinkTowards = Alignment.Top,
                 ),
             ) {
@@ -1053,8 +1073,8 @@ private fun CinematicBrowser(
 
         AnimatedVisibility(
             visible = !homeMode && !contentBrowsing && media.isNotEmpty(),
-            enter = fadeIn(tween(420)),
-            exit = fadeOut(tween(180)),
+            enter = fadeIn(tween(if (reducedMotion) 0 else 420)),
+            exit = fadeOut(tween(if (reducedMotion) 0 else 180)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 22.dp),
@@ -1077,6 +1097,7 @@ private fun BrowseCatalogCue(
     browseTitle: String,
     itemCount: Int,
 ) {
+    val reducedMotion = com.minova.cinema.ui.experience.LocalExperienceSettings.current.reducedMotion
     val transition = rememberInfiniteTransition(label = "browse_catalog_hint")
     val arrowOffset by transition.animateFloat(
         initialValue = -1f,
@@ -1106,7 +1127,7 @@ private fun BrowseCatalogCue(
                 colorFilter = ColorFilter.tint(MinovaCyan),
                 modifier = Modifier
                     .size(24.dp)
-                    .graphicsLayer { translationY = arrowOffset },
+                    .graphicsLayer { translationY = if (reducedMotion) 0f else arrowOffset },
             )
             Column {
                 Text(
@@ -1134,6 +1155,7 @@ private fun HomeDiscoveryFeed(
     onHighlighted: (MediaContent) -> Unit,
     onUpFromFirst: () -> Unit,
 ) {
+    val reducedMotion = com.minova.cinema.ui.experience.LocalExperienceSettings.current.reducedMotion
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var focusMoveJob by remember { mutableStateOf<Job?>(null) }
@@ -1182,7 +1204,7 @@ private fun HomeDiscoveryFeed(
             val shelf = shelves[index]
             val targetIndex = targetIndex(shelf)
             if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
-                listState.animateScrollToItem(index)
+                if (reducedMotion) listState.scrollToItem(index) else listState.animateScrollToItem(index)
             }
             val rowState = rowListStates.getValue(shelf.key)
             if (rowState.layoutInfo.visibleItemsInfo.none { it.index == targetIndex }) {
@@ -1286,6 +1308,9 @@ private fun HeroContent(
 ) {
     val directlyPlayable = content.kind == MediaKind.Movie ||
         content.kind == MediaKind.Episode || content.kind == MediaKind.Extra
+    val hasCarousel = carouselPosition != null && carouselCount > 1
+    val watchlistFocus = remember { FocusRequester() }
+    var watchlistFocused by remember { mutableStateOf(false) }
     val titleWraps = content.title.length > 34
     Column(
         modifier = Modifier
@@ -1293,15 +1318,19 @@ private fun HeroContent(
             .height(206.dp)
             .padding(start = 34.dp, top = 24.dp, bottom = 8.dp),
     ) {
-        if (carouselPosition != null && carouselCount > 1) {
-            HeroCarouselIndicator(
-                activeIndex = carouselPosition,
-                count = carouselCount,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+        if (hasCarousel) {
+            Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                HeroCarouselIndicator(activeIndex = requireNotNull(carouselPosition), count = carouselCount)
+                Text(
+                    if (watchlistFocused) "↑ Play  ·  ↓ Library" else "← → Browse  ·  ↓ Watchlist",
+                    color = MinovaMuted, fontSize = 11.sp,
+                )
+            }
         }
         Text(
             content.title,
+            modifier = Modifier.testTag("hero-title"),
             color = MinovaWhite,
             fontSize = when {
                 content.title.length > 55 -> 24.sp
@@ -1350,15 +1379,18 @@ private fun HeroContent(
                     .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when (event.key) {
-                        Key.DirectionLeft -> if (carouselCount > 1) {
+                        Key.DirectionLeft -> if (hasCarousel) {
                             onPrevious(); true
                         } else false
-                        Key.DirectionRight -> if (carouselCount > 1) {
-                            // Advance immediately, while allowing normal focus
-                            // movement to the adjacent Watchlist action.
-                            onNext(); false
+                        Key.DirectionRight -> if (hasCarousel) {
+                            // Browsing a featured title must not also move focus
+                            // onto an action for the newly displayed title.
+                            onNext(); true
                         } else false
-                        Key.DirectionDown -> { onDown(); true }
+                        Key.DirectionDown -> {
+                            if (hasCarousel) watchlistFocus.requestFocus() else onDown()
+                            true
+                        }
                         else -> false
                     }
                 },
@@ -1368,16 +1400,19 @@ private fun HeroContent(
                 label = if (inMyList) "In Watchlist" else "Watchlist",
                 icon = if (inMyList) Icons.Default.Check else Icons.Default.Add,
                 primary = false,
-                modifier = Modifier.onPreviewKeyEvent { event ->
+                modifier = Modifier.testTag("hero-watchlist-action")
+                    .focusRequester(watchlistFocus)
+                    .onFocusChanged { watchlistFocused = it.isFocused }
+                    .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when (event.key) {
-                        Key.DirectionLeft -> if (carouselCount > 1) {
-                            // Return to Play and move the carousel back in the
-                            // same spatial direction.
-                            onPrevious(); false
+                        Key.DirectionUp, Key.DirectionLeft -> if (hasCarousel) {
+                            focusRequester.requestFocus(); true
                         } else false
-                        Key.DirectionRight -> if (carouselCount > 1) {
-                            onNext(); true
+                        Key.DirectionRight -> if (hasCarousel) {
+                            // Keep the Watchlist action attached to the same
+                            // title until the viewer returns to browsing.
+                            true
                         } else false
                         Key.DirectionDown -> { onDown(); true }
                         else -> false
@@ -1525,7 +1560,8 @@ private fun CinematicPosterCard(
     onDown: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.04f else 1f, tween(110), label = "cinema_poster_focus")
+    val reducedMotion = com.minova.cinema.ui.experience.LocalExperienceSettings.current.reducedMotion
+    val scale by animateFloatAsState(if (focused && !reducedMotion) 1.04f else 1f, tween(if (reducedMotion) 0 else 110), label = "cinema_poster_focus")
     val shape = RoundedCornerShape(8.dp)
     Box(
         modifier = modifier
@@ -1587,12 +1623,7 @@ private fun CatalogGrid(
     onOpen: (MediaContent) -> Unit,
 ) {
     if (media.isEmpty()) return EmptyMessage(emptyMessage)
-    val sortedMedia = remember(media) {
-        media.sortedWith(
-            compareBy<MediaContent> { it.title.lowercase(Locale.ROOT) }
-                .thenBy(MediaContent::ratingKey),
-        )
-    }
+    val sortedMedia = media // Already ordered by the selected library sort.
     val firstIndexByBucket = remember(sortedMedia) {
         buildMap<String, Int> {
             sortedMedia.forEachIndexed { index, content ->
@@ -1794,7 +1825,8 @@ internal fun PosterCard(
     onFocused: ((MediaContent) -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.045f else 1f, tween(110), label = "poster_focus")
+    val reducedMotion = com.minova.cinema.ui.experience.LocalExperienceSettings.current.reducedMotion
+    val scale by animateFloatAsState(if (focused && !reducedMotion) 1.045f else 1f, tween(if (reducedMotion) 0 else 110), label = "poster_focus")
     val shape = RoundedCornerShape(9.dp)
     Column(
         modifier = modifier
@@ -1855,7 +1887,8 @@ private fun ContinueCard(
     onDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.04f else 1f, tween(110), label = "continue_focus")
+    val reducedMotion = com.minova.cinema.ui.experience.LocalExperienceSettings.current.reducedMotion
+    val scale by animateFloatAsState(if (focused && !reducedMotion) 1.04f else 1f, tween(if (reducedMotion) 0 else 110), label = "continue_focus")
     val shape = RoundedCornerShape(9.dp)
     Box(
         modifier = modifier

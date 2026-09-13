@@ -249,6 +249,7 @@ fun CinemaLightsSettingsScreen(
                     state.testResults[light.ipAddress]?.let { result ->
                         Text(result, color = MinovaCyan, modifier = Modifier.padding(start = 18.dp, bottom = 8.dp))
                     }
+                    state.connectionStatus[light.ipAddress]?.let { status -> Text(status, color = MinovaMuted) }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }

@@ -1,5 +1,6 @@
 package com.minova.cinema.ui.settings
 
+import com.minova.cinema.ui.experience.accessibleFocus
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -120,6 +121,7 @@ fun SettingsScreen(
     onRequestTvHomeChannels: () -> Unit,
     onCustomizeHome: () -> Unit = {},
     onTestTapoLights: () -> Unit = {},
+    onExperienceSettings: () -> Unit = {},
 ) {
     var pinProfile by remember { mutableStateOf<PlexHomeProfile?>(null) }
     var pin by remember { mutableStateOf("") }
@@ -312,6 +314,9 @@ fun SettingsScreen(
                 SettingsSection.Playback -> item {
             SettingsSecondaryButton(onClick = onCustomizeHome, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                 Text("Customize home screen · shelves & opening tab")
+            }
+            SettingsSecondaryButton(onClick = onExperienceSettings, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                Text("Cinema preferences · languages, accessibility, lights & storage")
             }
             SettingsCard(
                 title = "Playback",
@@ -602,7 +607,7 @@ internal fun SettingsPrimaryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.accessibleFocus(),
         enabled = enabled,
         shape = ButtonDefaults.shape(
             shape = RoundedCornerShape(12.dp),
@@ -630,7 +635,7 @@ internal fun SettingsSecondaryButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.accessibleFocus(),
         enabled = enabled,
         // The default outlined border keeps its capsule shape even when the
         // container is rectangular. Use the same clean surface in every state.

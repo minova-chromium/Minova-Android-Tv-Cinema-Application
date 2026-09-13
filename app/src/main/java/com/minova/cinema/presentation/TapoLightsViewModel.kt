@@ -26,10 +26,12 @@ class TapoLightsViewModel(application: Application) : AndroidViewModel(applicati
     fun clearCredentials() = repository.clearCredentials()
     fun discover() = repository.discover()
     fun testLights() = repository.testLights()
+    fun restoreLights() = repository.restoreLights()
+    fun setCinemaLevels(dim: Int, restore: Int) = repository.setCinemaLevels(dim, restore)
     fun setAssigned(ipAddress: String, assigned: Boolean) =
         repository.setAssigned(ipAddress, assigned)
 
-    fun onPlaybackChanged(playing: Boolean) = repository.onPlaybackChanged(playing)
+    fun onPlaybackChanged(playing: Boolean, sessionKey: String? = null) = repository.onPlaybackChanged(playing, sessionKey)
 
     class Factory(private val application: Application) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

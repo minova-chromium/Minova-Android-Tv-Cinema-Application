@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.9.1 — 2026-09-13
+
+Public release of the Cinema experience update. Version 2.9.0 was a local test build;
+2.9.1 updates both those installations and earlier public releases.
+
+- Fixed featured-carousel Left/Right navigation moving focus onto Watchlist. Play now stays selected while browsing; Down selects Watchlist, then Down enters the library. Added an on-screen navigation hint.
+
+- Added combined watch-status, genre, year, resolution and audio-language filters, plus title, added-date, release-date and rating sorting.
+- Added Movie Night selections by available time and genre, real Plex collection browsing in release order, and recently viewed titles reported by Plex.
+- Added remembered language and per-title track choices, subtitle presentation controls, and a playback recovery dialog with retry/lower-quality actions that preserve position.
+- Kept commentary and SDH choices distinct when remembering tracks; ambiguous language matches no longer save another stream or disable unmatched subtitles on the next play.
+- Added Cinema Mode presets and a saved custom preset, independent trailer/bumper/lighting switches, configurable Tapo dim/restore levels, manual original-state restoration, and per-bulb command status.
+- Added an optional end-of-movie screen with Plex ratings, collection/related suggestions and Home; it never starts another movie automatically.
+- Added optional quiet playback of local Plex theme tracks while browsing (off by default).
+- Added larger text, stronger focus outlines, higher contrast and reduced motion; the latter also stops automatic featured-title rotation.
+- Added artwork loading/unavailable states, visible-load diagnostics and artwork-only cache clearing, separate from login and preferences.
+- Extended real-window TV remote tests and discovery tests, including held buttons, carousel focus, profile isolation, and artwork-cache clearing.
+
 ## 2.8.3 — 2026-09-07
 
 - Fixed releasing a held OK button automatically selecting Play after the title-actions popup opens. The popup now ignores inherited key repeats and releases until a fresh activation press starts inside it.

@@ -22,6 +22,7 @@ data class TapoLightsUiState(
     val message: String? = null,
     val testing: Boolean = false,
     val testResults: Map<String, String> = emptyMap(),
+    val connectionStatus: Map<String, String> = emptyMap(),
 )
 
 internal data class TapoDeviceInfo(

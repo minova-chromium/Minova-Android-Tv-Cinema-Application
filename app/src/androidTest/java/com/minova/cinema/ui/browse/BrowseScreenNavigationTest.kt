@@ -17,6 +17,7 @@ import androidx.tv.material3.Text
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -38,6 +39,68 @@ import org.junit.Assert.assertTrue
 class BrowseScreenNavigationTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun featuredCarouselRetainsPlayFocusForRemotePressesAndHeldRepeats() {
+        var played: MediaContent? = null
+        var watchlistChanges = 0
+        showBrowseScreen(mediaCount = 6, onPlayed = { played = it }, onWatchlist = { watchlistChanges++ })
+        val device = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        compose.onNodeWithTag("header-tab-Home").performSemanticsAction(SemanticsActions.RequestFocus)
+        device.pressDPadDown()
+        compose.onNodeWithTag("hero-primary-action").assertIsFocused()
+        device.pressDPadRight()
+        compose.onNodeWithTag("hero-title").assertTextEquals("Movie 2")
+        device.pressDPadRight()
+        compose.onNodeWithTag("hero-title").assertTextEquals("Movie 3")
+        device.pressDPadLeft()
+        compose.onNodeWithTag("hero-title").assertTextEquals("Movie 2")
+        val heldAt = SystemClock.uptimeMillis()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        repeat(3) { repeat ->
+            assertTrue(automation.injectInputEvent(KeyEvent(heldAt, SystemClock.uptimeMillis(),
+                KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT, repeat, 0,
+                KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_DPAD), true))
+            compose.waitForIdle()
+            compose.onNodeWithTag("hero-primary-action").assertIsFocused()
+        }
+        automation.injectInputEvent(KeyEvent(heldAt, SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT, 0), true)
+        compose.onNodeWithTag("hero-title").assertTextEquals("Movie 5")
+        device.pressDPadRight()
+        device.pressDPadRight()
+        compose.onNodeWithTag("hero-title").assertTextEquals("Movie 1")
+        device.pressDPadLeft()
+        compose.onNodeWithTag("hero-title").assertTextEquals("Movie 6")
+        compose.onNodeWithTag("hero-primary-action").assertIsFocused()
+        device.pressDPadCenter()
+        compose.runOnIdle { assertEquals("movie-6", played?.ratingKey); assertEquals(0, watchlistChanges) }
+    }
+
+    @Test
+    fun featuredWatchlistAndLibraryRemainReachableWithoutChangingTheTitle() {
+        var saved: MediaContent? = null
+        showBrowseScreen(mediaCount = 6, includeContinueWatching = true, onWatchlist = { saved = it })
+        val device = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        compose.onNodeWithTag("hero-primary-action").performSemanticsAction(SemanticsActions.RequestFocus)
+        device.pressDPadDown()
+        compose.onNodeWithTag("hero-watchlist-action").assertIsFocused()
+        device.pressDPadCenter()
+        compose.runOnIdle { assertEquals("movie-1", saved?.ratingKey) }
+        device.pressDPadRight()
+        compose.onNodeWithTag("hero-watchlist-action").assertIsFocused()
+        compose.onNodeWithTag("hero-title").assertTextEquals("Movie 1")
+        device.pressDPadLeft()
+        compose.onNodeWithTag("hero-primary-action").assertIsFocused()
+        device.pressDPadDown()
+        device.pressDPadUp()
+        compose.onNodeWithTag("hero-primary-action").assertIsFocused()
+        device.pressDPadDown()
+        device.pressDPadDown()
+        compose.onNodeWithTag("browse-first-continue").assertIsFocused()
+        device.pressDPadUp()
+        compose.onNodeWithTag("hero-primary-action").assertIsFocused()
+    }
 
     @Test
     fun moviesHeroExplainsDownNavigation() {
@@ -103,6 +166,8 @@ class BrowseScreenNavigationTest {
             .performKeyInput { pressKey(Key.DirectionDown) }
         compose.onNodeWithTag("hero-primary-action")
             .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("hero-watchlist-action").assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionDown) }
         compose.onNodeWithTag("browse-first-continue")
             .performKeyInput { pressKey(Key.DirectionDown) }
 
@@ -131,6 +196,8 @@ class BrowseScreenNavigationTest {
             .performKeyInput { pressKey(Key.DirectionDown) }
         compose.onNodeWithTag("hero-primary-action")
             .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("hero-watchlist-action").assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionDown) }
         compose.onNodeWithTag("browse-first-continue")
             .performKeyInput { pressKey(Key.DirectionDown) }
         waitUntilFocused("browse-shelf-top-picks-movie-2")
@@ -151,6 +218,8 @@ class BrowseScreenNavigationTest {
             .performSemanticsAction(SemanticsActions.RequestFocus)
             .performKeyInput { pressKey(Key.DirectionDown) }
         compose.onNodeWithTag("hero-primary-action")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("hero-watchlist-action").assertIsFocused()
             .performKeyInput { pressKey(Key.DirectionDown) }
         compose.onNodeWithTag("browse-first-continue")
             .performKeyInput { pressKey(Key.DirectionDown) }
@@ -280,7 +349,7 @@ class BrowseScreenNavigationTest {
         showBrowseScreen(includeContinueWatching = true, mediaCount = 200, simulateNavigation = true)
         compose.onNodeWithTag("header-tab-Home").performSemanticsAction(SemanticsActions.RequestFocus)
             .performKeyInput { pressKey(Key.DirectionDown) }
-        compose.onRoot().performKeyInput { pressKey(Key.DirectionDown); pressKey(Key.DirectionDown) }
+        compose.onRoot().performKeyInput { repeat(3) { pressKey(Key.DirectionDown) } }
         waitUntilFocused("browse-shelf-top-picks-movie-2")
         compose.onRoot().performKeyInput { pressKey(Key.DirectionDown); pressKey(Key.DirectionDown) }
         waitUntilFocused("browse-shelf-recently-added-movie-1")
@@ -296,7 +365,8 @@ class BrowseScreenNavigationTest {
     }
 
     private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false,
-        onPlayRequested: () -> Unit = {}) {
+        onPlayRequested: () -> Unit = {}, onPlayed: (MediaContent) -> Unit = {},
+        onWatchlist: (MediaContent) -> Unit = {}) {
         val movies = List(mediaCount) { index ->
             MediaContent(
                 ratingKey = "movie-${index + 1}",
@@ -338,8 +408,8 @@ class BrowseScreenNavigationTest {
                         },
                     ),
                     onOpen = { if (simulateNavigation) details = true },
-                    onPlay = { onPlayRequested() },
-                    onToggleMyList = {},
+                    onPlay = { onPlayRequested(); onPlayed(it) },
+                    onToggleMyList = onWatchlist,
                     onSettings = {},
                     onWatchlistRefresh = {},
                 )

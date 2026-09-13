@@ -64,6 +64,10 @@ interface PlexApiService {
         @Query("identifier") identifier: String = "com.plexapp.plugins.library",
     ): Response<Unit>
 
+    @PUT(":/rate")
+    suspend fun rate(@Query("key") ratingKey: String, @Query("rating") rating: Int,
+        @Query("identifier") identifier: String = "com.plexapp.plugins.library"): Response<Unit>
+
     @GET(":/unscrobble")
     suspend fun markUnwatched(
         @Query("key") ratingKey: String,

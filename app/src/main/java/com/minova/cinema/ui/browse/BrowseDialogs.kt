@@ -25,7 +25,8 @@ import com.minova.cinema.ui.theme.*
 
 @Composable
 internal fun TitleActionsDialog(content: MediaContent, saved: Boolean, onDismiss: () -> Unit,
-    onOpen: () -> Unit, onPlay: (Boolean) -> Unit, onWatchlist: () -> Unit, onWatched: () -> Unit) {
+    onOpen: () -> Unit, onPlay: (Boolean) -> Unit, onWatchlist: () -> Unit, onWatched: () -> Unit,
+    onResetPlaybackPreferences: () -> Unit = {}) {
     val first = remember { FocusRequester() }
     val activationGuard = remember { DialogActivationKeyGuard() }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -53,6 +54,7 @@ internal fun TitleActionsDialog(content: MediaContent, saved: Boolean, onDismiss
             )) { Text(if (saved) "Remove from Watchlist" else "Add to Watchlist") } }
             item { SettingsSecondaryButton(onClick = onWatched, modifier = Modifier.fillMaxWidth()) { Text(if (content.isWatched) "Mark unwatched" else "Mark watched") } }
             item { SettingsSecondaryButton(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text("More information") } }
+            item { SettingsSecondaryButton(onClick = onResetPlaybackPreferences, modifier = Modifier.fillMaxWidth()) { Text("Reset this title's playback preferences") } }
             item { SettingsSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Close") } }
         }
         LaunchedEffect(Unit) { first.requestFocus() }

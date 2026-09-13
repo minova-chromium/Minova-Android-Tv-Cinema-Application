@@ -11,6 +11,8 @@ data class PlaybackSettings(
     val cinemaModeEnabled: Boolean = false,
     val cinemaTrailersEnabled: Boolean = true,
     val cinemaBumperUri: String? = null,
+    val cinemaBumperEnabled: Boolean = true,
+    val cinemaLightsEnabled: Boolean = true,
     val audioDelayMs: Int = 0,
     val subtitleDelayMs: Int = 0,
 )
@@ -32,6 +34,8 @@ class PlaybackPreferences(context: Context) {
         cinemaModeEnabled = preferences.getBoolean(KEY_CINEMA_MODE, false),
         cinemaTrailersEnabled = preferences.getBoolean(KEY_CINEMA_TRAILERS, true),
         cinemaBumperUri = preferences.getString(KEY_CINEMA_BUMPER_URI, null),
+        cinemaBumperEnabled = preferences.getBoolean("bumper_enabled", true),
+        cinemaLightsEnabled = preferences.getBoolean("lights_enabled", true),
         audioDelayMs = preferences.getInt(KEY_AUDIO_DELAY_MS, 0).coerceIn(0, 500),
         subtitleDelayMs = preferences.getInt(KEY_SUBTITLE_DELAY_MS, 0).coerceIn(0, 5_000),
     )
@@ -71,8 +75,28 @@ class PlaybackPreferences(context: Context) {
         return read()
     }
 
+    fun applyCinemaPreset(name: String): PlaybackSettings {
+        preferences.edit {
+            putBoolean(KEY_CINEMA_MODE, name != "play")
+            putBoolean(KEY_CINEMA_TRAILERS, name == "full")
+            putBoolean("bumper_enabled", name == "full")
+            putBoolean("lights_enabled", name != "play")
+        }
+        return read()
+    }
+
     fun setCinemaTrailersEnabled(enabled: Boolean): PlaybackSettings {
         preferences.edit { putBoolean(KEY_CINEMA_TRAILERS, enabled) }
+        return read()
+    }
+
+    fun applyCustomCinemaPreset(preset: CustomCinemaPreset): PlaybackSettings {
+        preferences.edit {
+            putBoolean(KEY_CINEMA_MODE, preset.enabled)
+            putBoolean(KEY_CINEMA_TRAILERS, preset.trailers)
+            putBoolean("bumper_enabled", preset.bumper)
+            putBoolean("lights_enabled", preset.lights)
+        }
         return read()
     }
 

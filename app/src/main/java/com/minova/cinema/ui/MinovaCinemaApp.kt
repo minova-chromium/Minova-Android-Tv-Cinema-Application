@@ -1,5 +1,11 @@
 package com.minova.cinema.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import com.minova.cinema.data.local.ExperiencePreferences
+import com.minova.cinema.ui.experience.*
+import com.minova.cinema.ui.theme.MinovaCinemaTheme
 import android.app.Activity
 import android.content.Intent
 import android.os.SystemClock
@@ -57,7 +63,8 @@ import com.minova.cinema.home.CinemaLightingController
 private sealed interface CinemaRoute {
     data object Browse : CinemaRoute
     data class Detail(val content: MediaContent) : CinemaRoute
-    data class Player(val plan: CinemaPlaybackPlan) : CinemaRoute
+    data class Player(val plan: CinemaPlaybackPlan, val sessionId: String = java.util.UUID.randomUUID().toString()) : CinemaRoute
+    data class Finished(val content: MediaContent) : CinemaRoute
     data object Settings : CinemaRoute
 }
 
@@ -217,6 +224,16 @@ private fun MainScreen(
             val browsePreferences = remember(profileKey) { BrowsePreferences(context, profileKey) }
             var homePreferences by remember(profileKey) { mutableStateOf(browsePreferences.read()) }
             var customizeHome by remember { mutableStateOf(false) }
+            val experiencePreferences = remember(profileKey) { ExperiencePreferences(context, profileKey) }
+            var experience by remember(profileKey) { mutableStateOf(experiencePreferences.read()) }
+            var customPreset by remember(profileKey) { mutableStateOf(experiencePreferences.customPreset()) }
+            var experienceOpen by remember { mutableStateOf(false) }
+            var discoveryOpen by remember { mutableStateOf(false) }
+            var highlightedTheme by remember { mutableStateOf<String?>(null) }
+            val density = LocalDensity.current
+            LaunchedEffect(experience.dimLevel, experience.restoreLevel) {
+                tapoLightsViewModel.setCinemaLevels(experience.dimLevel, experience.restoreLevel)
+            }
             val browseStateHolder = rememberSaveableStateHolder()
             val browseStateKey = remember(profileKey) {
                 java.security.MessageDigest.getInstance("SHA-256").digest(profileKey.toByteArray())
@@ -269,7 +286,7 @@ private fun MainScreen(
                     cinemaModeEnabled = playbackSettings.cinemaModeEnabled,
                     cinemaTrailersEnabled = playbackSettings.cinemaTrailersEnabled &&
                         !disablePlexTrailersForCapture,
-                    bumperUri = playbackSettings.cinemaBumperUri,
+                    bumperUri = playbackSettings.cinemaBumperUri.takeIf { playbackSettings.cinemaBumperEnabled },
                 ) { plan ->
                     if (plan != null) {
                         lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
@@ -288,9 +305,47 @@ private fun MainScreen(
                 }
             }
 
+            CompositionLocalProvider(LocalExperienceSettings provides experience,
+                LocalDensity provides Density(density.density, density.fontScale * experience.textScale.coerceIn(1f, 1.2f))) {
+            BrowseThemeMusic(highlightedTheme,
+                experience.themeMusic && currentRoute == CinemaRoute.Browse && !discoveryOpen && !experienceOpen && !customizeHome,
+                experience.themeVolume)
+            if (discoveryOpen) DiscoveryDialog(state.catalog, onOpen = { discoveryOpen = false; open(it) },
+                onWatched = viewModel::setWatched, onClose = { discoveryOpen = false })
+            if (experienceOpen) ExperienceSettingsDialog(experience,
+                onChange = { experience = it; experiencePreferences.save(it) },
+                playback = playbackSettings,
+                onCinemaChange = { changed ->
+                    playbackSettings = playbackPreferences.applyCustomCinemaPreset(
+                        com.minova.cinema.data.local.CustomCinemaPreset(changed.cinemaModeEnabled,
+                            changed.cinemaTrailersEnabled, changed.cinemaBumperEnabled, changed.cinemaLightsEnabled))
+                },
+                onPreset = { name ->
+                    playbackSettings = playbackPreferences.applyCinemaPreset(name)
+                    experience = experience.copy(dimLevel = if (name == "quiet") 10 else 0, restoreLevel = -1)
+                    experiencePreferences.save(experience)
+                },
+                onRestoreLights = tapoLightsViewModel::restoreLights,
+                hasCustomPreset = customPreset != null,
+                onSavePreset = {
+                    customPreset = com.minova.cinema.data.local.CustomCinemaPreset(
+                        playbackSettings.cinemaModeEnabled, playbackSettings.cinemaTrailersEnabled,
+                        playbackSettings.cinemaBumperEnabled, playbackSettings.cinemaLightsEnabled,
+                        experience.dimLevel, experience.restoreLevel,
+                    ).also(experiencePreferences::saveCustomPreset)
+                },
+                onLoadPreset = {
+                    customPreset?.let { preset ->
+                        playbackSettings = playbackPreferences.applyCustomCinemaPreset(preset)
+                        experience = experience.copy(dimLevel = preset.dim, restoreLevel = preset.restore)
+                        experiencePreferences.save(experience)
+                    }
+                },
+                onClose = { experienceOpen = false })
+            MinovaCinemaTheme(highContrast = experience.highContrast) {
             AnimatedContent(
                 targetState = currentRoute,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                transitionSpec = { fadeIn(tween(if (experience.reducedMotion) 0 else 220)) togetherWith fadeOut(tween(if (experience.reducedMotion) 0 else 180)) },
                 label = "cinema_navigation",
             ) { route ->
                 when (route) {
@@ -304,6 +359,12 @@ private fun MainScreen(
                         homePreferences = homePreferences,
                         onPlayFromBeginning = { play(it, true) },
                         onSetWatched = viewModel::setWatched,
+                        onDiscover = { discoveryOpen = true },
+                        onHighlighted = { highlightedTheme = it?.themeUrl },
+                        onResetPlaybackPreferences = {
+                            experiencePreferences.resetTracks(it.ratingKey)
+                            android.widget.Toast.makeText(context, "Title preferences reset", android.widget.Toast.LENGTH_SHORT).show()
+                        },
                     ) }
                     is CinemaRoute.Detail -> {
                         val detailedMovie = (movieDetail as? MovieDetailUiState.Ready)
@@ -343,7 +404,7 @@ private fun MainScreen(
                         content = route.plan.mainFeature,
                         preRollTrailers = route.plan.trailers,
                         bumperUri = route.plan.bumperUri,
-                        cinemaModeActive = route.plan.cinemaModeActive,
+                        cinemaModeActive = route.plan.cinemaModeActive && playbackSettings.cinemaLightsEnabled,
                         showMinovaTrailerPreRoll = (
                             route.plan.cinemaModeActive && route.plan.trailers.isNotEmpty()
                             ) || (
@@ -351,6 +412,12 @@ private fun MainScreen(
                                 route.plan.mainFeature.kind == MediaKind.Movie
                             ),
                         isTrailerRecordingMode = isTrailerRecordingMode,
+                        experienceSettings = experience,
+                        initialTrackPreference = experiencePreferences.tracks(route.plan.mainFeature.ratingKey),
+                        onReturnToDetails = {
+                            routes.removeAt(routes.lastIndex)
+                            if (routes.lastOrNull() !is CinemaRoute.Detail) open(route.plan.mainFeature)
+                        },
                         connection = state.connection,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
                         inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
@@ -362,7 +429,7 @@ private fun MainScreen(
                         onPlaybackActivityChanged = ambientInactivityTracker::updatePlaybackActivity,
                         onCinemaPlaybackChanged = { playing ->
                             cinemaLightingController.onCinemaPlaybackChanged(playing)
-                            tapoLightsViewModel.onPlaybackChanged(playing)
+                            tapoLightsViewModel.onPlaybackChanged(playing, route.sessionId)
                         },
                         onAutoplayNextEpisodeChanged = { enabled ->
                             playbackSettings = playbackPreferences.setAutoplayNextEpisode(enabled)
@@ -386,9 +453,15 @@ private fun MainScreen(
                             )
                         },
                         onSubtitleStreamSelected = { subtitleId, onComplete ->
+                            val key = route.plan.mainFeature.ratingKey
+                            val prior = experiencePreferences.tracks(key) ?: com.minova.cinema.data.local.TitleTrackPreference()
+                            experiencePreferences.saveTracks(key, prior.copy(subtitleId = subtitleId, subtitlesOff = subtitleId == null || subtitleId == 0L))
                             viewModel.selectSubtitle(route.plan.mainFeature, subtitleId, onComplete)
                         },
                         onAudioStreamSelected = { audioId, onComplete ->
+                            val key = route.plan.mainFeature.ratingKey
+                            val prior = experiencePreferences.tracks(key) ?: com.minova.cinema.data.local.TitleTrackPreference()
+                            experiencePreferences.saveTracks(key, prior.copy(audioId = audioId))
                             viewModel.selectAudio(route.plan.mainFeature, audioId, onComplete)
                         },
                         initialAudioDelayMs = playbackSettings.audioDelayMs,
@@ -401,7 +474,11 @@ private fun MainScreen(
                         },
                         onDiagnosticsRequested = viewModel::loadPlaybackDiagnostics,
                         onPlaybackEnded = { onReady ->
-                            if (route.plan.mainFeature.kind == MediaKind.Extra) {
+                            if (route.plan.mainFeature.kind == MediaKind.Movie && experience.endScreen) {
+                                if (routes.lastOrNull() is CinemaRoute.Player) routes[routes.lastIndex] = CinemaRoute.Finished(route.plan.mainFeature)
+                                viewModel.finishPlaybackAndLoadNext(route.plan.mainFeature) { viewModel.refresh(silent = true) }
+                                onReady(null)
+                            } else if (route.plan.mainFeature.kind == MediaKind.Extra) {
                                 // A trailer behaves like Plex's preview player:
                                 // completion returns to the movie rather than
                                 // leaving an empty fullscreen player behind.
@@ -421,6 +498,10 @@ private fun MainScreen(
                         },
                         onPlayNext = ::playNext,
                     )
+                    is CinemaRoute.Finished -> MovieFinishedDialog(route.content, state.catalog,
+                        onRate = { rating, onComplete -> viewModel.rate(route.content, rating, onComplete) },
+                        onOpen = ::open,
+                        onHome = { routes.clear(); routes.add(CinemaRoute.Browse) })
                     CinemaRoute.Settings -> SettingsScreen(
                         serverUrl = state.connection.baseUrl,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
@@ -477,8 +558,11 @@ private fun MainScreen(
                         onRequestTvHomeChannels = viewModel::requestTvHomeChannels,
                         onCustomizeHome = { customizeHome = true },
                         onTestTapoLights = tapoLightsViewModel::testLights,
+                        onExperienceSettings = { experienceOpen = true },
                     )
                 }
+            }
+            }
             }
         }
     }

@@ -70,9 +70,9 @@ private val MinovaTypography = Typography(
 )
 
 @Composable
-fun MinovaCinemaTheme(content: @Composable () -> Unit) {
+fun MinovaCinemaTheme(highContrast: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = MinovaColors,
+        colorScheme = if (highContrast) MinovaColors.copy(background = Color.Black, surface = Color.Black, onSurface = Color.White, onBackground = Color.White) else MinovaColors,
         typography = MinovaTypography,
         content = content,
     )

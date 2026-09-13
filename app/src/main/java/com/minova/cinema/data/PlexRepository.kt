@@ -212,6 +212,8 @@ class PlexRepository(
         api.selectAudio(partId = partId, audioStreamId = audioStreamId)
     }
 
+    suspend fun rate(content: MediaContent, rating: Int): Boolean = api.rate(content.ratingKey, rating.coerceIn(1, 10)).isSuccessful
+
     suspend fun setWatched(content: MediaContent, watched: Boolean) {
         val response = if (watched) api.markWatched(content.ratingKey)
         else api.markUnwatched(content.ratingKey)
@@ -554,6 +556,14 @@ class PlexRepository(
                 }
                 .sortedBy(MediaChapter::startTimeOffsetMs),
             audienceRating = metadata.audienceRating ?: metadata.rating,
+            collections = metadata.collections.map { it.tag }.filter(String::isNotBlank).distinct(),
+            audioLanguages = metadata.media.flatMap { it.parts }.flatMap { it.streams }
+                .filter { it.streamType == 2 }.mapNotNull { it.languageCode ?: it.language }.distinct(),
+            resolution = metadata.media.firstOrNull()?.videoResolution,
+            releaseDate = metadata.originallyAvailableAt,
+            lastViewedAtEpochSeconds = metadata.lastViewedAt,
+            userRating = metadata.userRating,
+            themeUrl = metadata.theme?.takeIf { it.startsWith("/") && !it.startsWith("//") }?.let(urls::authenticated),
             playback = playback,
         )
     }

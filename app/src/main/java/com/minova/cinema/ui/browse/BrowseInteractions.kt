@@ -1,5 +1,6 @@
 package com.minova.cinema.ui.browse
 
+import com.minova.cinema.ui.experience.accessibleFocus
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -28,7 +29,7 @@ internal fun Modifier.mediaInteraction(key: String, content: MediaContent, onOpe
     val neighbours = LocalArtworkNeighbours.current
     val sequence = LocalArtworkSequence.current
     val focus = remember { FocusRequester() }
-    this.focusRequester(focus)
+    this.accessibleFocus().focusRequester(focus)
         .onFocusChanged {
             if (it.isFocused) {
                 memory.lastKey = uniqueKey

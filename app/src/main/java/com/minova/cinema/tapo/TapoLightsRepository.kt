@@ -37,6 +37,7 @@ class TapoLightsRepository(
     private val lastCommandedBrightness = ConcurrentHashMap<String, Int>()
     private var fadeJob: Job? = null
     private var lastPlaybackState: Boolean? = null
+    private var activeSessionKey: String? = null
     private var testJob: Job? = null
 
     fun testLights() {
@@ -47,9 +48,10 @@ class TapoLightsRepository(
             return
         }
         _state.update { it.copy(testing = true, testResults = emptyMap()) }
+        val precedingFade = fadeJob
         testJob = scope.launch {
             try {
-                fadeJob?.join()
+                precedingFade?.join()
                 coroutineScope {
                     selected.map { ip -> async(Dispatchers.IO) {
                         fun report(status: String) { _state.update { it.copy(testResults = it.testResults + (ip to status)) } }
@@ -132,6 +134,7 @@ class TapoLightsRepository(
                         hasCredentials = true,
                         discovering = false,
                         lights = lights,
+                        connectionStatus = lights.associate { it.ipAddress to "Connected · last scan" },
                         localAccessBlockedCount = discovery.localAccessBlockedCount,
                         message = if (lights.isEmpty()) {
                             if (discovery.localAccessBlockedCount > 0) {
@@ -175,16 +178,41 @@ class TapoLightsRepository(
         }
     }
 
-    fun onPlaybackChanged(playing: Boolean) {
+    private var dimLevel = 0
+    private var restoreLevel = -1
+    fun setCinemaLevels(dim: Int, restore: Int) {
+        dimLevel = dim.coerceIn(0, 100)
+        restoreLevel = restore.coerceIn(-1, 100)
+    }
+
+    fun restoreLights() {
+        val previous = fadeJob
+        previous?.cancel()
+        fadeJob = scope.launch {
+            previous?.join()
+            testJob?.cancelAndJoin()
+            restoreAfterCinema(forceOriginal = true)
+        }
+    }
+
+    fun onPlaybackChanged(playing: Boolean, sessionKey: String? = null) {
+        val newSession = playing && sessionKey != null && sessionKey != activeSessionKey
+        if (newSession) activeSessionKey = sessionKey
         if (lastPlaybackState == null && !playing) {
             lastPlaybackState = false
             return
         }
-        if (lastPlaybackState == playing) return
+        if (lastPlaybackState == playing && !newSession) return
         lastPlaybackState = playing
-        fadeJob?.cancel()
+        val previous = fadeJob
+        previous?.cancel()
         fadeJob = scope.launch {
+            previous?.join()
             testJob?.cancelAndJoin()
+            if (newSession) {
+                restoreAfterCinema(forceOriginal = true)
+                restoreStates.clear()
+            }
             if (playing) fadeDownForCinema() else restoreAfterCinema()
         }
     }
@@ -196,38 +224,39 @@ class TapoLightsRepository(
         val snapshots = coroutineScope {
             targets.map { (ip, client) ->
                 async(Dispatchers.IO) {
-                    runCatching { ip to client.getDeviceInfo() }.getOrNull()
+                    runCatching { ip to client.getDeviceInfo() }
+                        .onFailure { _state.update { it.copy(connectionStatus = it.connectionStatus + (ip to "Unreachable · check power and network")) } }.getOrNull()
                 }
             }.awaitAll().filterNotNull()
         }
-        restoreStates.clear()
         snapshots.forEach { (ip, info) ->
-            restoreStates[ip] = info
+            // Keep the pre-movie snapshot across pause/resume, even when a
+            // custom pause level is used. A new session replaces it explicitly.
+            restoreStates.putIfAbsent(ip, info)
             lastCommandedBrightness[ip] = info.brightness
         }
         val active = snapshots.filter { it.second.isOn }
         fade(
             targets = active.mapNotNull { (ip, info) ->
-                clients[ip]?.let { client -> FadeTarget(ip, client, info.brightness, 0) }
+                clients[ip]?.let { client -> FadeTarget(ip, client, info.brightness, dimLevel.coerceAtMost(info.brightness)) }
             },
             durationMs = DIM_DURATION_MS,
         )
     }
 
-    private suspend fun restoreAfterCinema() {
+    private suspend fun restoreAfterCinema(forceOriginal: Boolean = false) {
         val targets = restoreStates.mapNotNull { (ip, original) ->
-            if (!original.isOn) return@mapNotNull null
+            if (!original.isOn || ip !in assignedIps) return@mapNotNull null
             clients[ip]?.let { client ->
                 FadeTarget(
                     ipAddress = ip,
                     client = client,
                     startBrightness = lastCommandedBrightness[ip] ?: MIN_ON_BRIGHTNESS,
-                    targetBrightness = original.brightness.coerceAtLeast(MIN_ON_BRIGHTNESS),
+                    targetBrightness = (if (forceOriginal || restoreLevel < 0) original.brightness else restoreLevel).coerceIn(0, 100),
                 )
             }
         }
-        fade(targets, RESTORE_DURATION_MS)
-        restoreStates.clear()
+        fade(targets.filter { it.startBrightness != it.targetBrightness }, RESTORE_DURATION_MS)
     }
 
     private fun selectedClients(): List<Pair<String, TapoLocalClient>> = assignedIps.mapNotNull { ip ->
@@ -253,7 +282,11 @@ class TapoLightsRepository(
                             return@async
                         }
                         runCatching { target.client.setBrightness(brightness) }
-                            .onSuccess { lastCommandedBrightness[target.ipAddress] = brightness }
+                            .onSuccess {
+                                lastCommandedBrightness[target.ipAddress] = brightness
+                                _state.update { it.copy(connectionStatus = it.connectionStatus + (target.ipAddress to "Connected · last command confirmed")) }
+                            }
+                            .onFailure { _state.update { it.copy(connectionStatus = it.connectionStatus + (target.ipAddress to "Command failed · check power and network")) } }
                     }
                 }.awaitAll()
             }

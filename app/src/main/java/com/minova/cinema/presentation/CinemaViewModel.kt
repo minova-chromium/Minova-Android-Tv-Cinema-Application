@@ -345,6 +345,11 @@ class CinemaViewModel(
      * Updates Plex first, then mirrors the confirmed watched state through all
      * in-memory catalog/detail copies so every visible badge changes together.
      */
+    fun rate(content: MediaContent, rating: Int, onComplete: (Boolean) -> Unit) {
+        val repo = repository ?: return onComplete(false)
+        viewModelScope.launch { onComplete(runCatching { repo.rate(content, rating) }.getOrDefault(false)) }
+    }
+
     fun setWatched(content: MediaContent, watched: Boolean) {
         val currentRepository = repository ?: return
         viewModelScope.launch {

@@ -300,6 +300,7 @@ private class FakePlexApi(
     override suspend fun getChildren(ratingKey: String) = unused()
     override suspend fun getExtras(ratingKey: String) = unused()
     override suspend fun markWatched(ratingKey: String, identifier: String) = Response.success(Unit)
+    override suspend fun rate(ratingKey: String, rating: Int, identifier: String) = Response.success(Unit)
     override suspend fun markUnwatched(ratingKey: String, identifier: String) = Response.success(Unit)
     override suspend fun reportTimeline(
         ratingKey: String,

@@ -113,6 +113,13 @@ data class MediaContent(
     val markers: List<MediaMarker> = emptyList(),
     val chapters: List<MediaChapter> = emptyList(),
     val audienceRating: Double? = null,
+    val collections: List<String> = emptyList(),
+    val audioLanguages: List<String> = emptyList(),
+    val resolution: String? = null,
+    val releaseDate: String? = null,
+    val lastViewedAtEpochSeconds: Long? = null,
+    val userRating: Double? = null,
+    val themeUrl: String? = null,
     val playback: PlaybackSource? = null,
 ) {
     val progress: Float

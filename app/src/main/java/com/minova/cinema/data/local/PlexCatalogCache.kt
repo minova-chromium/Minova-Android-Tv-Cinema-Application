@@ -21,6 +21,7 @@ class PlexCatalogCache(context: Context) {
         val file = cacheFile(connection)
         if (!file.isFile) return null
         val envelope = gson.fromJson(file.readText(), CacheEnvelope::class.java)
+        if (envelope.schema != 2) return null
         if (System.currentTimeMillis() - envelope.savedAtMs > MAX_CACHE_AGE_MS) return null
         envelope.catalog.restoreAuthenticatedUrls(connection)
     }.getOrNull()
@@ -31,7 +32,7 @@ class PlexCatalogCache(context: Context) {
             val destination = cacheFile(connection)
             val temporary = File(destination.parentFile, "${destination.name}.tmp")
             temporary.writeText(
-                gson.toJson(CacheEnvelope(System.currentTimeMillis(), catalog.sanitizedForCache())),
+                gson.toJson(CacheEnvelope(System.currentTimeMillis(), catalog.sanitizedForCache(), 2)),
             )
             if (!temporary.renameTo(destination)) {
                 temporary.copyTo(destination, overwrite = true)
@@ -55,6 +56,7 @@ class PlexCatalogCache(context: Context) {
     private data class CacheEnvelope(
         val savedAtMs: Long = 0L,
         val catalog: CinemaCatalog = CinemaCatalog("Plex", emptyList(), emptyList(), emptyList()),
+        val schema: Int = 0,
     )
 
     private companion object {
@@ -72,6 +74,7 @@ private fun CinemaCatalog.sanitizedForCache(): CinemaCatalog = copy(
 private fun MediaContent.sanitizedForCache(): MediaContent = copy(
     posterUrl = posterUrl.withoutAuthentication(),
     backdropUrl = backdropUrl.withoutAuthentication(),
+    themeUrl = themeUrl.withoutAuthentication(),
     credits = credits.map { it.copy(imageUrl = it.imageUrl.withoutAuthentication()) },
     playback = null,
 )
@@ -81,6 +84,7 @@ private fun CinemaCatalog.restoreAuthenticatedUrls(connection: PlexConnection): 
     fun restore(content: MediaContent): MediaContent = content.copy(
         posterUrl = content.posterUrl?.let(urls::authenticated),
         backdropUrl = content.backdropUrl?.let(urls::authenticated),
+        themeUrl = content.themeUrl?.let(urls::authenticated),
         credits = content.credits.map { credit ->
             credit.copy(imageUrl = credit.imageUrl?.let(urls::authenticated))
         },

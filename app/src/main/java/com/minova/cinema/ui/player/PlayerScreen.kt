@@ -1,5 +1,6 @@
 package com.minova.cinema.ui.player
 
+import androidx.compose.runtime.mutableLongStateOf
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
@@ -90,6 +91,9 @@ import com.minova.cinema.domain.SubtitleStream
 import com.minova.cinema.domain.PlaybackDiagnostics
 import com.minova.cinema.domain.PlexPlaybackMode
 import com.minova.cinema.domain.MediaChapter
+import com.minova.cinema.domain.matchPlexAudio
+import com.minova.cinema.domain.matchPlexSubtitle
+import com.minova.cinema.domain.sameTrackLanguage as sameLanguage
 import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
@@ -155,6 +159,9 @@ fun PlayerScreen(
     ) -> Unit,
     onPlaybackEnded: (onReady: (MediaContent?) -> Unit) -> Unit,
     onPlayNext: (MediaContent) -> Unit,
+    experienceSettings: com.minova.cinema.data.local.ExperienceSettings = com.minova.cinema.data.local.ExperienceSettings(),
+    initialTrackPreference: com.minova.cinema.data.local.TitleTrackPreference? = null,
+    onReturnToDetails: () -> Unit = {},
 ) {
     val playback = content.playback
     if (playback == null) {
@@ -183,10 +190,15 @@ fun PlayerScreen(
     var audioTracks by remember { mutableStateOf<List<AudioTrackOption>>(emptyList()) }
     var selectedAudioTrackId by remember { mutableStateOf<String?>(null) }
     var selectedPlexAudioId by remember(playback.audioStreams) {
-        mutableStateOf(playback.audioStreams.firstOrNull { it.selected }?.id)
+        mutableStateOf(playback.audioStreams.firstOrNull { it.id == initialTrackPreference?.audioId }?.id
+            ?: playback.audioStreams.firstOrNull { experienceSettings.audioLanguage.isNotBlank() && sameLanguage(it.language, experienceSettings.audioLanguage) }?.id
+            ?: playback.audioStreams.firstOrNull { it.selected }?.id)
     }
     var selectedPlexSubtitleId by remember(playback.subtitles) {
-        mutableStateOf(playback.subtitles.firstOrNull { it.selected }?.id)
+        mutableStateOf(if (initialTrackPreference?.subtitlesOff == true || (initialTrackPreference?.subtitleId == null && experienceSettings.subtitlesOff)) 0L else
+            playback.subtitles.firstOrNull { it.id == initialTrackPreference?.subtitleId }?.id
+                ?: playback.subtitles.firstOrNull { experienceSettings.subtitleLanguage.isNotBlank() && sameLanguage(it.language, experienceSettings.subtitleLanguage) }?.id
+                ?: playback.subtitles.firstOrNull { it.selected }?.id)
     }
     var playbackTimeLeftMs by remember(content.ratingKey) { mutableStateOf(content.timeLeftMs ?: 0L) }
     var playbackPositionMs by remember(content.ratingKey) {
@@ -197,6 +209,9 @@ fun PlayerScreen(
     }
     var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
+    var recoveryMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
+    var recoveryPosition by remember(content.ratingKey) { mutableLongStateOf(content.viewOffsetMs) }
+    var retryAfterSourceChange by remember(content.ratingKey) { mutableStateOf(false) }
     var diagnostics by remember(content.ratingKey) {
         mutableStateOf(
             PlaybackDiagnostics(
@@ -274,6 +289,9 @@ fun PlayerScreen(
         val trackSelector = DefaultTrackSelector(context).apply {
             setParameters(
                 buildUponParameters()
+                    .setPreferredAudioLanguage(playback.audioStreams.firstOrNull { it.id == selectedPlexAudioId }?.language ?: experienceSettings.audioLanguage.ifBlank { null })
+                    .setPreferredTextLanguage(playback.subtitles.firstOrNull { it.id == selectedPlexSubtitleId }?.language ?: experienceSettings.subtitleLanguage.ifBlank { null })
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, selectedPlexSubtitleId == 0L)
                     .setPreferredAudioMimeTypes(
                         MimeTypes.AUDIO_E_AC3_JOC,
                         MimeTypes.AUDIO_E_AC3,
@@ -398,8 +416,54 @@ fun PlayerScreen(
         val position = player.currentPosition.coerceAtLeast(0L)
         val currentIndex = player.currentMediaItemIndex
         player.replaceMediaItem(mainFeatureIndex, mainFeatureMediaItem(selectedQuality))
-        if (currentIndex == mainFeatureIndex) player.seekTo(mainFeatureIndex, position)
+        if (currentIndex == mainFeatureIndex) player.seekTo(mainFeatureIndex, if (retryAfterSourceChange) recoveryPosition else position)
+        if (retryAfterSourceChange) {
+            retryAfterSourceChange = false
+            player.prepare()
+            player.play()
+        }
         lastAppliedSourceKey = sourceKey
+    }
+
+    // Plex IDs are not Media3 group indices. Match the remembered stream only
+    // when its label or language/codec/channel combination is unambiguous.
+    // Otherwise retain Media3's preferred-language fallback instead of choosing
+    // a different commentary track just because it happens to come first.
+    var initialAudioApplied by remember(player) { mutableStateOf(false) }
+    var initialSubtitleApplied by remember(player) { mutableStateOf(false) }
+    LaunchedEffect(audioTracks, subtitleTracks, activePlaylistIndex, selectedQuality, player) {
+        if (activePlaylistIndex != mainFeatureIndex || selectedQuality != PlaybackQuality.Original) return@LaunchedEffect
+        val builder = player.trackSelectionParameters.buildUpon()
+        var changed = false
+        if (!initialAudioApplied && audioTracks.isNotEmpty()) {
+            initialAudioApplied = true
+            val saved = playback.audioStreams.firstOrNull { it.id == selectedPlexAudioId }
+            val match = saved?.let { stream ->
+                audioTracks.filter { it.label.equals(stream.label, true) }.singleOrNull()
+                    ?: audioTracks.filter { stream.language != null && sameLanguage(it.language, stream.language) &&
+                        (stream.codec == null || it.codec.equals(stream.codec, true)) &&
+                        (stream.channels == null || it.channels == stream.channels) }.singleOrNull()
+            }
+            match?.let {
+                builder.clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                    .addOverride(TrackSelectionOverride(it.group.mediaTrackGroup, it.trackIndex))
+                changed = true
+            }
+        }
+        if (!initialSubtitleApplied && subtitleTracks.isNotEmpty()) {
+            initialSubtitleApplied = true
+            val saved = playback.subtitles.firstOrNull { it.id == selectedPlexSubtitleId }
+            val match = saved?.let { stream ->
+                subtitleTracks.filter { it.group.getTrackFormat(it.trackIndex).id == "plex-subtitle:${stream.id}" }.singleOrNull()
+                    ?: subtitleTracks.filter { it.label.equals(stream.label, true) }.singleOrNull()
+            }
+            match?.let {
+                builder.clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .addOverride(TrackSelectionOverride(it.group.mediaTrackGroup, it.trackIndex))
+                changed = true
+            }
+        }
+        if (changed) player.trackSelectionParameters = builder.build()
     }
 
     fun resumeSynchronized() {
@@ -529,12 +593,16 @@ fun PlayerScreen(
                     player.play()
                     return
                 }
-                val fallback = fallbackQualityFor(latestSelectedQuality, error)
-                if (fallback != null) {
-                    playbackMessage = "${latestSelectedQuality.label} is not supported by this TV. Switching to ${fallback.label}…"
-                    selectedQuality = fallback
-                } else {
-                    playbackMessage = "Playback failed: ${error.errorCodeName}. Try another quality or audio track."
+                recoveryPosition = player.currentPosition.coerceAtLeast(0L)
+                player.pause()
+                recoveryMessage = when (error.errorCode) {
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "The connection to Plex was interrupted."
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Plex couldn't provide this stream. Check server access or try a different quality."
+                    PlaybackException.ERROR_CODE_DECODING_FAILED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED -> "This TV couldn't decode the selected stream. A lower quality may help."
+                    else -> "The stream couldn't continue. You can retry without starting the title over."
                 }
             }
 
@@ -769,7 +837,17 @@ fun PlayerScreen(
                     playerView = this
                 }
             },
-            update = { if (it.player !== player) it.player = player },
+            update = {
+                if (it.player !== player) it.player = player
+                it.subtitleView?.apply {
+                    setApplyEmbeddedStyles(false)
+                    setFractionalTextSize(0.0533f * experienceSettings.subtitleScale.coerceIn(0.85f, 1.5f))
+                    setStyle(androidx.media3.ui.CaptionStyleCompat(android.graphics.Color.WHITE,
+                        if (experienceSettings.subtitleBackground) 0xB0000000.toInt() else android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT, androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                        android.graphics.Color.BLACK, null))
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent { event ->
@@ -972,12 +1050,9 @@ fun PlayerScreen(
                         .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
                         .addOverride(TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex))
                         .build()
-                    val matchingPlexStream = playback.audioStreams.firstOrNull { stream ->
-                        option.language != null && stream.language.equals(option.language, ignoreCase = true) &&
-                            (option.codec == null || stream.codec.equals(option.codec, ignoreCase = true))
-                    } ?: playback.audioStreams.firstOrNull { stream ->
-                        stream.label.equals(option.label, ignoreCase = true)
-                    }
+                    val matchingPlexStream = matchPlexAudio(
+                        playback.audioStreams, option.label, option.language, option.codec, option.channels,
+                    )
                     matchingPlexStream?.let { stream ->
                         onAudioStreamSelected(stream.id) { selectedPlexAudioId = stream.id }
                     }
@@ -1000,15 +1075,16 @@ fun PlayerScreen(
                     }
                     player.trackSelectionParameters = builder.build()
                     val matchingPlexStream = option?.let { selectedTrack ->
-                        playback.subtitles.firstOrNull { stream ->
-                            selectedTrack.language != null &&
-                                stream.language.equals(selectedTrack.language, ignoreCase = true)
-                        } ?: playback.subtitles.firstOrNull { stream ->
-                            stream.label.equals(selectedTrack.label, ignoreCase = true)
-                        }
+                        matchPlexSubtitle(playback.subtitles,
+                            selectedTrack.group.getTrackFormat(selectedTrack.trackIndex).id,
+                            selectedTrack.label, selectedTrack.language)
                     }
-                    onSubtitleStreamSelected(matchingPlexStream?.id) {
-                        selectedPlexSubtitleId = matchingPlexStream?.id ?: 0L
+                    // An unmatched embedded track is still enabled locally.
+                    // Only an explicit Off selection should persist subtitles Off.
+                    if (option == null || matchingPlexStream != null) {
+                        onSubtitleStreamSelected(matchingPlexStream?.id) {
+                            selectedPlexSubtitleId = matchingPlexStream?.id ?: 0L
+                        }
                     }
                 },
                 onPlexSubtitleSelected = { stream ->
@@ -1050,6 +1126,25 @@ fun PlayerScreen(
                 showRecordingDisclaimer = isTrailerRecordingMode,
                 onFinished = { minovaPreRollVisible = false },
             )
+        }
+        recoveryMessage?.let { message ->
+            com.minova.cinema.ui.experience.PlaybackRecoveryDialog(message,
+                canLowerQuality = selectedQuality != PlaybackQuality.Sd,
+                onRetry = {
+                    recoveryMessage = null
+                    player.seekTo(mainFeatureIndex, recoveryPosition)
+                    player.prepare()
+                    player.play()
+                },
+                onLowerQuality = {
+                    recoveryMessage = null
+                    retryAfterSourceChange = true
+                    selectedQuality = when (selectedQuality) {
+                        PlaybackQuality.Original, PlaybackQuality.UltraHd -> PlaybackQuality.FullHd
+                        PlaybackQuality.FullHd -> PlaybackQuality.Hd
+                        else -> PlaybackQuality.Sd
+                    }
+                }, onReturn = onReturnToDetails)
         }
     }
 }
@@ -1280,6 +1375,7 @@ private fun subtitleConfiguration(stream: SubtitleStream): MediaItem.SubtitleCon
         else -> return null
     }
     return MediaItem.SubtitleConfiguration.Builder(uri)
+        .setId("plex-subtitle:${stream.id}")
         .setMimeType(mimeType)
         .setLanguage(stream.language)
         .setLabel(stream.label)
