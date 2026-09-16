@@ -19,6 +19,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -124,7 +126,7 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 private enum class BrowseTab(val label: String) {
-    Home("Home"), Movies("Movies"), Series("Series"), MyList("Watchlist"), Search("Search"),
+    Home("Home"), Movies("Movies"), Series("Series"), Collections("Collections"), MyList("Watchlist"), Search("Search"),
 }
 
 private enum class BrowseLayout { Rows, Grid }
@@ -152,6 +154,7 @@ fun BrowseScreen(
     onDiscover: () -> Unit = {},
     onHighlighted: (MediaContent?) -> Unit = {},
     onResetPlaybackPreferences: (MediaContent) -> Unit = {},
+    loadCollectionMembers: (suspend (String) -> List<MediaContent>)? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(BrowseTab.entries.firstOrNull { it.name == homePreferences.openingTab } ?: BrowseTab.Home) }
     var layout by rememberSaveable { mutableStateOf(BrowseLayout.Rows) }
@@ -172,7 +175,7 @@ fun BrowseScreen(
             BrowseTab.Movies -> catalog.movies
             BrowseTab.Series -> catalog.shows
             BrowseTab.MyList -> catalog.myList
-            BrowseTab.Search -> emptyList()
+            BrowseTab.Collections, BrowseTab.Search -> emptyList()
         }
     }
     val continueWatching = remember(catalog, tab) {
@@ -186,7 +189,7 @@ fun BrowseScreen(
                 val saved = catalog.myList.mapTo(mutableSetOf(), MediaContent::ratingKey)
                 catalog.continueWatching.filter { it.ratingKey in saved }
             }
-            BrowseTab.Search -> emptyList()
+            BrowseTab.Collections, BrowseTab.Search -> emptyList()
         }
     }
     val gridGenres = remember(browseItems) {
@@ -220,6 +223,8 @@ fun BrowseScreen(
         onHighlighted(if (tab == BrowseTab.Home) homeFeatured.getOrNull(homeFeaturedIndex) else highlightedContent)
     }
     val heroFocus = remember(tab) { FocusRequester() }
+    val collectionsFocus = remember { FocusRequester() }
+    val collectionsTabFocus = remember { FocusRequester() }
     val firstContinueFocus = remember(tab) { FocusRequester() }
     val firstGenreFocus = remember(tab) { FocusRequester() }
     val firstPosterFocus = remember(tab, selectedGenre) { FocusRequester() }
@@ -284,7 +289,9 @@ fun BrowseScreen(
         val requestFirstContentFocus = {
             // An expanded catalog removes the hero from composition. Only
             // request attached focus targets; never trap Down on the header.
-            val candidates = if (tab != BrowseTab.Home && layout == BrowseLayout.Grid) {
+            val candidates = if (tab == BrowseTab.Collections) {
+                listOf(collectionsFocus)
+            } else if (tab != BrowseTab.Home && layout == BrowseLayout.Grid) {
                 listOf(firstGridPosterFocus)
             } else listOf(heroFocus, firstContinueFocus, firstGenreFocus, firstPosterFocus)
             for (candidate in candidates) {
@@ -295,8 +302,9 @@ fun BrowseScreen(
         Header(
             selectedTab = tab,
             layout = layout,
-            showLayout = tab != BrowseTab.Home && tab != BrowseTab.Search,
-            showFilter = tab != BrowseTab.Home && tab != BrowseTab.Search,
+            showLayout = tab in listOf(BrowseTab.Movies, BrowseTab.Series, BrowseTab.MyList),
+            showFilter = tab in listOf(BrowseTab.Movies, BrowseTab.Series, BrowseTab.MyList),
+            collectionsTabFocus = collectionsTabFocus,
             filterActive = selectedGenre != null || advanced != com.minova.cinema.domain.LibraryFilter(),
             onTabSelected = { tab = it },
             onLayoutChanged = { layout = it },
@@ -312,12 +320,21 @@ fun BrowseScreen(
             BrowseTab.Series -> "No series were found."
             BrowseTab.MyList -> "No titles from this Plex server are in your Watchlist."
             BrowseTab.Search -> "Search your Plex library."
+            BrowseTab.Collections -> "No collections were found."
         }
-        tabStateHolder.SaveableStateProvider(tab.name + layout.name) {
+        tabStateHolder.SaveableStateProvider(tab.name + if (tab == BrowseTab.Collections) "" else layout.name) {
         if (tab == BrowseTab.Search) {
             SearchScreen(
                 movies = catalog.movies,
                 shows = catalog.shows,
+                onOpen = onOpen,
+            )
+        } else if (tab == BrowseTab.Collections) {
+            CollectionsScreen(
+                catalog = catalog,
+                entryFocus = collectionsFocus,
+                loadMembers = loadCollectionMembers,
+                onHeaderFocus = { collectionsTabFocus.requestFocus() },
                 onOpen = onOpen,
             )
         } else if (tab != BrowseTab.Home && layout == BrowseLayout.Grid) {
@@ -484,6 +501,7 @@ internal fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoverySh
 
 @Composable
 private fun Header(
+    collectionsTabFocus: FocusRequester,
     selectedTab: BrowseTab,
     layout: BrowseLayout,
     showLayout: Boolean,
@@ -533,20 +551,27 @@ private fun Header(
                 .width(80.dp)
                 .height(22.dp),
         )
-        BrowseTab.entries.forEach { item ->
-            if (item == BrowseTab.Search) {
-                HeaderIconItem(
-                    icon = Icons.Default.Search,
-                    contentDescription = "Search",
-                    selected = item == selectedTab,
-                    onDown = onDown,
-                    onClick = { onTabSelected(item) },
-                )
-            } else {
-                HeaderItem(item.label, item == selectedTab, onDown) { onTabSelected(item) }
+        Row(
+            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BrowseTab.entries.forEach { item ->
+                if (item == BrowseTab.Search) {
+                    HeaderIconItem(
+                        icon = Icons.Default.Search,
+                        contentDescription = "Search",
+                        selected = item == selectedTab,
+                        onDown = onDown,
+                        onClick = { onTabSelected(item) },
+                    )
+                } else {
+                    HeaderItem(
+                        item.label, item == selectedTab, onDown,
+                        modifier = if (item == BrowseTab.Collections) Modifier.focusRequester(collectionsTabFocus) else Modifier,
+                    ) { onTabSelected(item) }
+                }
             }
         }
-        Spacer(Modifier.weight(1f))
         if (selectedTab == BrowseTab.Home) HeaderIconItem(
             icon = Icons.Default.Apps, contentDescription = "Discover: Movie Night, collections and history",
             selected = false, onDown = onDown, onClick = onDiscover,
@@ -749,10 +774,10 @@ private fun GenreFilterChoice(
 }
 
 @Composable
-private fun HeaderItem(label: String, selected: Boolean, onDown: () -> Unit, onClick: () -> Unit) {
+private fun HeaderItem(label: String, selected: Boolean, onDown: () -> Unit, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Box(
-        modifier = Modifier
+        modifier = modifier
             .testTag("header-tab-$label")
             .padding(horizontal = 3.dp)
             .clip(RoundedCornerShape(7.dp))

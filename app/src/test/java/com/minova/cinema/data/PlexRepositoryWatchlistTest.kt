@@ -259,6 +259,7 @@ private class FakePlexApi(
     )
 
     override suspend fun getContainer(path: String, start: Int?, size: Int?): PlexLibraryResponse {
+        if (path.endsWith("/collections")) return PlexLibraryResponse()
         val pageStart = start ?: 0
         val pageSize = size ?: libraryItems.size
         containerStarts += pageStart

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.9.3 — 2026-09-16
+
+Version 2.9.2 was a local test build. This version includes the collection-poster update.
+
+- Added a Collections tab between Series and Watchlist, with collection artwork, title counts, and movies and series in release order.
+- Use the collection posters assigned in Plex, displayed in full on portrait cards. Collection identities stay separate across libraries, and titles are loaded from the selected collection on the server.
+- Preserved collection scroll position and title focus when returning from details or switching tabs.
+- Added remote navigation between collections, their titles, and the top navigation, including larger-text and empty-library coverage.
+- Made the top tabs scroll when needed so all navigation remains reachable with larger text.
+
 ## 2.9.1 — 2026-09-13
 
 Public release of the Cinema experience update. Version 2.9.0 was a local test build;

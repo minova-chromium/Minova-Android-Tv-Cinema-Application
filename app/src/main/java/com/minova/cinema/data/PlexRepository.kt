@@ -7,6 +7,7 @@ import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexUrlFactory
 import com.minova.cinema.data.remote.PlexWatchlistApiService
 import com.minova.cinema.domain.CinemaCatalog
+import com.minova.cinema.domain.MediaCollection
 import com.minova.cinema.domain.AudioStream
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
@@ -51,6 +52,25 @@ class PlexRepository(
             loadLibraries(showLibraries)
         }
         val continueDeferred = async { loadContinueWatching() }
+        val collectionsDeferred = async {
+            (movieLibraries + showLibraries).map { library -> async {
+                try {
+                    loadPagedMetadata("library/sections/${library.key}/collections").map { metadata ->
+                        MediaCollection(
+                            ratingKey = metadata.ratingKey,
+                            title = metadata.title,
+                            posterUrl = metadata.thumb?.takeIf(String::isNotBlank)?.let(urls::authenticated),
+                            libraryTitle = library.title,
+                            childCount = metadata.childCount,
+                        )
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } }.awaitAll().flatten().distinctBy { it.ratingKey }.sortedBy { it.title.lowercase() }
+        }
 
         val movies = moviesDeferred.await()
         val shows = showsDeferred.await()
@@ -67,11 +87,33 @@ class PlexRepository(
             shows = shows,
             continueWatching = continueDeferred.await(),
             myList = watchlist,
+            collections = collectionsDeferred.await(),
         )
     }
 
     suspend fun loadChildren(ratingKey: String): List<MediaContent> {
         return api.getChildren(ratingKey).mediaContainer.metadata.map(::toContent)
+    }
+
+    suspend fun loadCollectionMembers(ratingKey: String): List<MediaContent> =
+        loadPagedMetadata("library/collections/${ratingKey.encodePathSegment()}/children")
+            .map(::toContent)
+            .sortedWith(compareBy<MediaContent> { it.releaseDate ?: "${it.year ?: 9999}-12-31" }.thenBy { it.title })
+
+    private suspend fun loadPagedMetadata(path: String): List<Metadata> {
+        val results = mutableListOf<Metadata>()
+        val seen = mutableSetOf<String>()
+        var start = 0
+        repeat(MAX_LIBRARY_PAGES) {
+            val container = api.getContainer(path, start = start, size = LIBRARY_PAGE_SIZE).mediaContainer
+            val page = container.metadata
+            val additions = page.filter { it.ratingKey.isNotBlank() && seen.add(it.ratingKey) }
+            if (additions.isEmpty()) return results
+            results += additions
+            start += page.size
+            if (container.totalSize?.let { start >= it } ?: (page.size < LIBRARY_PAGE_SIZE)) return results
+        }
+        return results
     }
 
     suspend fun loadPlayable(ratingKey: String): MediaContent? {

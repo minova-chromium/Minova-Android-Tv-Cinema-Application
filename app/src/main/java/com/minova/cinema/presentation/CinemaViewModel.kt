@@ -184,6 +184,10 @@ class CinemaViewModel(
         }
     }
 
+    /** Load a collection only when opened, including server-defined smart membership. */
+    suspend fun loadCollectionMembers(ratingKey: String): List<MediaContent> =
+        checkNotNull(repository) { "Connect to your library first." }.loadCollectionMembers(ratingKey)
+
     /** Re-syncs account-wide Plex Watchlist data when its tab is opened. */
     fun refreshWatchlist() {
         val currentRepository = repository ?: return

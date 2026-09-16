@@ -21,7 +21,7 @@ class PlexCatalogCache(context: Context) {
         val file = cacheFile(connection)
         if (!file.isFile) return null
         val envelope = gson.fromJson(file.readText(), CacheEnvelope::class.java)
-        if (envelope.schema != 2) return null
+        if (envelope.schema != 3) return null
         if (System.currentTimeMillis() - envelope.savedAtMs > MAX_CACHE_AGE_MS) return null
         envelope.catalog.restoreAuthenticatedUrls(connection)
     }.getOrNull()
@@ -32,7 +32,7 @@ class PlexCatalogCache(context: Context) {
             val destination = cacheFile(connection)
             val temporary = File(destination.parentFile, "${destination.name}.tmp")
             temporary.writeText(
-                gson.toJson(CacheEnvelope(System.currentTimeMillis(), catalog.sanitizedForCache(), 2)),
+                gson.toJson(CacheEnvelope(System.currentTimeMillis(), catalog.sanitizedForCache(), 3)),
             )
             if (!temporary.renameTo(destination)) {
                 temporary.copyTo(destination, overwrite = true)
@@ -65,6 +65,7 @@ class PlexCatalogCache(context: Context) {
 }
 
 private fun CinemaCatalog.sanitizedForCache(): CinemaCatalog = copy(
+    collections = collections.map { it.copy(posterUrl = it.posterUrl.withoutAuthentication()) },
     movies = movies.map(MediaContent::sanitizedForCache),
     shows = shows.map(MediaContent::sanitizedForCache),
     continueWatching = continueWatching.map(MediaContent::sanitizedForCache),
@@ -90,6 +91,7 @@ private fun CinemaCatalog.restoreAuthenticatedUrls(connection: PlexConnection): 
         },
     )
     return copy(
+        collections = collections.map { it.copy(posterUrl = it.posterUrl?.let(urls::authenticated)) },
         movies = movies.map(::restore),
         shows = shows.map(::restore),
         continueWatching = continueWatching.map(::restore),

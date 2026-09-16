@@ -116,8 +116,8 @@ internal fun DiscoveryDialog(catalog: CinemaCatalog, onOpen: (MediaContent) -> U
                 items(choices, key = { it.ratingKey }) { MediaChoice(it, onOpen) }
             }
             "Collections" -> {
-                if (collections.isEmpty()) item { Text("No Plex collections were reported. Add titles to a collection in Plex, then refresh the library.", color = MinovaMuted) }
-                item { ChoiceStrip("Your Plex collections", listOf("" to "Choose collection") + collections.map { it to it }, collection.orEmpty()) { collection = it.ifBlank { null } } }
+                if (collections.isEmpty()) item { Text("No collections were reported. Add titles to a collection in your library, then refresh.", color = MinovaMuted) }
+                item { ChoiceStrip("Collections", listOf("" to "Choose collection") + collections.map { it to it }, collection.orEmpty()) { collection = it.ifBlank { null } } }
                 if (collection != null) {
                     item { Text("$collection · release order · ${members.size} titles", color = MinovaCyan) }
                     members.firstOrNull { !it.isWatched }?.let { next -> item {

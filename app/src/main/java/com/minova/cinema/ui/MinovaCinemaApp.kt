@@ -356,6 +356,7 @@ private fun MainScreen(
                         onToggleMyList = viewModel::toggleMyList,
                         onSettings = { routes.add(CinemaRoute.Settings) },
                         onWatchlistRefresh = viewModel::refreshWatchlist,
+                        loadCollectionMembers = viewModel::loadCollectionMembers,
                         homePreferences = homePreferences,
                         onPlayFromBeginning = { play(it, true) },
                         onSetWatched = viewModel::setWatched,

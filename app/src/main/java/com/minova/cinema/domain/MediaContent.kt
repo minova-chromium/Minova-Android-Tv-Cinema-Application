@@ -166,12 +166,21 @@ private fun formatTimeLeft(remainingMs: Long): String {
     }
 }
 
+data class MediaCollection(
+    val ratingKey: String,
+    val title: String,
+    val posterUrl: String?,
+    val libraryTitle: String,
+    val childCount: Int? = null,
+)
+
 data class CinemaCatalog(
     val serverName: String,
     val movies: List<MediaContent>,
     val shows: List<MediaContent>,
     val continueWatching: List<MediaContent>,
     val myList: List<MediaContent> = emptyList(),
+    val collections: List<MediaCollection> = emptyList(),
 )
 
 /** A single Media3 session: trailers, optional local bumper, then the feature. */
