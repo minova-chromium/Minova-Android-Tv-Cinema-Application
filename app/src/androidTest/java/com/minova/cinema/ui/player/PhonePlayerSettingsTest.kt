@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.minova.cinema.showcase.PlayerSettingsShowcaseActivity
@@ -25,7 +26,7 @@ class PhonePlayerSettingsTest {
     val compose = createAndroidComposeRule<PlayerSettingsShowcaseActivity>()
 
     @Test
-    fun phoneTransportUsesIconsAndOneTapSubtitleToggle() {
+    fun phoneTransportUsesIconsAndSubtitleLanguageSheet() {
         val uiMode = compose.activity.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
         assumeFalse(uiMode.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION)
 
@@ -36,8 +37,19 @@ class PhonePlayerSettingsTest {
         compose.onNodeWithTag("player-subtitles-toggle").assertIsDisplayed()
         compose.onNodeWithTag("player-playback-settings").assertDoesNotExist()
 
-        compose.waitUntilAtLeastOneExists(hasContentDescription("Turn subtitles on"), 3_000)
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Subtitles: Off"), 3_000)
         compose.onNodeWithTag("player-subtitles-toggle").performClick()
-        compose.waitUntilAtLeastOneExists(hasContentDescription("Turn subtitles off"), 3_000)
+        compose.waitUntilAtLeastOneExists(hasTestTag("phone-subtitle-panel"), 3_000)
+        compose.onNodeWithText("Subtitles").assertIsDisplayed()
+        compose.onNodeWithText("Off").assertIsDisplayed()
+        compose.onNodeWithText("English").assertIsDisplayed().performClick()
+
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Subtitles: English"), 3_000)
+        compose.onNodeWithTag("phone-subtitle-panel").assertDoesNotExist()
+
+        compose.onNodeWithTag("player-subtitles-toggle").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("phone-subtitle-panel"), 3_000)
+        compose.onNodeWithText("Off").performClick()
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Subtitles: Off"), 3_000)
     }
 }

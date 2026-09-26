@@ -27,10 +27,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -216,6 +218,7 @@ fun PlayerScreen(
     var controlsInteractionId by remember { mutableStateOf(0L) }
     var selectedQuality by remember { mutableStateOf(PlaybackQuality.Original) }
     var settingsVisible by remember { mutableStateOf(false) }
+    var phoneSubtitleMenuVisible by remember { mutableStateOf(false) }
     var subtitleTracks by remember { mutableStateOf<List<SubtitleTrackOption>>(emptyList()) }
     var selectedSubtitleId by remember { mutableStateOf<String?>(null) }
     var audioTracks by remember { mutableStateOf<List<AudioTrackOption>>(emptyList()) }
@@ -230,10 +233,6 @@ fun PlayerScreen(
             playback.subtitles.firstOrNull { it.id == initialTrackPreference?.subtitleId }?.id
                 ?: playback.subtitles.firstOrNull { experienceSettings.subtitleLanguage.isNotBlank() && sameLanguage(it.language, experienceSettings.subtitleLanguage) }?.id
                 ?: playback.subtitles.firstOrNull { it.selected }?.id)
-    }
-    var lastEnabledSubtitleTrackId by remember(content.ratingKey) { mutableStateOf<String?>(null) }
-    var lastEnabledPlexSubtitleId by remember(content.ratingKey) {
-        mutableStateOf(selectedPlexSubtitleId?.takeIf { it != 0L })
     }
     var playbackTimeLeftMs by remember(content.ratingKey) { mutableStateOf(content.timeLeftMs ?: 0L) }
     var playbackPositionMs by remember(content.ratingKey) {
@@ -586,7 +585,6 @@ fun PlayerScreen(
                         }
                     }
                 }
-                selectedSubtitleId?.let { lastEnabledSubtitleTrackId = it }
                 selectedAudioTrackId = null
                 audioTracks = tracks.groups.flatMapIndexed { groupIndex, group ->
                     if (group.type != C.TRACK_TYPE_AUDIO) return@flatMapIndexed emptyList()
@@ -710,9 +708,10 @@ fun PlayerScreen(
         controlsVisible,
         bottomControlsFocused,
         settingsVisible,
+        phoneSubtitleMenuVisible,
         controlsInteractionId,
     ) {
-        if (controlsVisible && !bottomControlsFocused && !settingsVisible) {
+        if (controlsVisible && !bottomControlsFocused && !settingsVisible && !phoneSubtitleMenuVisible) {
             delay(5_000)
             controlsVisible = false
         }
@@ -738,6 +737,7 @@ fun PlayerScreen(
             player.pause()
             controlsVisible = false
             settingsVisible = false
+            phoneSubtitleMenuVisible = false
             inactivityPromptVisible = true
         }
     }
@@ -799,6 +799,11 @@ fun PlayerScreen(
         playerView?.requestFocus()
     }
 
+    BackHandler(enabled = phoneSubtitleMenuVisible) {
+        phoneSubtitleMenuVisible = false
+        showControlsForInteraction()
+    }
+
     BackHandler(enabled = inactivityPromptVisible) {
         onInactivityTimeout()
     }
@@ -816,67 +821,48 @@ fun PlayerScreen(
         }
     }
 
-    fun togglePhoneSubtitles() {
-        val subtitlesEnabled = selectedSubtitleId != null ||
-            (selectedPlexSubtitleId != null && selectedPlexSubtitleId != 0L)
-        if (subtitlesEnabled) {
-            selectedSubtitleId?.let { lastEnabledSubtitleTrackId = it }
-            selectedPlexSubtitleId?.takeIf { it != 0L }?.let { lastEnabledPlexSubtitleId = it }
-            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                .build()
-            selectedSubtitleId = null
-            selectedPlexSubtitleId = 0L
-            onSubtitleStreamSelected(null) { selectedPlexSubtitleId = 0L }
+    fun selectSubtitleTrack(option: SubtitleTrackOption?) {
+        selectedSubtitleId = option?.id
+        val builder = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        if (option == null) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         } else {
-            val localTrack = subtitleTracks.firstOrNull { it.id == lastEnabledSubtitleTrackId }
-                ?: subtitleTracks.firstOrNull()
-            if (localTrack != null) {
-                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .addOverride(
-                        TrackSelectionOverride(
-                            localTrack.group.mediaTrackGroup,
-                            localTrack.trackIndex,
-                        ),
-                    )
-                    .build()
-                selectedSubtitleId = localTrack.id
-                lastEnabledSubtitleTrackId = localTrack.id
-                val matchingPlexStream = matchPlexSubtitle(
-                    playback.subtitles,
-                    localTrack.group.getTrackFormat(localTrack.trackIndex).id,
-                    localTrack.label,
-                    localTrack.language,
+            builder
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .addOverride(
+                    TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex),
                 )
-                matchingPlexStream?.let { stream ->
-                    lastEnabledPlexSubtitleId = stream.id
-                    selectedPlexSubtitleId = stream.id
-                    onSubtitleStreamSelected(stream.id) { selectedPlexSubtitleId = stream.id }
-                }
-            } else {
-                val plexStream = playback.subtitles.firstOrNull { it.id == lastEnabledPlexSubtitleId }
-                    ?: playback.subtitles.firstOrNull { it.selected }
-                    ?: playback.subtitles.firstOrNull { subtitle ->
-                        experienceSettings.subtitleLanguage.isNotBlank() &&
-                            sameLanguage(subtitle.language, experienceSettings.subtitleLanguage)
-                    }
-                    ?: playback.subtitles.firstOrNull()
-                if (plexStream == null) {
-                    playbackMessage = "No subtitles are available for this title."
-                } else {
-                    lastEnabledPlexSubtitleId = plexStream.id
-                    selectedPlexSubtitleId = plexStream.id
-                    onSubtitleStreamSelected(plexStream.id) {
-                        selectedPlexSubtitleId = plexStream.id
-                    }
-                }
+        }
+        player.trackSelectionParameters = builder.build()
+        val matchingPlexStream = option?.let { selectedTrack ->
+            matchPlexSubtitle(
+                playback.subtitles,
+                selectedTrack.group.getTrackFormat(selectedTrack.trackIndex).id,
+                selectedTrack.label,
+                selectedTrack.language,
+            )
+        }
+        // An unmatched embedded track is still enabled locally. Only an
+        // explicit Off selection should persist subtitles Off in Plex.
+        if (option == null || matchingPlexStream != null) {
+            selectedPlexSubtitleId = matchingPlexStream?.id ?: 0L
+            onSubtitleStreamSelected(matchingPlexStream?.id) {
+                selectedPlexSubtitleId = matchingPlexStream?.id ?: 0L
             }
         }
-        showControlsForInteraction()
-        onUserInteraction()
+    }
+
+    fun selectPlexSubtitle(stream: SubtitleStream?) {
+        selectedSubtitleId = null
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, stream == null)
+            .build()
+        selectedPlexSubtitleId = stream?.id ?: 0L
+        onSubtitleStreamSelected(stream?.id) {
+            selectedPlexSubtitleId = stream?.id ?: 0L
+        }
     }
 
     val activeIntroMarker = content.markers.firstOrNull { marker ->
@@ -897,9 +883,10 @@ fun PlayerScreen(
         activeSkipMarker?.startTimeOffsetMs,
         controlsVisible,
         settingsVisible,
+        phoneSubtitleMenuVisible,
         inactivityPromptVisible,
     ) {
-        if (activeSkipMarker != null && !settingsVisible && !inactivityPromptVisible) {
+        if (activeSkipMarker != null && !settingsVisible && !phoneSubtitleMenuVisible && !inactivityPromptVisible) {
             delay(80)
             runCatching { markerFocusRequester.requestFocus() }
         }
@@ -990,7 +977,7 @@ fun PlayerScreen(
         // PlayerView's controller remains disabled so television remotes keep
         // their deterministic behavior. Phones receive a transparent tap
         // target above the video that reveals the shared Minova controls.
-        if (handheld && !settingsVisible && !inactivityPromptVisible) {
+        if (handheld && !settingsVisible && !phoneSubtitleMenuVisible && !inactivityPromptVisible) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -1006,7 +993,7 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible && !settingsVisible,
+            visible = controlsVisible && !settingsVisible && !phoneSubtitleMenuVisible,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -1094,19 +1081,26 @@ fun PlayerScreen(
                             onClick = { seekBy(player.seekForwardIncrement); onUserInteraction() },
                             modifier = Modifier.testTag("player-seek-forward"),
                         )
-                        val subtitlesEnabled = selectedSubtitleId != null ||
-                            (selectedPlexSubtitleId != null && selectedPlexSubtitleId != 0L)
                         val subtitlesAvailable = subtitleTracks.isNotEmpty() || playback.subtitles.isNotEmpty()
+                        val selectedSubtitleLabel = subtitleTracks
+                            .firstOrNull { it.id == selectedSubtitleId }
+                            ?.label
+                            ?: playback.subtitles
+                                .firstOrNull { it.id == selectedPlexSubtitleId }
+                                ?.label
                         TouchPlayerIconButton(
                             icon = Icons.Rounded.Subtitles,
-                            contentDescription = when {
-                                !subtitlesAvailable -> "No subtitles available"
-                                subtitlesEnabled -> "Turn subtitles off"
-                                else -> "Turn subtitles on"
+                            contentDescription = if (subtitlesAvailable) {
+                                "Subtitles: ${selectedSubtitleLabel ?: "Off"}"
+                            } else {
+                                "No subtitles available"
                             },
-                            onClick = ::togglePhoneSubtitles,
+                            onClick = {
+                                phoneSubtitleMenuVisible = true
+                                onUserInteraction()
+                            },
                             enabled = subtitlesAvailable,
-                            selected = subtitlesEnabled,
+                            selected = selectedSubtitleLabel != null,
                             modifier = Modifier.testTag("player-subtitles-toggle"),
                         )
                     } else {
@@ -1166,6 +1160,7 @@ fun PlayerScreen(
             nextEpisode == null &&
             !nextUpLoading &&
             !settingsVisible &&
+            !phoneSubtitleMenuVisible &&
             !inactivityPromptVisible
         ) {
             val skipAction: () -> Unit = {
@@ -1246,39 +1241,10 @@ fun PlayerScreen(
                     onAudioStreamSelected(stream.id) { selectedPlexAudioId = stream.id }
                 },
                 onSubtitleSelected = { option ->
-                    selectedSubtitleId = option?.id
-                    option?.let { lastEnabledSubtitleTrackId = it.id }
-                    val builder = player.trackSelectionParameters.buildUpon()
-                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    if (option == null) {
-                        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                    } else {
-                        builder
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                            .addOverride(
-                                TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex),
-                            )
-                    }
-                    player.trackSelectionParameters = builder.build()
-                    val matchingPlexStream = option?.let { selectedTrack ->
-                        matchPlexSubtitle(playback.subtitles,
-                            selectedTrack.group.getTrackFormat(selectedTrack.trackIndex).id,
-                            selectedTrack.label, selectedTrack.language)
-                    }
-                    // An unmatched embedded track is still enabled locally.
-                    // Only an explicit Off selection should persist subtitles Off.
-                    if (option == null || matchingPlexStream != null) {
-                        matchingPlexStream?.let { lastEnabledPlexSubtitleId = it.id }
-                        onSubtitleStreamSelected(matchingPlexStream?.id) {
-                            selectedPlexSubtitleId = matchingPlexStream?.id ?: 0L
-                        }
-                    }
+                    selectSubtitleTrack(option)
                 },
                 onPlexSubtitleSelected = { stream ->
-                    stream?.let { lastEnabledPlexSubtitleId = it.id }
-                    onSubtitleStreamSelected(stream?.id) {
-                        selectedPlexSubtitleId = stream?.id ?: 0L
-                    }
+                    selectPlexSubtitle(stream)
                 },
                 onChapterSelected = { chapter ->
                     player.seekTo(chapter.startTimeOffsetMs)
@@ -1293,6 +1259,29 @@ fun PlayerScreen(
                     playerView?.requestFocus()
                 },
                 modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
+
+        if (handheld && phoneSubtitleMenuVisible) {
+            PhoneSubtitlePanel(
+                subtitleTracks = subtitleTracks,
+                selectedSubtitleId = selectedSubtitleId,
+                plexSubtitles = playback.subtitles,
+                selectedPlexSubtitleId = selectedPlexSubtitleId,
+                onSubtitleSelected = { option ->
+                    selectSubtitleTrack(option)
+                    phoneSubtitleMenuVisible = false
+                    showControlsForInteraction()
+                },
+                onPlexSubtitleSelected = { stream ->
+                    selectPlexSubtitle(stream)
+                    phoneSubtitleMenuVisible = false
+                    showControlsForInteraction()
+                },
+                onClose = {
+                    phoneSubtitleMenuVisible = false
+                    showControlsForInteraction()
+                },
             )
         }
 
@@ -1390,6 +1379,148 @@ private fun TouchPlayerIconButton(
             contentDescription = contentDescription,
             modifier = Modifier.size(if (emphasized) 34.dp else 28.dp),
         )
+    }
+}
+
+@Composable
+private fun PhoneSubtitlePanel(
+    subtitleTracks: List<SubtitleTrackOption>,
+    selectedSubtitleId: String?,
+    plexSubtitles: List<SubtitleStream>,
+    selectedPlexSubtitleId: Long?,
+    onSubtitleSelected: (SubtitleTrackOption?) -> Unit,
+    onPlexSubtitleSelected: (SubtitleStream?) -> Unit,
+    onClose: () -> Unit,
+) {
+    val subtitlesOff = selectedSubtitleId == null &&
+        (selectedPlexSubtitleId == null || selectedPlexSubtitleId == 0L)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.58f))
+            .clickable(onClickLabel = "Close subtitle menu", onClick = onClose)
+            .testTag("phone-subtitle-scrim"),
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .widthIn(min = 300.dp, max = 420.dp)
+                .background(MinovaNightDeep.copy(alpha = 0.99f))
+                // Consume taps inside the sheet so only the outside scrim closes it.
+                .clickable(onClick = {})
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp, vertical = 18.dp)
+                .testTag("phone-subtitle-panel"),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    androidx.compose.material3.Text(
+                        text = "Subtitles",
+                        color = Color.White,
+                        style = androidx.compose.material3.MaterialTheme.typography.headlineSmall,
+                    )
+                    androidx.compose.material3.Text(
+                        text = "Choose a language",
+                        color = MinovaMuted,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                androidx.compose.material3.IconButton(onClick = onClose) {
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close subtitle menu",
+                        tint = Color.White,
+                    )
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            PhoneSubtitleOption(
+                title = "Off",
+                detail = "No subtitles",
+                selected = subtitlesOff,
+                onClick = {
+                    if (subtitleTracks.isNotEmpty()) onSubtitleSelected(null)
+                    else onPlexSubtitleSelected(null)
+                },
+            )
+            if (subtitleTracks.isNotEmpty()) {
+                subtitleTracks.forEach { track ->
+                    PhoneSubtitleOption(
+                        title = track.label,
+                        detail = track.language?.uppercase() ?: "Subtitle track",
+                        selected = selectedSubtitleId == track.id,
+                        onClick = { onSubtitleSelected(track) },
+                    )
+                }
+            } else {
+                plexSubtitles.forEach { stream ->
+                    PhoneSubtitleOption(
+                        title = stream.label,
+                        detail = listOfNotNull(
+                            stream.language?.uppercase(),
+                            stream.codec?.uppercase(),
+                        ).joinToString("  •  ").ifBlank { "Subtitle track" },
+                        selected = selectedPlexSubtitleId == stream.id,
+                        onClick = { onPlexSubtitleSelected(stream) },
+                    )
+                }
+            }
+            if (subtitleTracks.isEmpty() && plexSubtitles.isEmpty()) {
+                androidx.compose.material3.Text(
+                    text = "No subtitle tracks are available for this title.",
+                    color = MinovaMuted,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = 18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhoneSubtitleOption(
+    title: String,
+    detail: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(shape)
+            .background(if (selected) MinovaCyan.copy(alpha = 0.18f) else MinovaSurface)
+            .border(1.dp, if (selected) MinovaCyan else Color.Transparent, shape)
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .heightIn(min = 58.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            androidx.compose.material3.Text(
+                text = title,
+                color = Color.White,
+                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+            )
+            androidx.compose.material3.Text(
+                text = detail,
+                color = if (selected) MinovaCyan else MinovaMuted,
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (selected) {
+            androidx.compose.material3.Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = "Selected",
+                tint = MinovaCyan,
+            )
+        }
     }
 }
 
