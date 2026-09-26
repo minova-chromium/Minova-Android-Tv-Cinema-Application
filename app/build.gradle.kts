@@ -52,8 +52,8 @@ android {
         // intentionally use API 29 as the public platform baseline.
         minSdk = 29
         targetSdk = 37
-        versionCode = 44
-        versionName = "2.9.3"
+        versionCode = 45
+        versionName = "2.9.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -148,7 +148,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("androidx.navigation:navigation-compose:2.9.8")
-    implementation("androidx.datastore:datastore-preferences:1.2.0")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    // Compose UI still resolves graphics-path 1.0.1 through the BOM. The
+    // current stable native path library is rebuilt for modern 16 KB devices.
+    implementation("androidx.graphics:graphics-path:1.1.0")
     implementation("androidx.security:security-crypto:1.1.0")
 
     implementation("androidx.compose.animation:animation")

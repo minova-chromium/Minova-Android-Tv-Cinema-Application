@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+## 2.9.4 — 2026-09-26
+
+- Added a complete touch-first smartphone interface while preserving the existing Android TV experience and feature set.
+- Reworked phone Home around Continue Watching, horizontal Plex shelves, library shortcuts, quick header actions, and persistent bottom navigation inspired by familiar mobile streaming apps.
+- Added responsive phone library grids, search with the software keyboard, collection browsing, title action sheets, detail pages, onboarding, Settings, and portrait/landscape layouts.
+- Rebuilt phone movie and episode details around full-bleed artwork, centered metadata and ratings, a large Play/Resume action, compact circular actions, synopsis, stream details, seasons, episodes, and cast.
+- Reworked phone Settings with a visible Back action, six always-visible category buttons, vertically stacked full-width controls, direct touch timer presets, and phone-sized Plex, Google Home, Tapo, and profile dialogs; changed Discover from a sparkle to a clear compass icon.
+- Added tap-driven player controls with ten-second seek actions and phone-specific fullscreen system-bar handling.
+- Made Leanback optional and added a standard Android launcher entry so the same application can install and launch on phones, tablets, and TVs.
+- Updated DataStore and AndroidX Graphics Path for verified 16 KB page-size compatibility on a current Android emulator.
+- Fixed Plex and Tapo LAN access on Android 17 by requesting the required local-network permission and retrying the saved Plex connection as soon as access is granted.
+- Added a high-contrast checkmark and Watched label to watched episodes in the phone season list.
+- Fixed HTTPS Plex addresses without an explicit port so Tailscale Serve and reverse-proxy URLs use standard port 443 instead of being rewritten to port 32400; connection errors now distinguish DNS, TLS, timeout, and refused-connection failures.
+- Replaced remaining TV-only controls on phone paths with native touch controls across onboarding, Plex recovery, Settings, update dialogs, title actions, playback transport, Next Up, inactivity prompts, and in-player playback settings.
+- Added responsive phone dialogs, tap-to-skip launch animation, device-neutral Plex identification and wording, and automated phone-player touch coverage while retaining the Android TV navigation branches.
+
 ## 2.9.3 — 2026-09-16
 
 Version 2.9.2 was a local test build. This version includes the collection-poster update.

@@ -9,6 +9,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,11 +36,14 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.minova.cinema.R
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -56,6 +60,7 @@ private const val LOGO_ANIMATION_MS = 2_000
  */
 @Composable
 fun AnimatedIntroScreen(onFinished: () -> Unit) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val context = LocalContext.current
     val latestOnFinished by rememberUpdatedState(onFinished)
     val focusRequester = remember { FocusRequester() }
@@ -125,7 +130,7 @@ fun AnimatedIntroScreen(onFinished: () -> Unit) {
     // Request focus so the intro itself receives remote keys before any other
     // focusable destination is composed.
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        if (!handheld) focusRequester.requestFocus()
     }
 
     // A single structured timeline keeps the total duration deterministic.
@@ -168,8 +173,17 @@ fun AnimatedIntroScreen(onFinished: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .focusRequester(focusRequester)
-            .focusable()
+            .then(
+                if (handheld) {
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = "Skip intro",
+                        onClick = ::finishIntro,
+                    )
+                } else {
+                    Modifier.focusRequester(focusRequester).focusable()
+                },
+            )
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.nativeKeyEvent.keyCode) {
@@ -192,7 +206,7 @@ fun AnimatedIntroScreen(onFinished: () -> Unit) {
             contentDescription = "Minova Cinema",
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .size(172.dp)
+                .size(if (handheld) 128.dp else 172.dp)
                 .graphicsLayer {
                     alpha = logoAlpha.value
                     scaleX = logoScale.value
@@ -206,8 +220,8 @@ fun AnimatedIntroScreen(onFinished: () -> Unit) {
             contentDescription = "Minova",
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .width(360.dp)
-                .height(64.dp)
+                .width(if (handheld) 270.dp else 360.dp)
+                .height(if (handheld) 50.dp else 64.dp)
                 .graphicsLayer { alpha = titleAlpha.value },
         )
         Spacer(Modifier.height(10.dp))
@@ -216,8 +230,8 @@ fun AnimatedIntroScreen(onFinished: () -> Unit) {
             contentDescription = "Cinema",
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .width(360.dp)
-                .height(68.dp)
+                .width(if (handheld) 270.dp else 360.dp)
+                .height(if (handheld) 52.dp else 68.dp)
                 .graphicsLayer { alpha = subtitleAlpha.value },
         )
     }

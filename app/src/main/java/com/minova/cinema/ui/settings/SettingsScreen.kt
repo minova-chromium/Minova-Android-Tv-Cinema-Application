@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,15 +21,19 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Lightbulb
@@ -44,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -58,6 +64,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
@@ -83,6 +90,8 @@ import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
 import kotlin.math.abs
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 
 @Composable
 fun SettingsScreen(
@@ -122,7 +131,9 @@ fun SettingsScreen(
     onCustomizeHome: () -> Unit = {},
     onTestTapoLights: () -> Unit = {},
     onExperienceSettings: () -> Unit = {},
+    onBack: () -> Unit = {},
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     var pinProfile by remember { mutableStateOf<PlexHomeProfile?>(null) }
     var pin by remember { mutableStateOf("") }
     var timerDialog by remember { mutableStateOf<TimerSettingType?>(null) }
@@ -137,7 +148,7 @@ fun SettingsScreen(
         .focusProperties { left = sectionRailFocus.getValue(section) }
         .onFocusChanged { if (it.isFocused) contentFocusActive = true }
 
-    BackHandler(enabled = contentFocusActive) {
+    BackHandler(enabled = !handheld && contentFocusActive) {
         sectionRailFocus.getValue(activeSection).requestFocus()
         contentFocusActive = false
     }
@@ -162,20 +173,38 @@ fun SettingsScreen(
                 ),
             ),
     ) {
-        Row(Modifier.fillMaxSize()) {
-            SettingsNavigationRail(
-                activeSection = activeSection,
-                railFocusRequesters = sectionRailFocus,
-                onSectionSelected = { section ->
-                    activeSection = section
-                    contentFocusActive = false
-                },
-                onEnterSection = { section ->
-                    activeSection = section
-                    contentFocusActive = true
-                    sectionEntryFocus.getValue(section).requestFocus()
-                },
-            )
+        Column(
+            Modifier.fillMaxSize().then(
+                if (handheld) Modifier.statusBarsPadding().navigationBarsPadding() else Modifier,
+            ),
+        ) {
+            if (handheld) {
+                MobileSettingsNavigation(
+                    activeSection = activeSection,
+                    onBack = onBack,
+                    onSectionSelected = { section ->
+                        activeSection = section
+                        contentFocusActive = false
+                    },
+                )
+            }
+            Row(Modifier.fillMaxWidth().weight(1f)) {
+                if (!handheld) {
+                    SettingsNavigationRail(
+                        activeSection = activeSection,
+                        railFocusRequesters = sectionRailFocus,
+                        compact = false,
+                        onSectionSelected = { section ->
+                            activeSection = section
+                            contentFocusActive = false
+                        },
+                        onEnterSection = { section ->
+                            activeSection = section
+                            contentFocusActive = true
+                            sectionEntryFocus.getValue(section).requestFocus()
+                        },
+                    )
+                }
 
             Column(
                 modifier = Modifier
@@ -185,9 +214,14 @@ fun SettingsScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 34.dp, top = 26.dp, end = 48.dp, bottom = 12.dp),
+                        .padding(
+                            start = if (handheld) 16.dp else 34.dp,
+                            top = if (handheld) 16.dp else 26.dp,
+                            end = if (handheld) 16.dp else 48.dp,
+                            bottom = 12.dp,
+                        ),
                 ) {
-                    SettingsPageHeader(activeSection)
+                    SettingsPageHeader(activeSection, compact = handheld)
                 }
 
                 LazyColumn(
@@ -195,9 +229,9 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     contentPadding = PaddingValues(
-                        start = 34.dp,
+                        start = if (handheld) 12.dp else 34.dp,
                         top = 6.dp,
-                        end = 48.dp,
+                        end = if (handheld) 12.dp else 48.dp,
                         bottom = 56.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -217,20 +251,33 @@ fun SettingsScreen(
                     color = MinovaCyan,
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                Row(
-                    modifier = Modifier.padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    SettingsPrimaryButton(
-                        onClick = onRefresh,
-                        modifier = entryModifier(SettingsSection.Plex)
-                            .testTag("settings-refresh-library"),
-                    ) { Text("Refresh library") }
-                    SettingsSecondaryButton(onClick = onChangeServer) { Text("Change server") }
-                    SettingsSecondaryButton(onClick = onRequestTvHomeChannels) { Text("Add TV Home channels") }
+                if (handheld) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SettingsPrimaryButton(
+                            onClick = onRefresh,
+                            modifier = entryModifier(SettingsSection.Plex).fillMaxWidth()
+                                .testTag("settings-refresh-library"),
+                        ) { Text("Refresh library") }
+                        SettingsSecondaryButton(onClick = onChangeServer, modifier = Modifier.fillMaxWidth()) { Text("Change server") }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.padding(top = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SettingsPrimaryButton(
+                            onClick = onRefresh,
+                            modifier = entryModifier(SettingsSection.Plex).testTag("settings-refresh-library"),
+                        ) { Text("Refresh library") }
+                        SettingsSecondaryButton(onClick = onChangeServer) { Text("Change server") }
+                        SettingsSecondaryButton(onClick = onRequestTvHomeChannels) { Text("Add TV Home channels") }
+                    }
                 }
             }
-        }
+            }
 
                 SettingsSection.Profiles -> item {
             val profiles = when (profilesState) {
@@ -241,14 +288,40 @@ fun SettingsScreen(
             }
             SettingsCard(title = "Plex Home", subtitle = "Profiles, managed users and PIN protection") {
                 if (profiles.isNotEmpty()) {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        itemsIndexed(
-                            items = profiles,
-                            key = { _, profile -> profile.uuid },
-                        ) { index, profile ->
+                    if (handheld) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(top = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            profiles.forEachIndexed { index, profile ->
+                                PlaybackToggleButton(
+                                    title = profile.title,
+                                    description = buildString {
+                                        append(if (profile.isManaged) "Managed user" else if (profile.isAdmin) "Home admin" else "Home member")
+                                        if (profile.isProtected) append(" · PIN")
+                                    },
+                                    checked = profile.isActive,
+                                    onClick = {
+                                        if (profile.isProtected) {
+                                            pin = ""
+                                            pinProfile = profile
+                                        } else onSwitchProfile(profile, null)
+                                    },
+                                    modifier = Modifier.fillMaxWidth().then(
+                                        if (index == 0) entryModifier(SettingsSection.Profiles) else Modifier,
+                                    ),
+                                )
+                            }
+                        }
+                    } else {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            itemsIndexed(
+                                items = profiles,
+                                key = { _, profile -> profile.uuid },
+                            ) { index, profile ->
                         PlaybackToggleButton(
                             title = profile.title,
                             description = buildString {
@@ -269,7 +342,8 @@ fun SettingsScreen(
                                     else Modifier,
                                 ),
                         )
-                    }
+                            }
+                        }
                     }
                 } else {
                     Text(
@@ -316,18 +390,19 @@ fun SettingsScreen(
                 Text("Customize home screen · shelves & opening tab")
             }
             SettingsSecondaryButton(onClick = onExperienceSettings, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                Text("Cinema preferences · languages, accessibility, lights & storage")
+                Text(
+                    if (handheld) "App preferences · language, subtitles & accessibility"
+                    else "Cinema preferences · languages, accessibility, lights & storage",
+                )
             }
             SettingsCard(
                 title = "Playback",
                 subtitle = "Autoplay and viewing safeguards",
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                Box(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                    ResponsiveSettingsPair(
+                        handheld = handheld,
+                        first = { itemModifier ->
                     PlaybackToggleButton(
                         title = "Autoplay next episode",
                         description = "Start after the 10-second Next Up countdown",
@@ -336,8 +411,10 @@ fun SettingsScreen(
                             onAutoplayNextEpisodeChanged(!autoplayNextEpisode)
                             savedMessage = "Autoplay preference saved"
                         },
-                        modifier = entryModifier(SettingsSection.Playback).weight(1f),
+                        modifier = entryModifier(SettingsSection.Playback).then(itemModifier),
                     )
+                        },
+                        second = { itemModifier ->
                     PlaybackToggleButton(
                         title = "Continue watching check",
                         description = "Ask before ending a long inactive session",
@@ -346,19 +423,20 @@ fun SettingsScreen(
                             onInactivityCheckChanged(!inactivityCheckEnabled)
                             savedMessage = "Continue watching check saved"
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = itemModifier,
+                    )
+                        },
                     )
                 }
                 Text(
-                    "TIMERS · PRESS OK TO ADJUST",
+                    if (handheld) "TIMERS · TAP TO ADJUST" else "TIMERS · PRESS OK TO ADJUST",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MinovaMuted,
                     modifier = Modifier.padding(top = 20.dp, bottom = 9.dp),
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                ResponsiveSettingsPair(
+                    handheld = handheld,
+                    first = { itemModifier ->
                     TimerSettingButton(
                         title = "Ambient screensaver",
                         value = screensaverTimeoutMs,
@@ -366,8 +444,10 @@ fun SettingsScreen(
                         formattedValue = formatMinutes(screensaverTimeoutMs),
                         description = "Idle time before the bouncing Minova logo appears",
                         onClick = { timerDialog = TimerSettingType.AmbientScreensaver },
-                        modifier = Modifier.weight(1f),
+                        modifier = itemModifier,
                     )
+                    },
+                    second = { itemModifier ->
                     TimerSettingButton(
                         title = "Playback sleep check",
                         value = inactivityTimeoutMs,
@@ -376,9 +456,10 @@ fun SettingsScreen(
                         description = "Time before the 30-second Continue watching? prompt",
                         onClick = { timerDialog = TimerSettingType.PlaybackSleepCheck },
                         enabled = inactivityCheckEnabled,
-                        modifier = Modifier.weight(1f),
+                        modifier = itemModifier,
                     )
-                }
+                    },
+                )
             }
         }
 
@@ -393,7 +474,7 @@ fun SettingsScreen(
                 modifier = Modifier.padding(bottom = 12.dp))
             SettingsCard(
                 title = "Network & codec assistant",
-                subtitle = "Test this Plex connection and inspect the TV's decoders",
+                subtitle = "Test this Plex connection and inspect this device's decoders",
             ) {
                 when (networkAssistantState) {
                     NetworkAssistantUiState.Idle -> Text(
@@ -445,12 +526,10 @@ fun SettingsScreen(
                 title = "Cinema Mode",
                 subtitle = "Trailers, local bumper and theater lighting",
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                Box(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                    ResponsiveSettingsPair(
+                        handheld = handheld,
+                        first = { itemModifier ->
                     PlaybackToggleButton(
                         title = "Cinema Mode",
                         description = "Run the pre-show and assigned theater lights",
@@ -459,8 +538,10 @@ fun SettingsScreen(
                             onCinemaModeChanged(!cinemaModeEnabled)
                             savedMessage = "Cinema Mode saved"
                         },
-                        modifier = entryModifier(SettingsSection.Cinema).weight(1f),
+                        modifier = entryModifier(SettingsSection.Cinema).then(itemModifier),
                     )
+                        },
+                        second = { itemModifier ->
                     PlaybackToggleButton(
                         title = "Play trailers",
                         description = "Minova presentation, then up to two unwatched Plex movie trailers",
@@ -469,13 +550,35 @@ fun SettingsScreen(
                             onCinemaTrailersChanged(!cinemaTrailersEnabled)
                             savedMessage = "Trailer preference saved"
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = itemModifier,
+                    )
+                        },
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
+                if (handheld) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        ValueButton(
+                            title = "Local Atmos bumper",
+                            value = if (cinemaBumperConfigured) "Selected" else "Not selected",
+                            description = "Choose the local video played before the feature",
+                            onClick = onChooseCinemaBumper,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (cinemaBumperConfigured) {
+                            SettingsSecondaryButton(
+                                onClick = {
+                                    onClearCinemaBumper()
+                                    savedMessage = "Cinema bumper cleared"
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Clear bumper") }
+                        }
+                    }
+                } else Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -539,6 +642,7 @@ fun SettingsScreen(
                 }
             }
             }
+        }
         }
         savedMessage?.let { message ->
             Box(
@@ -605,6 +709,22 @@ internal fun SettingsPrimaryButton(
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
 ) {
+    if (rememberDeviceProfile() == DeviceProfile.Handheld) {
+        androidx.compose.material3.Button(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 52.dp),
+            enabled = enabled,
+            shape = RoundedCornerShape(12.dp),
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF26313D),
+                contentColor = Color.White,
+                disabledContainerColor = Color(0xFF26313D).copy(alpha = 0.45f),
+                disabledContentColor = Color.White.copy(alpha = 0.45f),
+            ),
+            content = content,
+        )
+        return
+    }
     Button(
         onClick = onClick,
         modifier = modifier.accessibleFocus(),
@@ -633,6 +753,22 @@ internal fun SettingsSecondaryButton(
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
 ) {
+    if (rememberDeviceProfile() == DeviceProfile.Handheld) {
+        androidx.compose.material3.Button(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 52.dp),
+            enabled = enabled,
+            shape = RoundedCornerShape(12.dp),
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF121C25),
+                contentColor = Color.White,
+                disabledContainerColor = Color(0xFF121C25).copy(alpha = 0.45f),
+                disabledContentColor = Color.White.copy(alpha = 0.45f),
+            ),
+            content = content,
+        )
+        return
+    }
     OutlinedButton(
         onClick = onClick,
         modifier = modifier.accessibleFocus(),
@@ -663,6 +799,25 @@ internal fun SettingsSecondaryButton(
     )
 }
 
+@Composable
+private fun ResponsiveSettingsPair(
+    handheld: Boolean,
+    first: @Composable (Modifier) -> Unit,
+    second: @Composable (Modifier) -> Unit,
+) {
+    if (handheld) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            first(Modifier.fillMaxWidth())
+            second(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            first(Modifier.weight(1f))
+            second(Modifier.weight(1f))
+        }
+    }
+}
+
 private enum class SettingsSection(
     val number: String,
     val label: String,
@@ -678,15 +833,90 @@ private enum class SettingsSection(
 }
 
 @Composable
+private fun MobileSettingsNavigation(
+    activeSection: SettingsSection,
+    onBack: () -> Unit,
+    onSectionSelected: (SettingsSection) -> Unit,
+) {
+    val configuration = LocalConfiguration.current
+    val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    Column(
+        Modifier.fillMaxWidth().background(Color(0xFF050A0F))
+            .border(0.5.dp, Color.White.copy(alpha = 0.08f)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().height(if (landscape) 50.dp else 60.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(42.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.07f))
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White, modifier = Modifier.size(24.dp))
+            }
+            Image(
+                painter = painterResource(R.drawable.ic_launcher),
+                contentDescription = null,
+                modifier = Modifier.padding(start = 12.dp).size(if (landscape) 28.dp else 33.dp),
+            )
+            Column(Modifier.padding(start = 9.dp).weight(1f)) {
+                Text("Settings", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                Text("Minova Cinema · ${BuildConfig.VERSION_NAME}", color = MinovaCyan, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Column(
+            Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            listOf(
+                SettingsSection.Plex,
+                SettingsSection.Profiles,
+                SettingsSection.Playback,
+                SettingsSection.Network,
+            ).chunked(if (landscape) 4 else 2).forEach { sections ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    sections.forEach { section ->
+                        val selected = section == activeSection
+                        Column(
+                            Modifier.weight(1f).height(if (landscape) 40.dp else 44.dp).clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) MinovaCyan else Color.White.copy(alpha = 0.07f))
+                                .clickable { onSectionSelected(section) }
+                                .padding(horizontal = 5.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                section.icon,
+                                null,
+                                tint = if (selected) Color(0xFF001419) else MinovaMuted,
+                                modifier = Modifier.size(17.dp),
+                            )
+                            Text(
+                                section.label,
+                                color = if (selected) Color(0xFF001419) else Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsNavigationRail(
     activeSection: SettingsSection,
     railFocusRequesters: Map<SettingsSection, FocusRequester>,
+    compact: Boolean,
     onSectionSelected: (SettingsSection) -> Unit,
     onEnterSection: (SettingsSection) -> Unit,
 ) {
     Column(
         modifier = Modifier
-            .width(286.dp)
+            .width(if (compact) 76.dp else 286.dp)
             .fillMaxHeight()
             .background(
                 Brush.verticalGradient(
@@ -698,7 +928,12 @@ private fun SettingsNavigationRail(
                 color = Color.White.copy(alpha = 0.07f),
                 shape = RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp),
             )
-            .padding(start = 22.dp, top = 22.dp, end = 18.dp, bottom = 18.dp),
+            .padding(
+                start = if (compact) 10.dp else 22.dp,
+                top = if (compact) 14.dp else 22.dp,
+                end = if (compact) 10.dp else 18.dp,
+                bottom = if (compact) 12.dp else 18.dp,
+            ),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
@@ -706,7 +941,7 @@ private fun SettingsNavigationRail(
                 contentDescription = "Minova Prism M",
                 modifier = Modifier.size(34.dp),
             )
-            Column(Modifier.padding(start = 12.dp)) {
+            if (!compact) Column(Modifier.padding(start = 12.dp)) {
                 Text(
                     "MINOVA CINEMA",
                     style = MaterialTheme.typography.titleMedium,
@@ -720,7 +955,7 @@ private fun SettingsNavigationRail(
             }
         }
 
-        Text(
+        if (!compact) Text(
             "SETTINGS",
             style = MaterialTheme.typography.bodySmall,
             color = MinovaMuted,
@@ -785,7 +1020,7 @@ private fun SettingsNavigationRail(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    Column(Modifier.padding(start = 11.dp)) {
+                    if (!compact) Column(Modifier.padding(start = 11.dp)) {
                         Text(
                             section.label,
                             style = MaterialTheme.typography.titleSmall,
@@ -802,7 +1037,7 @@ private fun SettingsNavigationRail(
         }
 
         Spacer(Modifier.weight(1f))
-        Box(
+        if (!compact) Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(12.dp))
@@ -822,7 +1057,7 @@ private fun SettingsNavigationRail(
 }
 
 @Composable
-private fun SettingsPageHeader(section: SettingsSection) {
+private fun SettingsPageHeader(section: SettingsSection, compact: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -831,16 +1066,16 @@ private fun SettingsPageHeader(section: SettingsSection) {
         verticalAlignment = Alignment.Bottom,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
+            if (!compact) Text(
                 "CONTROL ROOM",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MinovaCyan,
             )
             Text(
                 section.label,
-                style = MaterialTheme.typography.headlineLarge,
+                style = if (compact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
                 color = Color.White,
-                modifier = Modifier.padding(top = 2.dp),
+                modifier = Modifier.padding(top = if (compact) 0.dp else 2.dp),
             )
             Text(
                 section.description,
@@ -849,7 +1084,7 @@ private fun SettingsPageHeader(section: SettingsSection) {
                 modifier = Modifier.padding(top = 5.dp),
             )
         }
-        Text(
+        if (!compact) Text(
             "RIGHT TO OPEN  ·  BACK TO RETURN",
             style = MaterialTheme.typography.bodySmall,
             color = MinovaMuted,
@@ -865,13 +1100,14 @@ private fun PlexPinDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.55f)
+                .fillMaxWidth(if (handheld) 0.92f else 0.55f)
                 .background(Color(0xFF111821), RoundedCornerShape(22.dp))
                 .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(22.dp))
-                .padding(28.dp),
+                .padding(if (handheld) 20.dp else 28.dp),
         ) {
             Text("Unlock ${profile.title}", style = MaterialTheme.typography.headlineMedium, color = Color.White)
             Text("Enter the four-digit Plex Home PIN.", color = MinovaMuted, modifier = Modifier.padding(top = 6.dp))
@@ -889,7 +1125,13 @@ private fun PlexPinDialog(
                     .border(1.dp, MinovaCyan, RoundedCornerShape(12.dp))
                     .padding(16.dp),
             )
-            Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (handheld) Column(
+                Modifier.fillMaxWidth().padding(top = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SettingsPrimaryButton(onClick = onConfirm, enabled = pin.length == 4, modifier = Modifier.fillMaxWidth()) { Text("Switch profile") }
+                SettingsSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+            } else Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SettingsPrimaryButton(onClick = onConfirm, enabled = pin.length == 4) { Text("Switch profile") }
                 SettingsSecondaryButton(onClick = onDismiss) { Text("Cancel") }
             }
@@ -912,7 +1154,7 @@ private fun SettingsCard(
                 ),
                 RoundedCornerShape(18.dp),
             )
-            .padding(horizontal = 22.dp, vertical = 20.dp),
+            .padding(horizontal = if (rememberDeviceProfile() == DeviceProfile.Handheld) 15.dp else 22.dp, vertical = 20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -942,6 +1184,7 @@ private fun TheaterLightsSection(
     onRefreshLights: () -> Unit,
     onLightAssignmentChanged: (String, Boolean) -> Unit,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val selectedCount = lightingState.lights.count { it.isAssigned }
     Text("GOOGLE HOME · CINEMA LIGHTS", style = MaterialTheme.typography.bodyMedium, color = MinovaMuted)
     Text(
@@ -975,10 +1218,18 @@ private fun TheaterLightsSection(
                 color = MinovaCyan,
                 modifier = Modifier.padding(top = 14.dp),
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
+            if (handheld) {
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    SettingsSecondaryButton(onClick = onRequestHomePermission, modifier = Modifier.fillMaxWidth()) { Text("Change home access") }
+                    SettingsSecondaryButton(onClick = onRefreshLights, enabled = !lightingState.loading, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (lightingState.loading) "Refreshing…" else "Refresh lights")
+                    }
+                }
+            } else Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -990,11 +1241,27 @@ private fun TheaterLightsSection(
             lightingState.message?.let {
                 Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 10.dp))
             }
-            lightingState.lights.chunked(2).forEach { rowLights ->
+            if (handheld) {
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    lightingState.lights.forEach { light ->
+                        PlaybackToggleButton(
+                            title = light.name,
+                            description = buildString {
+                                append(light.roomName ?: "Google Home")
+                                append(if (light.supportsDimming) " · Dimmable" else " · On/off")
+                            },
+                            checked = light.isAssigned,
+                            onClick = { onLightAssignmentChanged(light.id, !light.isAssigned) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            } else lightingState.lights.chunked(2).forEach { rowLights ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     rowLights.forEach { light ->
@@ -1030,20 +1297,7 @@ private fun ValueButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 100.dp),
-        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
-            shape = RoundedCornerShape(12.dp),
-            focusedShape = RoundedCornerShape(12.dp),
-            pressedShape = RoundedCornerShape(12.dp),
-        ),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF151E29),
-            focusedContainerColor = Color(0xFF21404A),
-            pressedContainerColor = Color(0xFF19313A),
-        ),
-    ) {
+    val content: @Composable () -> Unit = {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1064,6 +1318,32 @@ private fun ValueButton(
             )
         }
     }
+    if (rememberDeviceProfile() == DeviceProfile.Handheld) {
+        androidx.compose.material3.Surface(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 100.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFF151E29),
+            contentColor = Color.White,
+            content = content,
+        )
+        return
+    }
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 100.dp),
+        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
+            shape = RoundedCornerShape(12.dp),
+            focusedShape = RoundedCornerShape(12.dp),
+            pressedShape = RoundedCornerShape(12.dp),
+        ),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = Color(0xFF151E29),
+            focusedContainerColor = Color(0xFF21404A),
+            pressedContainerColor = Color(0xFF19313A),
+        ),
+        content = { content() },
+    )
 }
 
 @Composable
@@ -1080,22 +1360,7 @@ private fun TimerSettingButton(
     val currentIndex = presets.indices.minByOrNull { index -> abs(presets[index] - value) } ?: 0
     val fraction = if (presets.size <= 1) 0f else currentIndex.toFloat() / (presets.lastIndex.toFloat())
 
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier
-            .heightIn(min = 128.dp)
-            .testTag("timer-setting-$title"),
-        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
-            shape = RoundedCornerShape(16.dp),
-            focusedShape = RoundedCornerShape(16.dp),
-            pressedShape = RoundedCornerShape(16.dp),
-        ),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF151E29),
-            focusedContainerColor = Color(0xFF20333C),
-        ),
-    ) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 13.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1152,6 +1417,34 @@ private fun TimerSettingButton(
             )
         }
     }
+    val surfaceModifier = modifier.heightIn(min = 128.dp).testTag("timer-setting-$title")
+    if (rememberDeviceProfile() == DeviceProfile.Handheld) {
+        androidx.compose.material3.Surface(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = surfaceModifier,
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF151E29),
+            contentColor = Color.White,
+            content = content,
+        )
+        return
+    }
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = surfaceModifier,
+        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
+            shape = RoundedCornerShape(16.dp),
+            focusedShape = RoundedCornerShape(16.dp),
+            pressedShape = RoundedCornerShape(16.dp),
+        ),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = Color(0xFF151E29),
+            focusedContainerColor = Color(0xFF20333C),
+        ),
+        content = { content() },
+    )
 }
 
 @Composable
@@ -1164,6 +1457,7 @@ private fun TimerPresetDialog(
     onValueChanged: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val adjustmentFocus = remember { FocusRequester() }
     val currentIndex = presets.indices.minByOrNull { index -> abs(presets[index] - value) } ?: 0
     val fraction = if (presets.size <= 1) 0f else currentIndex.toFloat() / presets.lastIndex.toFloat()
@@ -1173,7 +1467,9 @@ private fun TimerPresetDialog(
         onValueChanged(presets[target])
     }
 
-    LaunchedEffect(Unit) { adjustmentFocus.requestFocus() }
+    LaunchedEffect(handheld) {
+        if (!handheld) adjustmentFocus.requestFocus()
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1191,13 +1487,13 @@ private fun TimerPresetDialog(
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth(0.62f)
+                    .fillMaxWidth(if (handheld) 0.92f else 0.62f)
                     .background(
                         Brush.linearGradient(listOf(Color(0xFF14212B), Color(0xFF0C141C))),
                         RoundedCornerShape(24.dp),
                     )
                     .border(1.dp, MinovaCyan.copy(alpha = 0.32f), RoundedCornerShape(24.dp))
-                    .padding(28.dp),
+                    .padding(if (handheld) 20.dp else 28.dp),
             ) {
                 Text("TIMER", style = MaterialTheme.typography.bodyMedium, color = MinovaCyan)
                 Text(
@@ -1213,7 +1509,34 @@ private fun TimerPresetDialog(
                     modifier = Modifier.padding(top = 6.dp),
                 )
 
-                Surface(
+                if (handheld) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("Choose a value", color = MinovaMuted, style = MaterialTheme.typography.bodyMedium)
+                        presets.chunked(3).forEach { rowPresets ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowPresets.forEach { preset ->
+                                    val selected = preset == presets[currentIndex]
+                                    Box(
+                                        Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(12.dp))
+                                            .background(if (selected) MinovaCyan else Color(0xFF18232D))
+                                            .clickable { onValueChanged(preset) },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            formattedValue(preset),
+                                            color = if (selected) Color(0xFF001419) else Color.White,
+                                            style = MaterialTheme.typography.titleSmall,
+                                        )
+                                    }
+                                }
+                                repeat(3 - rowPresets.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+                } else Surface(
                     onClick = {
                         val next = if (currentIndex == presets.lastIndex) 0 else currentIndex + 1
                         onValueChanged(presets[next])
@@ -1354,20 +1677,7 @@ private fun PlaybackToggleButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 90.dp),
-        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
-            shape = RoundedCornerShape(12.dp),
-            focusedShape = RoundedCornerShape(12.dp),
-            pressedShape = RoundedCornerShape(12.dp),
-        ),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xFF151E29),
-            focusedContainerColor = Color(0xFF21404A),
-            pressedContainerColor = Color(0xFF19313A),
-        ),
-    ) {
+    val content: @Composable () -> Unit = {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1405,4 +1715,30 @@ private fun PlaybackToggleButton(
             }
         }
     }
+    if (rememberDeviceProfile() == DeviceProfile.Handheld) {
+        androidx.compose.material3.Surface(
+            onClick = onClick,
+            modifier = modifier.heightIn(min = 90.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFF151E29),
+            contentColor = Color.White,
+            content = content,
+        )
+        return
+    }
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 90.dp),
+        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(
+            shape = RoundedCornerShape(12.dp),
+            focusedShape = RoundedCornerShape(12.dp),
+            pressedShape = RoundedCornerShape(12.dp),
+        ),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = Color(0xFF151E29),
+            focusedContainerColor = Color(0xFF21404A),
+            pressedContainerColor = Color(0xFF19313A),
+        ),
+        content = { content() },
+    )
 }

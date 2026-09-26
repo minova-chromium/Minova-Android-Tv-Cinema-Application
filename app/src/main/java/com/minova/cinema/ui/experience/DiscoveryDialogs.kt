@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -22,10 +23,13 @@ import androidx.tv.material3.Text
 import com.minova.cinema.domain.*
 import com.minova.cinema.ui.settings.SettingsPrimaryButton
 import com.minova.cinema.ui.settings.SettingsSecondaryButton
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 import com.minova.cinema.ui.theme.*
 
 @Composable
 internal fun CinemaPanel(title: String, onClose: () -> Unit, doneLabel: String = "Done", status: String? = null, content: LazyListScope.() -> Unit) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val first = remember { FocusRequester() }
     val body = remember { FocusRequester() }
     val activation = remember { com.minova.cinema.ui.browse.DialogActivationKeyGuard() }
@@ -36,26 +40,49 @@ internal fun CinemaPanel(title: String, onClose: () -> Unit, doneLabel: String =
                     android.view.KeyEvent.KEYCODE_NUMPAD_ENTER, android.view.KeyEvent.KEYCODE_BUTTON_A)) {
                 activation.consume(key.keyCode, key.action == android.view.KeyEvent.ACTION_DOWN, key.repeatCount, key.isCanceled)
             } else false
-        }.background(MinovaNightDeep).padding(horizontal = 40.dp, vertical = 24.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                Text(title, color = MinovaWhite, style = androidx.tv.material3.MaterialTheme.typography.headlineMedium,
+        }.background(MinovaNightDeep).padding(
+            horizontal = if (handheld) 16.dp else 40.dp,
+            vertical = if (handheld) 14.dp else 24.dp,
+        )) {
+            Row(
+                Modifier.fillMaxWidth().statusBarsPadding(),
+                horizontalArrangement = Arrangement.spacedBy(if (handheld) 10.dp else 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(title, color = MinovaWhite, style = if (handheld) androidx.tv.material3.MaterialTheme.typography.headlineSmall else androidx.tv.material3.MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.weight(1f))
                 SettingsPrimaryButton(onClick = onClose, modifier = Modifier.testTag("cinema-panel-done")
                     .focusRequester(first).focusProperties { down = body }) { Text(doneLabel) }
             }
             status?.let { Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 10.dp)) }
             LazyColumn(Modifier.weight(1f).testTag("cinema-panel-list").focusRequester(body).focusGroup().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(bottom = 20.dp), content = content)
+                contentPadding = PaddingValues(bottom = if (handheld) 48.dp else 20.dp), content = content)
         }
-        LaunchedEffect(Unit) { first.requestFocus() }
+        LaunchedEffect(handheld) {
+            if (!handheld) first.requestFocus()
+        }
     }
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun ChoiceStrip(label: String, choices: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, color = MinovaMuted)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(3.dp)) {
+        if (handheld) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(3.dp),
+            ) {
+                choices.forEach { (value, title) ->
+                    SettingsSecondaryButton(onClick = { onSelect(value) }) {
+                        Text((if (selected == value) "✓  " else "") + title)
+                    }
+                }
+            }
+        } else LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(3.dp)) {
             itemsIndexed(choices, key = { _, choice -> choice.first }) { index, (value, title) ->
                 SettingsSecondaryButton(onClick = { onSelect(value) }, modifier = Modifier.focusProperties {
                     if (index == 0) left = FocusRequester.Cancel

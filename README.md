@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  A cinema-first Plex client for Android TV, built in Kotlin with Compose for TV and Media3.
+  A cinema-first Plex client for Android phones, tablets, and TV, built in Kotlin with Compose and Media3.
 </p>
 
 <p align="center">
@@ -14,10 +14,11 @@
 
 ## What it does
 
-Minova Cinema connects directly to a Plex Media Server and presents personal movies and series in a D-pad-native television interface. It is an independent Minova project and is not affiliated with Plex, Inc.
+Minova Cinema connects directly to a Plex Media Server and presents personal movies and series through adaptive touch-first phone and D-pad-native television interfaces. It is an independent Minova project and is not affiliated with Plex, Inc.
 
 - First-launch setup for a local Plex server address and token; no personal token is compiled into the app.
 - Separate Home, Movies, and Series destinations with shelves, full-library grids, genre filters, and global search.
+- A phone-native layout with compact media shelves, library shortcuts, persistent bottom navigation, software-keyboard search, touch playback controls, and portrait or landscape support.
 - Plex-synced watched state, watchlist, Continue Watching progress, manual mark watched/unwatched, and dismiss-from-continue actions.
 - Show details with season artwork, episodes, cast and crew; movie details with trailers when Plex exposes them.
 - Next-up experience after an episode finishes.
@@ -47,9 +48,10 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 
 ## Install
 
-1. [Download the Minova Cinema 2.9.3 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.3/Minova-Cinema-2.9.3.apk).
-2. Transfer it to an Android TV device and allow installation from the sending app when Android asks.
-3. Launch Minova Cinema and enter the Plex server address and token during setup.
+1. [Download the Minova Cinema 2.9.4 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.4/Minova-Cinema-2.9.4.apk).
+2. Transfer it to an Android 10-or-newer phone, tablet, or TV and allow installation from the sending app when Android asks.
+3. Launch Minova Cinema and allow local-network access when Android asks. This is required on Android 17 and newer so the app can reach Plex and Tapo devices on your LAN.
+4. Enter the Plex server address and token during setup.
 
 The Plex server can be entered as `192.168.1.10:32400` or as a complete `http://`/`https://` URL. Keep the token private—it grants access to the server.
 
@@ -57,7 +59,7 @@ Versions 2.3.0 and 2.4.0 have an Android TV installer hand-off bug. Install 2.4.
 
 Android does not allow a normal third-party application to power off the television. When the inactivity prompt expires, Minova Cinema stops playback, releases its keep-screen-on player, and returns to Android TV Home so the television's configured screen-saver and sleep policy can take over.
 
-## Remote controls
+## Controls
 
 | Location | Control | Action |
 |---|---|---|
@@ -67,6 +69,10 @@ Android does not allow a normal third-party application to power off the televis
 | Player | Left / Right | Seek backward or forward |
 | Player | Down, Menu, or Settings | Reveal the bottom playback controls |
 | Player | Back | Close playback settings first, then leave playback |
+| Phone browse | Tap | Open titles, destinations, filters, and actions |
+| Phone browse | Long press or ⋮ | Open title actions |
+| Phone player | Tap video | Show or hide playback controls |
+| Phone player | −10 / +10 | Seek backward or forward ten seconds |
 
 ## Build from source
 
@@ -76,7 +82,7 @@ Requirements: Android Studio with JDK 17 and Android SDK 37.
 .\gradlew.bat lintDebug assembleDebug
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/`. Open the repository root in Android Studio to run it on a TV emulator or a physical Android TV device.
+The debug APK is written to `app/build/outputs/apk/debug/`. It installs as a separate application so it does not overwrite a release install or inherit that install's saved Plex server and token; configure the debug copy once during its first launch. Open the repository root in Android Studio to run it on a phone, tablet, or TV emulator or physical Android device.
 
 Release builds read signing values from the ignored `local.properties` file. See [`local.properties.example`](local.properties.example), keep the existing release keystore, and add these entries below the normal `sdk.dir` value:
 
@@ -134,10 +140,10 @@ GitHub releases/latest -> UpdateViewModel -> TV update dialog
 - `data/PlexRepository.kt` — library, metadata, watch-state, watchlist, stream-selection, and playback mapping.
 - `presentation` — application state and coroutine-backed catalog/detail operations.
 - `update` — GitHub release checks, semantic version comparison, APK download, and installer hand-off.
-- `ui` — intro, onboarding, TV browsing, search, details, settings, and fullscreen playback.
+- `ui` — intro, onboarding, adaptive phone/TV browsing, search, details, settings, and fullscreen playback.
 - `docs` — the static GitHub Pages product website.
 
-Core stack: Kotlin, Jetpack Compose for TV, AndroidX Media3, Retrofit/OkHttp/Gson, Coil, and Navigation Compose.
+Core stack: Kotlin, Jetpack Compose and Compose for TV, AndroidX Media3, Retrofit/OkHttp/Gson, Coil, and Navigation Compose.
 
 ## Local-network security
 

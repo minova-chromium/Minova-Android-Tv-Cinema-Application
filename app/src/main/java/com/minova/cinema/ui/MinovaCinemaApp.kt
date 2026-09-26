@@ -8,6 +8,7 @@ import com.minova.cinema.ui.experience.*
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +31,7 @@ import com.minova.cinema.ui.browse.HomeCustomizationDialog
 import com.minova.cinema.ui.browse.buildHomeDiscoveryShelves
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -55,6 +57,8 @@ import com.minova.cinema.ui.detail.DetailScreen
 import com.minova.cinema.ui.intro.AnimatedIntroScreen
 import com.minova.cinema.ui.onboarding.OnboardingScreen
 import com.minova.cinema.ui.player.PlayerScreen
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 import com.minova.cinema.ui.settings.SettingsScreen
 import com.minova.cinema.ui.update.UpdateAvailableDialog
 import com.minova.cinema.ui.update.UpdateDownloadDialog
@@ -167,6 +171,8 @@ private fun MainScreen(
     disablePlexTrailersForCapture: Boolean,
 ) {
     val context = LocalContext.current
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
+    val phone = handheld && LocalConfiguration.current.smallestScreenWidthDp < 600
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
@@ -219,6 +225,15 @@ private fun MainScreen(
         )
         is CinemaUiState.Ready -> {
             val currentRoute = routes.last()
+            LaunchedEffect(phone, currentRoute is CinemaRoute.Player) {
+                if (phone) {
+                    (context as? Activity)?.requestedOrientation = if (currentRoute is CinemaRoute.Player) {
+                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                }
+            }
             val profileKey = state.connection.baseUrl + "\u0000" +
                 (com.minova.cinema.data.local.PlexPreferences(context).readActiveProfileUuid() ?: "owner")
             val browsePreferences = remember(profileKey) { BrowsePreferences(context, profileKey) }
@@ -283,10 +298,12 @@ private fun MainScreen(
             fun play(content: MediaContent, fromBeginning: Boolean = false) {
                 viewModel.resolvePlaybackPlan(
                     content = content,
-                    cinemaModeEnabled = playbackSettings.cinemaModeEnabled,
-                    cinemaTrailersEnabled = playbackSettings.cinemaTrailersEnabled &&
+                    cinemaModeEnabled = !handheld && playbackSettings.cinemaModeEnabled,
+                    cinemaTrailersEnabled = !handheld && playbackSettings.cinemaTrailersEnabled &&
                         !disablePlexTrailersForCapture,
-                    bumperUri = playbackSettings.cinemaBumperUri.takeIf { playbackSettings.cinemaBumperEnabled },
+                    bumperUri = playbackSettings.cinemaBumperUri.takeIf {
+                        !handheld && playbackSettings.cinemaBumperEnabled
+                    },
                 ) { plan ->
                     if (plan != null) {
                         lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
@@ -313,6 +330,7 @@ private fun MainScreen(
             if (discoveryOpen) DiscoveryDialog(state.catalog, onOpen = { discoveryOpen = false; open(it) },
                 onWatched = viewModel::setWatched, onClose = { discoveryOpen = false })
             if (experienceOpen) ExperienceSettingsDialog(experience,
+                showCinemaControls = !handheld,
                 onChange = { experience = it; experiencePreferences.save(it) },
                 playback = playbackSettings,
                 onCinemaChange = { changed ->
@@ -361,6 +379,8 @@ private fun MainScreen(
                         onPlayFromBeginning = { play(it, true) },
                         onSetWatched = viewModel::setWatched,
                         onDiscover = { discoveryOpen = true },
+                        onRefresh = { viewModel.refresh(silent = true) },
+                        refreshing = state.refreshing,
                         onHighlighted = { highlightedTheme = it?.themeUrl },
                         onResetPlaybackPreferences = {
                             experiencePreferences.resetTracks(it.ratingKey)
@@ -399,6 +419,9 @@ private fun MainScreen(
                             // instead of opening a second detail screen.
                             onOpenEpisode = { play(it) },
                             onSeasonSelected = viewModel::selectSeason,
+                            onBack = {
+                                if (routes.size > 1) routes.removeAt(routes.lastIndex)
+                            },
                         )
                     }
                     is CinemaRoute.Player -> PlayerScreen(
@@ -560,6 +583,9 @@ private fun MainScreen(
                         onCustomizeHome = { customizeHome = true },
                         onTestTapoLights = tapoLightsViewModel::testLights,
                         onExperienceSettings = { experienceOpen = true },
+                        onBack = {
+                            if (routes.size > 1) routes.removeAt(routes.lastIndex)
+                        },
                     )
                 }
             }

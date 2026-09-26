@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".showcase.TrailerShowcaseActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.MinovaCinema" />
+        <activity
+            android:name=".showcase.PhoneShowcaseActivity"
+            android:exported="true"
+            android:theme="@style/Theme.MinovaCinema" />
+        <activity
+            android:name=".showcase.PlayerSettingsShowcaseActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.MinovaCinema" />
+    </application>
+</manifest>

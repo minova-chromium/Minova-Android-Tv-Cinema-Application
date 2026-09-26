@@ -25,6 +25,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.net.UnknownHostException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import javax.net.ssl.SSLException
 
 class CinemaViewModel(
     private val preferences: PlexPreferences,
@@ -530,8 +534,15 @@ class CinemaViewModel(
     }
 
     private fun Throwable.userMessage(): String {
+        val causes = generateSequence(this as Throwable?) { it.cause }.toList()
         return when {
             message?.contains("401") == true -> "Plex rejected the token. Check it and try again."
+            causes.any { it is UnknownHostException } ->
+                "Could not find that server name. For a Tailscale address, connect this phone to Tailscale first."
+            causes.any { it is SSLException } ->
+                "The secure Plex connection failed. Check the HTTPS address and certificate."
+            causes.any { it is SocketTimeoutException || it is ConnectException } ->
+                "Could not reach that Plex server. Check the address, port, and phone network."
             message?.contains("Failed to connect") == true -> "Could not reach that Plex server on your network."
             else -> message ?: "Could not load the Plex library."
         }

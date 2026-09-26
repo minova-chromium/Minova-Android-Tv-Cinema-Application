@@ -2,6 +2,7 @@ package com.minova.cinema.data.remote
 
 import androidx.core.net.toUri
 import com.minova.cinema.BuildConfig
+import java.net.URI
 import java.util.UUID
 
 data class PlexConnection(
@@ -22,10 +23,24 @@ object PlexConfig {
             value = "http://$value"
         }
 
-        val parsed = value.toUri()
+        val parsed = runCatching { URI(value) }.getOrNull()
+        require(parsed != null && parsed.scheme?.lowercase() in setOf("http", "https")) {
+            "Use an http:// or https:// Plex server address."
+        }
         require(!parsed.host.isNullOrBlank()) { "The Plex server address is not valid." }
-        if (parsed.port == -1) {
-            value = parsed.buildUpon().encodedAuthority("${parsed.host}:32400").build().toString()
+        // A bare LAN address and explicit HTTP use Plex's normal local port.
+        // Explicit HTTPS URLs may be reverse proxies or Tailscale Serve
+        // endpoints, where the standard TLS port (443) must be preserved.
+        if (parsed.port == -1 && parsed.scheme.equals("http", ignoreCase = true)) {
+            value = URI(
+                parsed.scheme,
+                parsed.userInfo,
+                parsed.host,
+                32400,
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            ).toString()
         }
         return value.trimEnd('/') + "/"
     }
@@ -37,7 +52,7 @@ object PlexConfig {
         "X-Plex-Product" to "Minova Cinema",
         "X-Plex-Version" to BuildConfig.VERSION_NAME,
         "X-Plex-Platform" to "Android",
-        "X-Plex-Device" to "Android TV",
+        "X-Plex-Device" to "Android",
         "X-Plex-Device-Name" to "Minova Cinema",
         "X-Plex-Provides" to "player,controller",
         "X-Plex-Language" to "en",

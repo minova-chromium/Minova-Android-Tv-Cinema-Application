@@ -36,6 +36,8 @@ import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
 import com.minova.cinema.ui.theme.MinovaSurfaceRaised
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 import com.minova.cinema.update.AppUpdate
 
 /** TV-first alert dialog with deterministic left/right/up D-pad navigation. */
@@ -45,12 +47,13 @@ fun UpdateAvailableDialog(
     onUpdateNow: () -> Unit,
     onLater: () -> Unit,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val notesFocusRequester = remember { FocusRequester() }
     val updateFocusRequester = remember { FocusRequester() }
     val laterFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(update.versionName) {
-        updateFocusRequester.requestFocus()
+        if (!handheld) updateFocusRequester.requestFocus()
     }
 
     Dialog(
@@ -69,10 +72,16 @@ fun UpdateAvailableDialog(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 560.dp, max = 760.dp)
+                    .then(
+                        if (handheld) Modifier.fillMaxWidth(0.92f)
+                        else Modifier.widthIn(min = 560.dp, max = 760.dp),
+                    )
                     .background(MinovaNightDeep, RoundedCornerShape(18.dp))
                     .border(1.dp, MinovaCyan.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 38.dp, vertical = 32.dp),
+                    .padding(
+                        horizontal = if (handheld) 20.dp else 38.dp,
+                        vertical = if (handheld) 22.dp else 32.dp,
+                    ),
             ) {
                 Text(
                     text = "New Version Available",
@@ -93,11 +102,15 @@ fun UpdateAvailableDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 210.dp)
+                        .heightIn(max = if (handheld) 180.dp else 210.dp)
                         .background(MinovaSurfaceRaised.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
-                        .focusRequester(notesFocusRequester)
-                        .focusProperties { down = updateFocusRequester }
-                        .focusable()
+                        .then(
+                            if (handheld) Modifier
+                            else Modifier
+                                .focusRequester(notesFocusRequester)
+                                .focusProperties { down = updateFocusRequester }
+                                .focusable(),
+                        )
                         .verticalScroll(rememberScrollState())
                         .padding(18.dp),
                 ) {
@@ -107,34 +120,51 @@ fun UpdateAvailableDialog(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 28.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = onUpdateNow,
-                        modifier = Modifier
-                            .focusRequester(updateFocusRequester)
-                            .focusProperties {
-                                up = notesFocusRequester
-                                right = laterFocusRequester
-                            },
+                if (handheld) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 22.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("Update Now")
+                        androidx.compose.material3.Button(
+                            onClick = onUpdateNow,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MinovaCyan,
+                                contentColor = Color(0xFF001419),
+                            ),
+                        ) { Text("Update Now") }
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = onLater,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        ) { Text("Later") }
                     }
-                    OutlinedButton(
-                        onClick = onLater,
-                        modifier = Modifier
-                            .focusRequester(laterFocusRequester)
-                            .focusProperties {
-                                up = notesFocusRequester
-                                left = updateFocusRequester
-                            },
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Later")
+                        Button(
+                            onClick = onUpdateNow,
+                            modifier = Modifier
+                                .focusRequester(updateFocusRequester)
+                                .focusProperties {
+                                    up = notesFocusRequester
+                                    right = laterFocusRequester
+                                },
+                        ) { Text("Update Now") }
+                        OutlinedButton(
+                            onClick = onLater,
+                            modifier = Modifier
+                                .focusRequester(laterFocusRequester)
+                                .focusProperties {
+                                    up = notesFocusRequester
+                                    left = updateFocusRequester
+                                },
+                        ) { Text("Later") }
                     }
                 }
             }
@@ -150,6 +180,7 @@ fun UpdateDownloadDialog(
     paused: Boolean,
     onHide: () -> Unit,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     Dialog(
         onDismissRequest = onHide,
         properties = DialogProperties(
@@ -166,10 +197,16 @@ fun UpdateDownloadDialog(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 520.dp, max = 680.dp)
+                    .then(
+                        if (handheld) Modifier.fillMaxWidth(0.92f)
+                        else Modifier.widthIn(min = 520.dp, max = 680.dp),
+                    )
                     .background(MinovaNightDeep, RoundedCornerShape(18.dp))
                     .border(1.dp, MinovaCyan.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 38.dp, vertical = 32.dp),
+                    .padding(
+                        horizontal = if (handheld) 20.dp else 38.dp,
+                        vertical = if (handheld) 22.dp else 32.dp,
+                    ),
             ) {
                 Text(
                     text = if (paused) "Download Paused" else "Downloading Update",
@@ -206,7 +243,11 @@ fun UpdateDownloadDialog(
                     modifier = Modifier.padding(top = 14.dp),
                 )
                 Text(
-                    text = "Press Back to hide this window. The download will continue.",
+                    text = if (handheld) {
+                        "Use Back to hide this window. The download will continue."
+                    } else {
+                        "Press Back to hide this window. The download will continue."
+                    },
                     color = MinovaMuted,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 8.dp),

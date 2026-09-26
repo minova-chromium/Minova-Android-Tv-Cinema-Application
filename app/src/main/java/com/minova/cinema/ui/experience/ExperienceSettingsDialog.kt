@@ -18,7 +18,8 @@ val LocalExperienceSettings = staticCompositionLocalOf { ExperienceSettings() }
 internal fun ExperienceSettingsDialog(settings: ExperienceSettings, onChange: (ExperienceSettings) -> Unit,
     onPreset: (String) -> Unit, onRestoreLights: () -> Unit, onClose: () -> Unit,
     hasCustomPreset: Boolean = false, onSavePreset: () -> Unit = {}, onLoadPreset: () -> Unit = {},
-    playback: PlaybackSettings = PlaybackSettings(), onCinemaChange: (PlaybackSettings) -> Unit = {}) {
+    playback: PlaybackSettings = PlaybackSettings(), onCinemaChange: (PlaybackSettings) -> Unit = {},
+    showCinemaControls: Boolean = true) {
     val loader = LocalContext.current.imageLoader
     val scope = rememberCoroutineScope()
     var imageBytes by remember { mutableLongStateOf(0L) }
@@ -26,16 +27,24 @@ internal fun ExperienceSettingsDialog(settings: ExperienceSettings, onChange: (E
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { imageBytes = withContext(Dispatchers.IO) { loader.diskCache?.size ?: 0L } }
     val languages = listOf("" to "Plex / automatic", "en" to "English", "nl" to "Dutch", "fr" to "French", "de" to "German", "es" to "Spanish", "it" to "Italian", "ja" to "Japanese")
-    CinemaPanel("Cinema preferences", onClose, status = message) {
-        item { Text("Languages, accessibility and brightness are saved for this Plex profile. Cinema Mode switches are shared on this TV. Changes apply immediately.", color = MinovaMuted) }
-        item { ChoiceStrip("Cinema Mode preset", listOf("full" to "Full cinema", "quiet" to "Quiet evening", "play" to "Just play"), "") { onPreset(it); message = "Preset applied. Your selected lights and local bumper file are unchanged." } }
-        item { Text("Full cinema: trailers + configured bumper + lights. Quiet evening: lights only. Just play: no pre-show or automatic lighting.", color = MinovaMuted) }
-        item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaModeEnabled = !playback.cinemaModeEnabled)) }) { Text("Cinema Mode: ${if (playback.cinemaModeEnabled) "On" else "Off"}") } }
-        item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaTrailersEnabled = !playback.cinemaTrailersEnabled)) }) { Text("Movie trailers: ${if (playback.cinemaTrailersEnabled) "On" else "Off"}") } }
-        item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaBumperEnabled = !playback.cinemaBumperEnabled)) }) { Text("Configured local bumper: ${if (playback.cinemaBumperEnabled) "On" else "Off"}") } }
-        item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaLightsEnabled = !playback.cinemaLightsEnabled)) }) { Text("Automatic cinema lighting: ${if (playback.cinemaLightsEnabled) "On" else "Off"}") } }
-        item { SettingsSecondaryButton(onClick = { onSavePreset(); message = "Custom preset saved for this profile." }) { Text("Save current Cinema Mode and brightness as My preset") } }
-        item { SettingsSecondaryButton(enabled = hasCustomPreset, onClick = { onLoadPreset(); message = "My preset applied." }) { Text("Apply My preset") } }
+    CinemaPanel(if (showCinemaControls) "Cinema preferences" else "App preferences", onClose, status = message) {
+        item {
+            Text(
+                if (showCinemaControls) "Languages, accessibility and brightness are saved for this Plex profile. Cinema Mode switches are shared on this TV. Changes apply immediately."
+                else "Language, subtitle, accessibility and storage preferences are saved for this Plex profile. Changes apply immediately.",
+                color = MinovaMuted,
+            )
+        }
+        if (showCinemaControls) {
+            item { ChoiceStrip("Cinema Mode preset", listOf("full" to "Full cinema", "quiet" to "Quiet evening", "play" to "Just play"), "") { onPreset(it); message = "Preset applied. Your selected lights and local bumper file are unchanged." } }
+            item { Text("Full cinema: trailers + configured bumper + lights. Quiet evening: lights only. Just play: no pre-show or automatic lighting.", color = MinovaMuted) }
+            item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaModeEnabled = !playback.cinemaModeEnabled)) }) { Text("Cinema Mode: ${if (playback.cinemaModeEnabled) "On" else "Off"}") } }
+            item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaTrailersEnabled = !playback.cinemaTrailersEnabled)) }) { Text("Movie trailers: ${if (playback.cinemaTrailersEnabled) "On" else "Off"}") } }
+            item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaBumperEnabled = !playback.cinemaBumperEnabled)) }) { Text("Configured local bumper: ${if (playback.cinemaBumperEnabled) "On" else "Off"}") } }
+            item { SettingsSecondaryButton(onClick = { onCinemaChange(playback.copy(cinemaLightsEnabled = !playback.cinemaLightsEnabled)) }) { Text("Automatic cinema lighting: ${if (playback.cinemaLightsEnabled) "On" else "Off"}") } }
+            item { SettingsSecondaryButton(onClick = { onSavePreset(); message = "Custom preset saved for this profile." }) { Text("Save current Cinema Mode and brightness as My preset") } }
+            item { SettingsSecondaryButton(enabled = hasCustomPreset, onClick = { onLoadPreset(); message = "My preset applied." }) { Text("Apply My preset") } }
+        }
         item { ChoiceStrip("Audio language", languages, settings.audioLanguage) { onChange(settings.copy(audioLanguage = it)) } }
         item { ChoiceStrip("Subtitles", listOf("off" to "Always off") + languages, if (settings.subtitlesOff) "off" else settings.subtitleLanguage) { onChange(settings.copy(subtitlesOff = it == "off", subtitleLanguage = if (it == "off") "" else it)) } }
         item { ChoiceStrip("Subtitle size", listOf("0.85" to "Small", "1.0" to "Normal", "1.25" to "Large", "1.5" to "Extra large"), "${settings.subtitleScale}") { onChange(settings.copy(subtitleScale = it.toFloat())) } }
@@ -48,10 +57,12 @@ internal fun ExperienceSettingsDialog(settings: ExperienceSettings, onChange: (E
         item { SettingsSecondaryButton(onClick = { onChange(settings.copy(themeMusic = !settings.themeMusic)) }) { Text("Plex theme music while browsing: ${if (settings.themeMusic) "On" else "Off"}") } }
         item { ChoiceStrip("Theme music volume", listOf("0.04" to "Very quiet", "0.08" to "Quiet", "0.15" to "Medium"), "${settings.themeVolume}") { onChange(settings.copy(themeVolume = it.toFloat())) } }
         item { Text("Theme music is played only when your Plex server provides a local theme track. It stops when leaving browsing or putting the app in the background.", color = MinovaMuted) }
-        item { ChoiceStrip("Tapo movie brightness", listOf(0, 5, 10, 15, 25).map { "$it" to "$it%" }, "${settings.dimLevel}") { onChange(settings.copy(dimLevel = it.toInt())) } }
-        item { ChoiceStrip("Tapo pause / finish brightness", listOf("-1" to "Original brightness") + listOf(15, 25, 50, 75, 100).map { "$it" to "$it%" }, "${settings.restoreLevel}") { onChange(settings.copy(restoreLevel = it.toInt())) } }
-        item { SettingsSecondaryButton(onClick = { onRestoreLights(); message = "Restoring the captured original brightness of selected Tapo lights, if a playback snapshot is available." }) { Text("Restore Tapo lights now") } }
-        item { Text("Only selected lights are controlled. Lights that were off stay off. Manual restore always uses their captured original state.", color = MinovaMuted) }
+        if (showCinemaControls) {
+            item { ChoiceStrip("Tapo movie brightness", listOf(0, 5, 10, 15, 25).map { "$it" to "$it%" }, "${settings.dimLevel}") { onChange(settings.copy(dimLevel = it.toInt())) } }
+            item { ChoiceStrip("Tapo pause / finish brightness", listOf("-1" to "Original brightness") + listOf(15, 25, 50, 75, 100).map { "$it" to "$it%" }, "${settings.restoreLevel}") { onChange(settings.copy(restoreLevel = it.toInt())) } }
+            item { SettingsSecondaryButton(onClick = { onRestoreLights(); message = "Restoring the captured original brightness of selected Tapo lights, if a playback snapshot is available." }) { Text("Restore Tapo lights now") } }
+            item { Text("Only selected lights are controlled. Lights that were off stay off. Manual restore always uses their captured original state.", color = MinovaMuted) }
+        }
         item { Text("Artwork disk cache: ${imageBytes / (1024 * 1024)} MB", color = MinovaMuted) }
         item { SettingsSecondaryButton(enabled = !clearing, onClick = {
             clearing = true

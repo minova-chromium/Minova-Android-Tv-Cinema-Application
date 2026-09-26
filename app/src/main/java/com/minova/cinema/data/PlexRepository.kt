@@ -153,9 +153,9 @@ class PlexRepository(
                 if (videoDecision.equals("transcode", true)) add("Plex is converting the video")
                 if (audioDecision.equals("transcode", true)) add("Plex is converting the audio")
                 if (transcode?.hardwareEncoding?.isNotBlank() == true) add("hardware acceleration active")
-            }.joinToString(" · ").ifBlank { "Plex selected a compatible stream for this TV" }
+            }.joinToString(" · ").ifBlank { "Plex selected a compatible stream for this device" }
             PlexPlaybackMode.DirectStream -> "Original audio/video are being repackaged into a compatible container"
-            PlexPlaybackMode.DirectPlay -> "The TV is playing the original file without conversion"
+            PlexPlaybackMode.DirectPlay -> "Playing the original file without conversion"
             PlexPlaybackMode.Unknown -> null
         }
         return PlaybackDiagnostics(

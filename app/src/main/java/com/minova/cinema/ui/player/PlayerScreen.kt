@@ -1,5 +1,6 @@
 package com.minova.cinema.ui.player
 
+import android.app.Activity
 import androidx.compose.runtime.mutableLongStateOf
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,11 +49,14 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -99,6 +104,8 @@ import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
 import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaTeal
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 import kotlinx.coroutines.delay
 import java.util.UUID
 
@@ -163,6 +170,7 @@ fun PlayerScreen(
     initialTrackPreference: com.minova.cinema.data.local.TitleTrackPreference? = null,
     onReturnToDetails: () -> Unit = {},
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val playback = content.playback
     if (playback == null) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
@@ -172,6 +180,22 @@ fun PlayerScreen(
     }
 
     val context = LocalContext.current
+    DisposableEffect(handheld, context) {
+        val activity = context as? Activity
+        if (handheld && activity != null) {
+            WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+                hide(WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+        onDispose {
+            if (handheld && activity != null) {
+                WindowInsetsControllerCompat(activity.window, activity.window.decorView).show(
+                    WindowInsetsCompat.Type.systemBars(),
+                )
+            }
+        }
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestProgress by rememberUpdatedState(onProgress)
     val latestPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
@@ -216,7 +240,7 @@ fun PlayerScreen(
         mutableStateOf(
             PlaybackDiagnostics(
                 mode = PlexPlaybackMode.DirectPlay,
-                reason = "The TV is playing the original file without conversion",
+                reason = "Playing the original file without conversion",
                 source = playback.technicalInfo,
             ),
         )
@@ -601,7 +625,7 @@ fun PlayerScreen(
                     PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "Plex couldn't provide this stream. Check server access or try a different quality."
                     PlaybackException.ERROR_CODE_DECODING_FAILED,
                     PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
-                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED -> "This TV couldn't decode the selected stream. A lower quality may help."
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED -> "This device couldn't decode the selected stream. A lower quality may help."
                     else -> "The stream couldn't continue. You can retry without starting the title over."
                 }
             }
@@ -888,6 +912,24 @@ fun PlayerScreen(
                 },
         )
 
+        // PlayerView's controller remains disabled so television remotes keep
+        // their deterministic behavior. Phones receive a transparent tap
+        // target above the video that reveals the shared Minova controls.
+        if (handheld && !settingsVisible && !inactivityPromptVisible) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = if (controlsVisible) "Hide playback controls" else "Show playback controls",
+                    ) {
+                        controlsVisible = !controlsVisible
+                        controlsInteractionId += 1L
+                        onUserInteraction()
+                    },
+            )
+        }
+
         AnimatedVisibility(
             visible = controlsVisible && !settingsVisible,
             enter = fadeIn(),
@@ -934,19 +976,46 @@ fun PlayerScreen(
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Text("Settings are available below", color = MinovaMuted, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (handheld) "Tap the video to show or hide controls" else "Settings are available below",
+                        color = MinovaMuted,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 }
-                Button(
-                    onClick = {
-                        bottomControlsFocused = false
-                        settingsVisible = true
-                    },
-                    modifier = Modifier
-                        .padding(top = 14.dp)
-                        .focusRequester(settingsFocusRequester)
-                        .onFocusChanged { bottomControlsFocused = it.isFocused },
+                Row(
+                    modifier = Modifier.padding(top = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Playback settings")
+                    if (handheld) {
+                        TouchPlayerButton(onClick = { seekBy(-player.seekBackIncrement); onUserInteraction() }) { Text("−10 sec") }
+                        TouchPlayerButton(onClick = {
+                            if (player.isPlaying) player.pause() else resumeSynchronized()
+                            showControlsForInteraction()
+                            onUserInteraction()
+                        }) { Text(if (player.isPlaying) "Pause" else "Play") }
+                        TouchPlayerButton(onClick = { seekBy(player.seekForwardIncrement); onUserInteraction() }) { Text("+10 sec") }
+                        TouchPlayerButton(
+                            onClick = {
+                                bottomControlsFocused = false
+                                settingsVisible = true
+                                onUserInteraction()
+                            },
+                            modifier = Modifier.testTag("player-playback-settings"),
+                        ) { Text("Settings") }
+                    } else {
+                        Button(
+                            onClick = {
+                            bottomControlsFocused = false
+                            settingsVisible = true
+                            },
+                            modifier = Modifier
+                                .focusRequester(settingsFocusRequester)
+                                .onFocusChanged { bottomControlsFocused = it.isFocused },
+                        ) {
+                            Text("Playback settings")
+                        }
+                    }
                 }
             }
         }
@@ -993,8 +1062,7 @@ fun PlayerScreen(
             !settingsVisible &&
             !inactivityPromptVisible
         ) {
-            Button(
-                onClick = {
+            val skipAction: () -> Unit = {
                     val duration = player.duration.takeIf { it > 0 }
                         ?: content.durationMs
                         ?: activeSkipMarker.endTimeOffsetMs
@@ -1013,13 +1081,24 @@ fun PlayerScreen(
                     } else {
                         playerView?.requestFocus()
                     }
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 48.dp, bottom = 150.dp)
-                    .focusRequester(markerFocusRequester),
-            ) {
-                Text(if (activeIntroMarker != null) "Skip Intro" else "Skip Credits")
+                }
+            if (handheld) {
+                TouchPlayerButton(
+                    onClick = skipAction,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 22.dp, bottom = 92.dp),
+                ) { Text(if (activeIntroMarker != null) "Skip Intro" else "Skip Credits") }
+            } else {
+                Button(
+                    onClick = skipAction,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 48.dp, bottom = 150.dp)
+                        .focusRequester(markerFocusRequester),
+                ) {
+                    Text(if (activeIntroMarker != null) "Skip Intro" else "Skip Credits")
+                }
             }
         }
 
@@ -1149,6 +1228,24 @@ fun PlayerScreen(
     }
 }
 
+@Composable
+private fun TouchPlayerButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    androidx.compose.material3.Button(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            containerColor = MinovaSurface,
+            contentColor = Color.White,
+        ),
+        content = content,
+    )
+}
+
 /** Premium end-of-episode prompt. The Play button receives focus immediately. */
 @Composable
 private fun NextUpOverlay(
@@ -1159,12 +1256,13 @@ private fun NextUpOverlay(
     onAutoplayChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val playFocus = remember { FocusRequester() }
     var secondsRemaining by remember(episode.ratingKey) { mutableStateOf(NEXT_EPISODE_COUNTDOWN_SECONDS) }
     var playRequested by remember(episode.ratingKey) { mutableStateOf(false) }
     LaunchedEffect(episode.ratingKey) {
         delay(80)
-        playFocus.requestFocus()
+        if (!handheld) playFocus.requestFocus()
     }
     LaunchedEffect(episode.ratingKey, autoplayEnabled, countdownEnabled) {
         secondsRemaining = NEXT_EPISODE_COUNTDOWN_SECONDS
@@ -1180,12 +1278,12 @@ private fun NextUpOverlay(
     }
     Row(
         modifier = modifier
-            .width(760.dp)
+            .then(if (handheld) Modifier.fillMaxWidth(0.94f) else Modifier.width(760.dp))
             .clip(RoundedCornerShape(14.dp))
             .background(MinovaNightDeep.copy(alpha = 0.97f))
             .border(2.dp, MinovaCyan, RoundedCornerShape(14.dp))
-            .padding(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+            .padding(if (handheld) 16.dp else 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (handheld) 16.dp else 24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -1193,8 +1291,8 @@ private fun NextUpOverlay(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .width(310.dp)
-                .height(174.dp)
+                .width(if (handheld) 200.dp else 310.dp)
+                .height(if (handheld) 112.dp else 174.dp)
                 .clip(RoundedCornerShape(9.dp)),
         )
         Column(Modifier.weight(1f)) {
@@ -1223,26 +1321,44 @@ private fun NextUpOverlay(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Button(
-                    onClick = {
+                val playAction = {
                         if (!playRequested) {
                             playRequested = true
                             onPlay()
                         }
-                    },
-                    modifier = Modifier.focusRequester(playFocus),
-                ) {
-                    Text("Play now")
-                }
-                OutlinedButton(onClick = { onAutoplayChanged(!autoplayEnabled) }) {
-                    if (autoplayEnabled) {
-                        Icon(
-                            imageVector = Icons.Rounded.Check,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 7.dp),
-                        )
                     }
-                    Text("Autoplay")
+                if (handheld) {
+                    androidx.compose.material3.Button(
+                        onClick = playAction,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MinovaCyan,
+                            contentColor = Color(0xFF001419),
+                        ),
+                    ) { Text("Play now") }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { onAutoplayChanged(!autoplayEnabled) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    ) {
+                        Text(if (autoplayEnabled) "✓ Autoplay" else "Autoplay")
+                    }
+                } else {
+                    Button(onClick = playAction, modifier = Modifier.focusRequester(playFocus)) {
+                        Text("Play now")
+                    }
+                    OutlinedButton(onClick = { onAutoplayChanged(!autoplayEnabled) }) {
+                        if (autoplayEnabled) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 7.dp),
+                            )
+                        }
+                        Text("Autoplay")
+                    }
                 }
             }
         }
@@ -1255,12 +1371,13 @@ private fun ContinueWatchingOverlay(
     onTimeout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val continueFocusRequester = remember { FocusRequester() }
     var secondsRemaining by remember { mutableStateOf(INACTIVITY_PROMPT_SECONDS) }
 
     LaunchedEffect(Unit) {
         delay(80)
-        continueFocusRequester.requestFocus()
+        if (!handheld) continueFocusRequester.requestFocus()
     }
     LaunchedEffect(Unit) {
         while (secondsRemaining > 0) {
@@ -1272,7 +1389,7 @@ private fun ContinueWatchingOverlay(
 
     Column(
         modifier = modifier
-            .width(620.dp)
+            .then(if (handheld) Modifier.fillMaxWidth(0.9f) else Modifier.width(620.dp))
             .clip(RoundedCornerShape(14.dp))
             .background(MinovaNightDeep.copy(alpha = 0.98f))
             .border(2.dp, MinovaCyan, RoundedCornerShape(14.dp))
@@ -1281,7 +1398,11 @@ private fun ContinueWatchingOverlay(
     ) {
         Text("Continue watching?", color = Color.White, style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Playback will stop and return Home in $secondsRemaining seconds because there has been no remote activity.",
+            if (handheld) {
+                "Playback will stop and return Home in $secondsRemaining seconds because there has been no activity."
+            } else {
+                "Playback will stop and return Home in $secondsRemaining seconds because there has been no remote activity."
+            },
             color = MinovaMuted,
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 10.dp),
@@ -1290,14 +1411,28 @@ private fun ContinueWatchingOverlay(
             modifier = Modifier.padding(top = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Button(
-                onClick = onContinue,
-                modifier = Modifier.focusRequester(continueFocusRequester),
-            ) {
-                Text("Continue watching")
-            }
-            OutlinedButton(onClick = onTimeout) {
-                Text("Stop playback")
+            if (handheld) {
+                androidx.compose.material3.Button(
+                    onClick = onContinue,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MinovaCyan,
+                        contentColor = Color(0xFF001419),
+                    ),
+                ) { Text("Continue watching") }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onTimeout,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                ) { Text("Stop playback") }
+            } else {
+                Button(
+                    onClick = onContinue,
+                    modifier = Modifier.focusRequester(continueFocusRequester),
+                ) { Text("Continue watching") }
+                OutlinedButton(onClick = onTimeout) { Text("Stop playback") }
             }
         }
     }
@@ -1409,19 +1544,20 @@ private fun PlaybackSettingsPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(handheld) {
         delay(80)
-        firstFocus.requestFocus()
+        if (!handheld) firstFocus.requestFocus()
     }
 
     Column(
         modifier = modifier
-            .width(430.dp)
+            .then(if (handheld) Modifier.fillMaxWidth() else Modifier.width(430.dp))
             .fillMaxHeight()
             .background(MinovaNightDeep.copy(alpha = 0.96f))
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 34.dp, vertical = 30.dp),
+            .padding(horizontal = if (handheld) 20.dp else 34.dp, vertical = 30.dp),
     ) {
         Text("Playback settings", style = MaterialTheme.typography.headlineMedium)
         Text(

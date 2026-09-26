@@ -124,6 +124,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 
 private enum class BrowseTab(val label: String) {
     Home("Home"), Movies("Movies"), Series("Series"), Collections("Collections"), MyList("Watchlist"), Search("Search"),
@@ -152,10 +154,31 @@ fun BrowseScreen(
     onPlayFromBeginning: (MediaContent) -> Unit = onPlay,
     onSetWatched: (MediaContent, Boolean) -> Unit = { _, _ -> },
     onDiscover: () -> Unit = {},
+    onRefresh: () -> Unit = {},
+    refreshing: Boolean = false,
     onHighlighted: (MediaContent?) -> Unit = {},
     onResetPlaybackPreferences: (MediaContent) -> Unit = {},
     loadCollectionMembers: (suspend (String) -> List<MediaContent>)? = null,
 ) {
+    if (rememberDeviceProfile() == DeviceProfile.Handheld) {
+        MobileBrowseScreen(
+            catalog = catalog,
+            onOpen = onOpen,
+            onPlay = onPlay,
+            onToggleMyList = onToggleMyList,
+            onSettings = onSettings,
+            onWatchlistRefresh = onWatchlistRefresh,
+            homePreferences = homePreferences,
+            onPlayFromBeginning = onPlayFromBeginning,
+            onSetWatched = onSetWatched,
+            onRefresh = onRefresh,
+            refreshing = refreshing,
+            onHighlighted = onHighlighted,
+            onResetPlaybackPreferences = onResetPlaybackPreferences,
+            loadCollectionMembers = loadCollectionMembers,
+        )
+        return
+    }
     var tab by rememberSaveable { mutableStateOf(BrowseTab.entries.firstOrNull { it.name == homePreferences.openingTab } ?: BrowseTab.Home) }
     var layout by rememberSaveable { mutableStateOf(BrowseLayout.Rows) }
     var genresByTab by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }

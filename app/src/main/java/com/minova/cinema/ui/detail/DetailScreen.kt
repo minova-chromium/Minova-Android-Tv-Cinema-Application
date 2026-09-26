@@ -64,6 +64,8 @@ import com.minova.cinema.ui.theme.MinovaNightDeep
 import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 
 @Composable
 fun DetailScreen(
@@ -80,7 +82,27 @@ fun DetailScreen(
     onRemoveFromContinueWatching: () -> Unit,
     onOpenEpisode: (MediaContent) -> Unit,
     onSeasonSelected: (MediaContent) -> Unit,
+    onBack: () -> Unit = {},
 ) {
+    if (rememberDeviceProfile() == DeviceProfile.Handheld) {
+        MobileDetailScreen(
+            content = content,
+            showDetail = showDetail,
+            trailers = trailers,
+            isWatched = isWatched,
+            isInMyList = isInMyList,
+            isInContinueWatching = isInContinueWatching,
+            onPlay = onPlay,
+            onPlayTrailer = onPlayTrailer,
+            onWatchedChanged = onWatchedChanged,
+            onToggleMyList = onToggleMyList,
+            onRemoveFromContinueWatching = onRemoveFromContinueWatching,
+            onOpenEpisode = onOpenEpisode,
+            onSeasonSelected = onSeasonSelected,
+            onBack = onBack,
+        )
+        return
+    }
     val detailListState = rememberLazyListState()
     val titleFocusRequester = remember(content.ratingKey) { FocusRequester() }
     val firstSeasonFocusRequester = remember(content.ratingKey) { FocusRequester() }

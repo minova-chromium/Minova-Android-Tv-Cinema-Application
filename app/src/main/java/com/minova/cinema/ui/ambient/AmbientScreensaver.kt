@@ -2,6 +2,7 @@ package com.minova.cinema.ui.ambient
 
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,7 @@ class AmbientInactivityTracker {
     // Consuming only ACTION_DOWN is not enough: Compose TV buttons commonly
     // click on ACTION_UP. Keep consuming the matching gesture after dismissal.
     private val consumedUntilKeyUp = mutableSetOf<Int>()
+    private var consumeTouchUntilUp = false
 
     /** Returns true only when a key belongs to the gesture dismissing ambient mode. */
     fun onKeyEvent(event: KeyEvent): Boolean {
@@ -70,6 +72,21 @@ class AmbientInactivityTracker {
         val dismissingScreensaver = screensaverVisible
         resetTimer()
         if (dismissingScreensaver) consumedUntilKeyUp += event.keyCode
+        return dismissingScreensaver
+    }
+
+    /** Touch equivalent of the TV key guard, used by phones and tablets. */
+    fun onTouchEvent(event: MotionEvent): Boolean {
+        if (consumeTouchUntilUp) {
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                consumeTouchUntilUp = false
+            }
+            return true
+        }
+        if (event.actionMasked != MotionEvent.ACTION_DOWN) return false
+        val dismissingScreensaver = screensaverVisible
+        resetTimer()
+        consumeTouchUntilUp = dismissingScreensaver
         return dismissingScreensaver
     }
 

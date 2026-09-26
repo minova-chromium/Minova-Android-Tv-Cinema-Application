@@ -46,6 +46,8 @@ import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaAmber
 import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 
 @Composable
 fun TapoCinemaLightsSection(
@@ -57,13 +59,14 @@ fun TapoCinemaLightsSection(
     entryModifier: Modifier = Modifier,
     onTestLights: () -> Unit = {},
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     var settingsVisible by remember { mutableStateOf(false) }
     var loginVisible by remember { mutableStateOf(false) }
     val assignedCount = state.lights.count(TapoLight::isAssigned)
 
     Text("TP-LINK TAPO · LOCAL CINEMA LIGHTS", color = Color.White)
     Text(
-        "A local-network fallback for TVs where Google Home does not expose its permissions service.",
+        "Local-network cinema lighting for devices where Google Home does not expose its permissions service.",
         style = MaterialTheme.typography.bodyMedium,
         color = MinovaMuted,
         modifier = Modifier.padding(top = 8.dp),
@@ -78,7 +81,22 @@ fun TapoCinemaLightsSection(
         color = if (state.hasCredentials) MinovaCyan else MinovaMuted,
         modifier = Modifier.padding(top = 12.dp),
     )
-    Row(
+    if (handheld) Column(
+        Modifier.fillMaxWidth().padding(top = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SettingsPrimaryButton(
+            onClick = {
+                if (state.hasCredentials) settingsVisible = true else loginVisible = true
+            },
+            modifier = entryModifier.fillMaxWidth(),
+        ) {
+            Text(if (state.hasCredentials) "Configure Tapo lights" else "Connect Tapo")
+        }
+        if (state.hasCredentials) {
+            SettingsSecondaryButton(onClick = { loginVisible = true }, modifier = Modifier.fillMaxWidth()) { Text("Change Tapo login") }
+        }
+    } else Row(
         modifier = Modifier.padding(top = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -138,6 +156,7 @@ fun CinemaLightsSettingsScreen(
     onAssignmentChanged: (String, Boolean) -> Unit,
     onTestLights: () -> Unit = {},
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val firstFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     LaunchedEffect(Unit) { firstFocus.requestFocus() }
@@ -154,7 +173,7 @@ fun CinemaLightsSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MinovaNightDeep)
-                .padding(horizontal = 52.dp, vertical = 32.dp),
+                .padding(horizontal = if (handheld) 18.dp else 52.dp, vertical = if (handheld) 18.dp else 32.dp),
         ) {
             Text("Tapo Cinema Room", style = MaterialTheme.typography.headlineLarge, color = Color.White)
             Text(
@@ -163,28 +182,38 @@ fun CinemaLightsSettingsScreen(
                 color = MinovaMuted,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 18.dp),
+            if (handheld) Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SettingsPrimaryButton(
+                    onClick = onDiscover,
+                    enabled = !state.discovering && !state.testing,
+                    modifier = Modifier.fillMaxWidth().focusRequester(firstFocus),
+                ) { Text(if (state.discovering) "Scanning…" else "Scan for lights") }
+                SettingsSecondaryButton(onClick = onChangeLogin, enabled = !state.testing, modifier = Modifier.fillMaxWidth()) { Text("Change login") }
+                SettingsSecondaryButton(onClick = onClearCredentials, enabled = !state.testing, modifier = Modifier.fillMaxWidth()) { Text("Disconnect") }
+                SettingsSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+            } else Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 SettingsPrimaryButton(
                     onClick = onDiscover,
                     enabled = !state.discovering && !state.testing,
                     modifier = Modifier
-                        .weight(1f)
+                        .then(if (handheld) Modifier else Modifier.weight(1f))
                         .focusRequester(firstFocus),
                 ) {
                     Text(if (state.discovering) "Scanning…" else "Scan for lights")
                 }
-                SettingsSecondaryButton(onClick = onChangeLogin, enabled = !state.testing, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onChangeLogin, enabled = !state.testing, modifier = if (handheld) Modifier else Modifier.weight(1f)) {
                     Text("Change login")
                 }
-                SettingsSecondaryButton(onClick = onClearCredentials, enabled = !state.testing, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onClearCredentials, enabled = !state.testing, modifier = if (handheld) Modifier else Modifier.weight(1f)) {
                     Text("Disconnect")
                 }
-                SettingsSecondaryButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                SettingsSecondaryButton(onClick = onDismiss, modifier = if (handheld) Modifier else Modifier.weight(1f)) {
                     Text("Done")
                 }
             }
@@ -229,7 +258,11 @@ fun CinemaLightsSettingsScreen(
                 when (state.lights.size) {
                     0 -> "No compatible lights found yet"
                     1 -> "1 compatible light found"
-                    else -> "${state.lights.size} compatible lights found · Use D-pad Up/Down to browse all lights"
+                    else -> if (handheld) {
+                        "${state.lights.size} compatible lights found · Scroll to browse all lights"
+                    } else {
+                        "${state.lights.size} compatible lights found · Use D-pad Up/Down to browse all lights"
+                    }
                 },
                 color = Color.White,
                 style = MaterialTheme.typography.titleMedium,
@@ -311,6 +344,7 @@ private fun TapoLoginDialog(
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val emailFocus = remember { FocusRequester() }
@@ -319,13 +353,13 @@ private fun TapoLoginDialog(
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.72f)
+                .fillMaxWidth(if (handheld) 0.94f else 0.72f)
                 .background(MinovaNightDeep, RoundedCornerShape(22.dp))
-                .padding(34.dp),
+                .padding(if (handheld) 20.dp else 34.dp),
         ) {
             Text("Connect TP-Link Tapo", style = MaterialTheme.typography.headlineLarge, color = Color.White)
             Text(
-                "Use the same case-sensitive email and password as the Tapo app. They are encrypted on this TV.",
+                "Use the same case-sensitive email and password as the Tapo app. They are encrypted on this device.",
                 color = MinovaMuted,
                 modifier = Modifier.padding(top = 8.dp),
             )
@@ -349,7 +383,17 @@ private fun TapoLoginDialog(
                 colors = tapoTextFieldColors(),
                 modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
             )
-            Row(
+            if (handheld) Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 22.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SettingsPrimaryButton(
+                    onClick = { onSave(email, password) },
+                    enabled = email.isNotBlank() && password.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Save and scan") }
+                SettingsSecondaryButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+            } else Row(
                 modifier = Modifier.padding(top = 22.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {

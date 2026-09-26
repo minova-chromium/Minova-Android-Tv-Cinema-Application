@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -51,6 +53,8 @@ import com.minova.cinema.ui.theme.MinovaNightDeep
 import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
+import com.minova.cinema.ui.platform.DeviceProfile
+import com.minova.cinema.ui.platform.rememberDeviceProfile
 
 @Composable
 fun OnboardingScreen(
@@ -58,6 +62,7 @@ fun OnboardingScreen(
     error: String?,
     onConnect: (String, String) -> Unit,
 ) {
+    val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     var server by rememberSaveable { mutableStateOf("") }
     var token by rememberSaveable { mutableStateOf("") }
     val serverFocus = remember { FocusRequester() }
@@ -78,8 +83,9 @@ fun OnboardingScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.Center)
-                .width(670.dp)
-                .padding(32.dp),
+                .widthIn(max = 670.dp)
+                .fillMaxWidth()
+                .padding(if (handheld) 22.dp else 32.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
@@ -99,11 +105,12 @@ fun OnboardingScreen(
             Text(
                 text = "Connect your Plex library",
                 style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
                 modifier = Modifier.padding(top = 42.dp),
             )
             Text(
                 text = "Enter the local address of your Plex Media Server and your Plex token. " +
-                    "These stay on this TV.",
+                    "These stay on this device.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MinovaMuted,
                 modifier = Modifier.padding(top = 10.dp, bottom = 28.dp),
@@ -148,23 +155,44 @@ fun OnboardingScreen(
                 )
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 28.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "LAN connection  •  JSON API  •  Direct Play",
-                    color = MinovaTeal,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Button(
-                    onClick = { onConnect(server, token) },
-                    enabled = !connecting,
+            if (handheld) {
+                Column(Modifier.fillMaxWidth().padding(top = 24.dp)) {
+                    androidx.compose.material3.Button(
+                        onClick = { onConnect(server, token) },
+                        enabled = !connecting,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MinovaCyan,
+                            contentColor = Color(0xFF001419),
+                        ),
+                    ) {
+                        Text(if (connecting) "Connecting…" else "Connect")
+                    }
+                    Text(
+                        text = "LAN connection  •  JSON API  •  Direct Play",
+                        color = MinovaTeal,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 14.dp),
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (connecting) "Connecting…" else "Connect")
+                    Text(
+                        text = "LAN connection  •  JSON API  •  Direct Play",
+                        color = MinovaTeal,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(
+                        onClick = { onConnect(server, token) },
+                        enabled = !connecting,
+                    ) {
+                        Text(if (connecting) "Connecting…" else "Connect")
+                    }
                 }
             }
         }

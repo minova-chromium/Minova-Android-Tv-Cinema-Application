@@ -82,7 +82,7 @@ object UpdateInstaller {
             } else {
                 Toast.makeText(
                     context,
-                    "Enable installs from Minova Cinema in Android TV settings.",
+                    "Enable installs from Minova Cinema in Android settings.",
                     Toast.LENGTH_LONG,
                 ).show()
                 return false

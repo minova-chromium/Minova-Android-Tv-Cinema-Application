@@ -43,7 +43,7 @@ internal object GitHubReleaseServiceFactory {
                     chain.request().newBuilder()
                         .header("Accept", "application/vnd.github+json")
                         .header("X-GitHub-Api-Version", "2022-11-28")
-                        .header("User-Agent", "Minova-Cinema-Android-TV")
+                        .header("User-Agent", "Minova-Cinema-Android")
                         .build(),
                 )
             }
