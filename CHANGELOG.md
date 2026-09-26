@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Replaced the phone player's text transport controls with large icon buttons for 10-second rewind, play/pause, 10-second forward, and one-tap subtitle on/off.
+- Removed the technical playback-settings entry and video diagnostics from the phone overlay while retaining the full advanced panel for Android TV.
+
 ## 2.9.4 — 2026-09-26
 
 - Added a complete touch-first smartphone interface while preserving the existing Android TV experience and feature set.

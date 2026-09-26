@@ -13,6 +13,7 @@ import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.PlaybackDiagnostics
 import com.minova.cinema.domain.PlaybackSource
 import com.minova.cinema.domain.PlexPlaybackMode
+import com.minova.cinema.domain.SubtitleStream
 import com.minova.cinema.ui.player.PlayerScreen
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
 
@@ -42,7 +43,17 @@ class PlayerSettingsShowcaseActivity : ComponentActivity() {
                             directUrl = "http://10.0.2.2:8765/docs/assets/minova-cinema-trailer.mp4",
                             metadataKey = "/library/metadata/phone-player-showcase",
                             audioStreams = emptyList(),
-                            subtitles = emptyList(),
+                            subtitles = listOf(
+                                SubtitleStream(
+                                    id = 7L,
+                                    label = "English",
+                                    language = "eng",
+                                    key = null,
+                                    codec = "srt",
+                                    selected = false,
+                                    forced = false,
+                                ),
+                            ),
                         ),
                     )
                 }

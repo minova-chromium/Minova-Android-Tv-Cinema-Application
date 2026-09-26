@@ -6,10 +6,9 @@ import android.content.res.Configuration
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.minova.cinema.showcase.PlayerSettingsShowcaseActivity
@@ -26,17 +25,19 @@ class PhonePlayerSettingsTest {
     val compose = createAndroidComposeRule<PlayerSettingsShowcaseActivity>()
 
     @Test
-    fun playbackSettingsOpenFromTouchControls() {
+    fun phoneTransportUsesIconsAndOneTapSubtitleToggle() {
         val uiMode = compose.activity.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
         assumeFalse(uiMode.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION)
 
-        compose.waitUntilAtLeastOneExists(hasTestTag("player-playback-settings"), 8_000)
-        compose.onNodeWithTag("player-playback-settings")
-            .assertIsDisplayed()
-            .performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("player-play-pause"), 8_000)
+        compose.onNodeWithTag("player-seek-back").assertIsDisplayed()
+        compose.onNodeWithTag("player-play-pause").assertIsDisplayed()
+        compose.onNodeWithTag("player-seek-forward").assertIsDisplayed()
+        compose.onNodeWithTag("player-subtitles-toggle").assertIsDisplayed()
+        compose.onNodeWithTag("player-playback-settings").assertDoesNotExist()
 
-        compose.waitUntilAtLeastOneExists(hasText("Playback settings"), 3_000)
-        compose.onNodeWithText("Playback settings").assertIsDisplayed()
-        compose.onNodeWithText("Original").assertIsDisplayed().performClick()
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Turn subtitles on"), 3_000)
+        compose.onNodeWithTag("player-subtitles-toggle").performClick()
+        compose.waitUntilAtLeastOneExists(hasContentDescription("Turn subtitles off"), 3_000)
     }
 }

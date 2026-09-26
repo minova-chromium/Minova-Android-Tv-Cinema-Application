@@ -25,10 +25,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -223,6 +230,10 @@ fun PlayerScreen(
             playback.subtitles.firstOrNull { it.id == initialTrackPreference?.subtitleId }?.id
                 ?: playback.subtitles.firstOrNull { experienceSettings.subtitleLanguage.isNotBlank() && sameLanguage(it.language, experienceSettings.subtitleLanguage) }?.id
                 ?: playback.subtitles.firstOrNull { it.selected }?.id)
+    }
+    var lastEnabledSubtitleTrackId by remember(content.ratingKey) { mutableStateOf<String?>(null) }
+    var lastEnabledPlexSubtitleId by remember(content.ratingKey) {
+        mutableStateOf(selectedPlexSubtitleId?.takeIf { it != 0L })
     }
     var playbackTimeLeftMs by remember(content.ratingKey) { mutableStateOf(content.timeLeftMs ?: 0L) }
     var playbackPositionMs by remember(content.ratingKey) {
@@ -575,6 +586,7 @@ fun PlayerScreen(
                         }
                     }
                 }
+                selectedSubtitleId?.let { lastEnabledSubtitleTrackId = it }
                 selectedAudioTrackId = null
                 audioTracks = tracks.groups.flatMapIndexed { groupIndex, group ->
                     if (group.type != C.TRACK_TYPE_AUDIO) return@flatMapIndexed emptyList()
@@ -804,6 +816,69 @@ fun PlayerScreen(
         }
     }
 
+    fun togglePhoneSubtitles() {
+        val subtitlesEnabled = selectedSubtitleId != null ||
+            (selectedPlexSubtitleId != null && selectedPlexSubtitleId != 0L)
+        if (subtitlesEnabled) {
+            selectedSubtitleId?.let { lastEnabledSubtitleTrackId = it }
+            selectedPlexSubtitleId?.takeIf { it != 0L }?.let { lastEnabledPlexSubtitleId = it }
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            selectedSubtitleId = null
+            selectedPlexSubtitleId = 0L
+            onSubtitleStreamSelected(null) { selectedPlexSubtitleId = 0L }
+        } else {
+            val localTrack = subtitleTracks.firstOrNull { it.id == lastEnabledSubtitleTrackId }
+                ?: subtitleTracks.firstOrNull()
+            if (localTrack != null) {
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .addOverride(
+                        TrackSelectionOverride(
+                            localTrack.group.mediaTrackGroup,
+                            localTrack.trackIndex,
+                        ),
+                    )
+                    .build()
+                selectedSubtitleId = localTrack.id
+                lastEnabledSubtitleTrackId = localTrack.id
+                val matchingPlexStream = matchPlexSubtitle(
+                    playback.subtitles,
+                    localTrack.group.getTrackFormat(localTrack.trackIndex).id,
+                    localTrack.label,
+                    localTrack.language,
+                )
+                matchingPlexStream?.let { stream ->
+                    lastEnabledPlexSubtitleId = stream.id
+                    selectedPlexSubtitleId = stream.id
+                    onSubtitleStreamSelected(stream.id) { selectedPlexSubtitleId = stream.id }
+                }
+            } else {
+                val plexStream = playback.subtitles.firstOrNull { it.id == lastEnabledPlexSubtitleId }
+                    ?: playback.subtitles.firstOrNull { it.selected }
+                    ?: playback.subtitles.firstOrNull { subtitle ->
+                        experienceSettings.subtitleLanguage.isNotBlank() &&
+                            sameLanguage(subtitle.language, experienceSettings.subtitleLanguage)
+                    }
+                    ?: playback.subtitles.firstOrNull()
+                if (plexStream == null) {
+                    playbackMessage = "No subtitles are available for this title."
+                } else {
+                    lastEnabledPlexSubtitleId = plexStream.id
+                    selectedPlexSubtitleId = plexStream.id
+                    onSubtitleStreamSelected(plexStream.id) {
+                        selectedPlexSubtitleId = plexStream.id
+                    }
+                }
+            }
+        }
+        showControlsForInteraction()
+        onUserInteraction()
+    }
+
     val activeIntroMarker = content.markers.firstOrNull { marker ->
         isMainFeatureActive &&
             marker.type.equals("intro", ignoreCase = true) &&
@@ -963,46 +1038,77 @@ fun PlayerScreen(
                     playbackTimeLeftMs.takeIf { it > 0L }?.let {
                         Text(formatPlayerTimeLeft(it), color = MinovaTeal, style = MaterialTheme.typography.bodyMedium)
                     }
-                    activeVideoResolution?.let { resolution ->
-                        Text(resolution, color = MinovaCyan, style = MaterialTheme.typography.bodyMedium)
+                    if (!handheld) {
+                        activeVideoResolution?.let { resolution ->
+                            Text(resolution, color = MinovaCyan, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Text(
+                            diagnostics.mode.label,
+                            color = when (diagnostics.mode) {
+                                PlexPlaybackMode.DirectPlay -> MinovaTeal
+                                PlexPlaybackMode.DirectStream -> MinovaCyan
+                                PlexPlaybackMode.Transcode -> Color(0xFFFFC857)
+                                PlexPlaybackMode.Unknown -> MinovaMuted
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "Settings are available below",
+                            color = MinovaMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
-                    Text(
-                        diagnostics.mode.label,
-                        color = when (diagnostics.mode) {
-                            PlexPlaybackMode.DirectPlay -> MinovaTeal
-                            PlexPlaybackMode.DirectStream -> MinovaCyan
-                            PlexPlaybackMode.Transcode -> Color(0xFFFFC857)
-                            PlexPlaybackMode.Unknown -> MinovaMuted
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        if (handheld) "Tap the video to show or hide controls" else "Settings are available below",
-                        color = MinovaMuted,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
                 }
                 Row(
-                    modifier = Modifier.padding(top = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp),
+                    horizontalArrangement = if (handheld) {
+                        Arrangement.SpaceEvenly
+                    } else {
+                        Arrangement.spacedBy(10.dp)
+                    },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (handheld) {
-                        TouchPlayerButton(onClick = { seekBy(-player.seekBackIncrement); onUserInteraction() }) { Text("−10 sec") }
-                        TouchPlayerButton(onClick = {
-                            if (player.isPlaying) player.pause() else resumeSynchronized()
-                            showControlsForInteraction()
-                            onUserInteraction()
-                        }) { Text(if (player.isPlaying) "Pause" else "Play") }
-                        TouchPlayerButton(onClick = { seekBy(player.seekForwardIncrement); onUserInteraction() }) { Text("+10 sec") }
-                        TouchPlayerButton(
+                        TouchPlayerIconButton(
+                            icon = Icons.Rounded.Replay10,
+                            contentDescription = "Seek backward 10 seconds",
+                            onClick = { seekBy(-player.seekBackIncrement); onUserInteraction() },
+                            modifier = Modifier.testTag("player-seek-back"),
+                        )
+                        TouchPlayerIconButton(
+                            icon = if (player.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (player.isPlaying) "Pause" else "Play",
                             onClick = {
-                                bottomControlsFocused = false
-                                settingsVisible = true
+                                if (player.isPlaying) player.pause() else resumeSynchronized()
+                                showControlsForInteraction()
                                 onUserInteraction()
                             },
-                            modifier = Modifier.testTag("player-playback-settings"),
-                        ) { Text("Settings") }
+                            emphasized = true,
+                            modifier = Modifier.testTag("player-play-pause"),
+                        )
+                        TouchPlayerIconButton(
+                            icon = Icons.Rounded.Forward10,
+                            contentDescription = "Seek forward 10 seconds",
+                            onClick = { seekBy(player.seekForwardIncrement); onUserInteraction() },
+                            modifier = Modifier.testTag("player-seek-forward"),
+                        )
+                        val subtitlesEnabled = selectedSubtitleId != null ||
+                            (selectedPlexSubtitleId != null && selectedPlexSubtitleId != 0L)
+                        val subtitlesAvailable = subtitleTracks.isNotEmpty() || playback.subtitles.isNotEmpty()
+                        TouchPlayerIconButton(
+                            icon = Icons.Rounded.Subtitles,
+                            contentDescription = when {
+                                !subtitlesAvailable -> "No subtitles available"
+                                subtitlesEnabled -> "Turn subtitles off"
+                                else -> "Turn subtitles on"
+                            },
+                            onClick = ::togglePhoneSubtitles,
+                            enabled = subtitlesAvailable,
+                            selected = subtitlesEnabled,
+                            modifier = Modifier.testTag("player-subtitles-toggle"),
+                        )
                     } else {
                         Button(
                             onClick = {
@@ -1141,6 +1247,7 @@ fun PlayerScreen(
                 },
                 onSubtitleSelected = { option ->
                     selectedSubtitleId = option?.id
+                    option?.let { lastEnabledSubtitleTrackId = it.id }
                     val builder = player.trackSelectionParameters.buildUpon()
                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                     if (option == null) {
@@ -1161,12 +1268,14 @@ fun PlayerScreen(
                     // An unmatched embedded track is still enabled locally.
                     // Only an explicit Off selection should persist subtitles Off.
                     if (option == null || matchingPlexStream != null) {
+                        matchingPlexStream?.let { lastEnabledPlexSubtitleId = it.id }
                         onSubtitleStreamSelected(matchingPlexStream?.id) {
                             selectedPlexSubtitleId = matchingPlexStream?.id ?: 0L
                         }
                     }
                 },
                 onPlexSubtitleSelected = { stream ->
+                    stream?.let { lastEnabledPlexSubtitleId = it.id }
                     onSubtitleStreamSelected(stream?.id) {
                         selectedPlexSubtitleId = stream?.id ?: 0L
                     }
@@ -1244,6 +1353,44 @@ private fun TouchPlayerButton(
         ),
         content = content,
     )
+}
+
+@Composable
+private fun TouchPlayerIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    emphasized: Boolean = false,
+) {
+    androidx.compose.material3.FilledIconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.size(if (emphasized) 62.dp else 54.dp),
+        shape = CircleShape,
+        colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+            containerColor = when {
+                emphasized -> Color.White
+                selected -> MinovaCyan.copy(alpha = 0.24f)
+                else -> MinovaSurface.copy(alpha = 0.94f)
+            },
+            contentColor = when {
+                emphasized -> Color.Black
+                selected -> MinovaCyan
+                else -> Color.White
+            },
+            disabledContainerColor = MinovaSurface.copy(alpha = 0.45f),
+            disabledContentColor = MinovaMuted.copy(alpha = 0.7f),
+        ),
+    ) {
+        androidx.compose.material3.Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(if (emphasized) 34.dp else 28.dp),
+        )
+    }
 }
 
 /** Premium end-of-episode prompt. The Play button receives focus immediately. */
