@@ -3,6 +3,8 @@ package com.minova.cinema.cast
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
@@ -49,6 +51,10 @@ class MinovaCastController(context: Context) {
     val state: StateFlow<MinovaCastState> = mutableState.asStateFlow()
 
     private var remoteClient: RemoteMediaClient? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var loadGeneration = 0
+    private var pendingFallback: PendingFallback? = null
+    private val fallbackRunnable = Runnable { triggerFallback(loadGeneration) }
 
     private val remoteCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() = updateRemoteState()
@@ -116,12 +122,32 @@ class MinovaCastController(context: Context) {
         val playback = content.playback ?: return false
         val selectedAudio = playback.audioStreams.firstOrNull { it.selected }
         val selectedSubtitle = playback.subtitles.firstOrNull { it.selected }
-        val mediaUrl = PlexUrlFactory(connection).transcode(
-            ratingKey = content.ratingKey,
-            quality = PlaybackQuality.FullHd,
-            subtitleStreamId = selectedSubtitle?.id,
-            audioStreamId = selectedAudio?.id,
+        val delivery = chooseCastDelivery(
+            source = playback.technicalInfo,
+            selectedAudioCodec = selectedAudio?.codec,
+            audioTrackCount = playback.audioStreams.size,
+            hasSelectedSubtitle = selectedSubtitle != null,
         )
+        val urls = PlexUrlFactory(connection)
+        val primaryUrl = when (delivery) {
+            CastDeliveryMode.DirectPlay -> urls.rebaseAuthenticated(playback.directUrl)
+            CastDeliveryMode.DirectStream -> urls.transcode(
+                ratingKey = content.ratingKey,
+                quality = PlaybackQuality.Original,
+                audioStreamId = selectedAudio?.id,
+            )
+            CastDeliveryMode.CompatibilityTranscode -> urls.transcode(
+                ratingKey = content.ratingKey,
+                quality = PlaybackQuality.Hd,
+                subtitleStreamId = selectedSubtitle?.id,
+                audioStreamId = selectedAudio?.id,
+            )
+        }
+        val primaryContentType = if (delivery == CastDeliveryMode.DirectPlay) {
+            CAST_MP4_CONTENT_TYPE
+        } else {
+            CAST_HLS_CONTENT_TYPE
+        }
         val metadata = MediaMetadata(
             if (content.kind == MediaKind.Movie) {
                 MediaMetadata.MEDIA_TYPE_MOVIE
@@ -134,9 +160,9 @@ class MinovaCastController(context: Context) {
             content.posterUrl?.let { addImage(WebImage(Uri.parse(it))) }
             content.backdropUrl?.let { addImage(WebImage(Uri.parse(it))) }
         }
-        val mediaInfoBuilder = MediaInfo.Builder(mediaUrl)
+        val mediaInfoBuilder = MediaInfo.Builder(primaryUrl)
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-            .setContentType(CAST_HLS_CONTENT_TYPE)
+            .setContentType(primaryContentType)
             .setMetadata(metadata)
         content.durationMs?.takeIf { it > 0L }?.let(mediaInfoBuilder::setStreamDuration)
         val startPosition = if (fromBeginning) 0L else content.viewOffsetMs.coerceAtLeast(0L)
@@ -145,6 +171,29 @@ class MinovaCastController(context: Context) {
             .setAutoplay(true)
             .setCurrentTime(startPosition)
             .build()
+        val fallbackRequest = if (delivery != CastDeliveryMode.CompatibilityTranscode) {
+            val fallbackUrl = urls.transcode(
+                ratingKey = content.ratingKey,
+                quality = PlaybackQuality.Hd,
+                subtitleStreamId = selectedSubtitle?.id,
+                audioStreamId = selectedAudio?.id,
+            )
+            val fallbackInfo = MediaInfo.Builder(fallbackUrl)
+                .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+                .setContentType(CAST_HLS_CONTENT_TYPE)
+                .setMetadata(metadata)
+                .also { builder ->
+                    content.durationMs?.takeIf { it > 0L }?.let(builder::setStreamDuration)
+                }
+                .build()
+            MediaLoadRequestData.Builder()
+                .setMediaInfo(fallbackInfo)
+                .setAutoplay(true)
+                .setCurrentTime(startPosition)
+                .build()
+        } else {
+            null
+        }
 
         mutableState.value = MinovaCastState(
             connected = true,
@@ -154,14 +203,7 @@ class MinovaCastController(context: Context) {
             positionMs = startPosition,
             durationMs = content.durationMs ?: 0L,
         )
-        client.load(request).setResultCallback { result ->
-            if (!result.status.isSuccess) {
-                mutableState.value = mutableState.value.copy(
-                    status = CastPlaybackStatus.Idle,
-                    errorMessage = "The TV could not start this video.",
-                )
-            }
-        }
+        load(client, request, fallbackRequest)
         return true
     }
 
@@ -171,10 +213,12 @@ class MinovaCastController(context: Context) {
     }
 
     fun stop() {
+        cancelFallback()
         sessionManager.endCurrentSession(true)
     }
 
     fun disconnect() {
+        cancelFallback()
         sessionManager.endCurrentSession(true)
     }
 
@@ -190,6 +234,7 @@ class MinovaCastController(context: Context) {
     }
 
     fun close() {
+        cancelFallback()
         detachRemoteClient()
         sessionManager.removeSessionManagerListener(sessionListener, CastSession::class.java)
     }
@@ -209,6 +254,7 @@ class MinovaCastController(context: Context) {
     }
 
     private fun detachRemoteClient() {
+        cancelFallback()
         remoteClient?.unregisterCallback(remoteCallback)
         remoteClient?.removeProgressListener(progressListener)
         remoteClient = null
@@ -224,6 +270,22 @@ class MinovaCastController(context: Context) {
             -> CastPlaybackStatus.Buffering
             else -> CastPlaybackStatus.Idle
         }
+        if (status == CastPlaybackStatus.Playing) {
+            cancelFallback()
+        } else if (
+            client.playerState == MediaStatus.PLAYER_STATE_IDLE &&
+            client.idleReason == MediaStatus.IDLE_REASON_ERROR
+        ) {
+            if (pendingFallback != null) {
+                triggerFallback(loadGeneration)
+                return
+            }
+            mutableState.value = mutableState.value.copy(
+                status = CastPlaybackStatus.Idle,
+                errorMessage = "The TV could not start this video.",
+            )
+            return
+        }
         mutableState.value = mutableState.value.copy(
             status = status,
             positionMs = client.approximateStreamPosition.coerceAtLeast(0L),
@@ -231,8 +293,63 @@ class MinovaCastController(context: Context) {
         )
     }
 
+    private fun load(
+        client: RemoteMediaClient,
+        request: MediaLoadRequestData,
+        fallback: MediaLoadRequestData?,
+    ) {
+        cancelFallback()
+        val generation = ++loadGeneration
+        pendingFallback = fallback?.let { PendingFallback(client, it, generation) }
+        if (fallback != null) {
+            mainHandler.postDelayed(fallbackRunnable, FAST_START_TIMEOUT_MS)
+        }
+        client.load(request).setResultCallback { result ->
+            if (!result.status.isSuccess) triggerFallback(generation)
+        }
+    }
+
+    private fun triggerFallback(expectedGeneration: Int) {
+        val fallback = pendingFallback
+            ?.takeIf { it.generation == expectedGeneration && expectedGeneration == loadGeneration }
+            ?: return
+        if (fallback.client.isPlaying) {
+            cancelFallback()
+            return
+        }
+        pendingFallback = null
+        mainHandler.removeCallbacks(fallbackRunnable)
+        val generation = ++loadGeneration
+        mutableState.value = mutableState.value.copy(
+            status = CastPlaybackStatus.Buffering,
+            errorMessage = null,
+        )
+        fallback.client.load(fallback.request).setResultCallback { result ->
+            if (!result.status.isSuccess && generation == loadGeneration) {
+                mutableState.value = mutableState.value.copy(
+                    status = CastPlaybackStatus.Idle,
+                    errorMessage = "The TV could not start this video.",
+                )
+            }
+        }
+    }
+
+    private fun cancelFallback() {
+        pendingFallback = null
+        mainHandler.removeCallbacks(fallbackRunnable)
+        loadGeneration += 1
+    }
+
+    private data class PendingFallback(
+        val client: RemoteMediaClient,
+        val request: MediaLoadRequestData,
+        val generation: Int,
+    )
+
     private companion object {
         const val CAST_HLS_CONTENT_TYPE = "application/x-mpegURL"
+        const val CAST_MP4_CONTENT_TYPE = "video/mp4"
         const val PROGRESS_INTERVAL_MS = 5_000L
+        const val FAST_START_TIMEOUT_MS = 8_000L
     }
 }

@@ -78,6 +78,24 @@ class PlexUrlFactory(
             .toString()
     }
 
+    /** Rebuilds an authenticated media URL on this connection's receiver-accessible host. */
+    fun rebaseAuthenticated(sourceUrl: String): String {
+        val source = sourceUrl.toUri()
+        val builder = connection.baseUrl.toUri().buildUpon()
+        source.encodedPath?.trim('/')?.takeIf(String::isNotBlank)?.let(builder::appendEncodedPath)
+        source.queryParameterNames
+            .filterNot { it.equals(PlexConfig.HEADER_TOKEN, ignoreCase = true) }
+            .forEach { name ->
+                source.getQueryParameters(name).forEach { value ->
+                    builder.appendQueryParameter(name, value)
+                }
+            }
+        return builder
+            .appendQueryParameter(PlexConfig.HEADER_TOKEN, connection.token)
+            .build()
+            .toString()
+    }
+
     fun transcode(
         ratingKey: String,
         quality: PlaybackQuality,
@@ -85,7 +103,6 @@ class PlexUrlFactory(
         subtitleStreamId: Long? = null,
         audioStreamId: Long? = null,
     ): String {
-        require(quality != PlaybackQuality.Original)
         val builder = connection.baseUrl.toUri().buildUpon()
             .appendEncodedPath("video/:/transcode/universal/start.m3u8")
             .appendQueryParameter("path", "http://127.0.0.1:32400/library/metadata/$ratingKey")
@@ -96,9 +113,6 @@ class PlexUrlFactory(
             .appendQueryParameter("fastSeek", "1")
             .appendQueryParameter("directPlay", "0")
             .appendQueryParameter("directStream", "1")
-            .appendQueryParameter("videoQuality", "100")
-            .appendQueryParameter("videoResolution", quality.resolution)
-            .appendQueryParameter("maxVideoBitrate", quality.maxBitrateKbps.toString())
             .appendQueryParameter("subtitleSize", "100")
             .appendQueryParameter("audioBoost", "100")
             .appendQueryParameter("location", "lan")
@@ -108,6 +122,12 @@ class PlexUrlFactory(
             .appendQueryParameter("X-Plex-Product", "Minova Cinema")
             .appendQueryParameter("X-Plex-Version", BuildConfig.VERSION_NAME)
             .appendQueryParameter("X-Plex-Platform", "Android")
+        if (quality != PlaybackQuality.Original) {
+            builder
+                .appendQueryParameter("videoQuality", "100")
+                .appendQueryParameter("videoResolution", quality.resolution)
+                .appendQueryParameter("maxVideoBitrate", quality.maxBitrateKbps.toString())
+        }
         audioStreamId?.takeIf { it > 0L }?.let {
             builder.appendQueryParameter("audioStreamID", it.toString())
         }
