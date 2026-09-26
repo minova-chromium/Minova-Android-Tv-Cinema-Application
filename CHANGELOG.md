@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.9.5 — 2026-09-26
+
 - Replaced the phone player's text transport controls with large icon buttons for 10-second rewind, play/pause, 10-second forward, and a right-side subtitle language picker with an explicit Off option.
 - Removed the technical playback-settings entry and video diagnostics from the phone overlay while retaining the full advanced panel for Android TV.
 
