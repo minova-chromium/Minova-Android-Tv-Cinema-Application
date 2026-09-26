@@ -9,7 +9,6 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +16,7 @@ import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -33,7 +33,7 @@ import com.minova.cinema.home.CinemaLightingProvider
 import com.minova.cinema.ui.platform.DeviceProfile
 import com.minova.cinema.ui.platform.deviceProfile
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val viewModel: CinemaViewModel by viewModels { CinemaViewModel.Factory(this) }
     private val updateViewModel: UpdateViewModel by viewModels()
     private val tapoLightsViewModel: TapoLightsViewModel by viewModels {

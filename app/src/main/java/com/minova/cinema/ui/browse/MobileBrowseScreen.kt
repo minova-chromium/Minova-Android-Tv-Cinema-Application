@@ -94,6 +94,7 @@ import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
 import com.minova.cinema.ui.theme.MinovaWhite
+import com.minova.cinema.ui.cast.MinovaCastButton
 import kotlinx.coroutines.CancellationException
 
 private enum class MobileBrowseTab(val label: String) {
@@ -269,6 +270,7 @@ private fun MobileTopBar(
         } else {
             MobileIconButton(Icons.Rounded.Refresh, "Refresh library", onRefresh, background = false)
         }
+        MinovaCastButton()
         MobileIconButton(Icons.Rounded.Settings, "Settings", onSettings, background = false)
     }
 }

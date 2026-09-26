@@ -143,6 +143,7 @@ dependencies {
 
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
@@ -166,6 +167,11 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-ui:1.10.1")
+
+    // Phone and tablet sender support. The TV application remains a normal
+    // ten-foot client; Cast-enabled televisions use Google's Default Media
+    // Receiver while the handheld controls playback.
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
 
     // Google requires the Home SDK to be downloaded into mavenLocal() from its
     // signed-in developer portal. Keep ordinary contributors/builds working

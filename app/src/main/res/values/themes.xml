@@ -1,11 +1,35 @@
 <resources>
-    <style name="Theme.MinovaCinema" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.MinovaCinema" parent="Theme.AppCompat.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowBackground">@color/black</item>
+        <item name="android:colorBackground">@color/black</item>
         <item name="android:colorAccent">#75E6FF</item>
+        <item name="mediaRouteTheme">@style/Theme.MinovaCinema.MediaRouter</item>
         <item name="android:navigationBarColor">@color/black</item>
         <item name="android:statusBarColor">@color/black</item>
         <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.MinovaCinema.Cast" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">#0A1019</item>
+        <item name="colorPrimaryDark">#03070D</item>
+        <item name="colorAccent">#20D3E5</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#03070D</item>
+        <item name="android:navigationBarColor">#03070D</item>
+        <item name="android:statusBarColor">#03070D</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.MinovaCinema.CastRoute" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:colorBackground">@color/black</item>
+        <item name="colorAccent">#20D3E5</item>
+        <item name="mediaRouteTheme">@style/Theme.MinovaCinema.MediaRouter</item>
+    </style>
+
+    <style name="Theme.MinovaCinema.MediaRouter" parent="Theme.MediaRouter">
+        <item name="android:colorBackground">@color/black</item>
+        <item name="mediaRouteButtonStyle">@style/Widget.MediaRouter.MediaRouteButton</item>
     </style>
 </resources>

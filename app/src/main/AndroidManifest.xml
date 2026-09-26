@@ -18,6 +18,9 @@
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
 
     <queries>
         <!-- Required by the Google Home APIs permission and module flows on Android 11+. -->
@@ -49,6 +52,16 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.MinovaCinema">
+
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.minova.cinema.cast.MinovaCastOptionsProvider" />
+
+        <activity
+            android:name=".cast.MinovaCastExpandedControlsActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.MinovaCinema.Cast" />
 
         <activity
             android:name=".MainActivity"

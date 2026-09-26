@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -27,11 +28,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import com.minova.cinema.data.local.BrowsePreferences
+import com.minova.cinema.data.local.CastPreferences
 import com.minova.cinema.ui.browse.HomeCustomizationDialog
 import com.minova.cinema.ui.browse.buildHomeDiscoveryShelves
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -63,6 +71,12 @@ import com.minova.cinema.ui.settings.SettingsScreen
 import com.minova.cinema.ui.update.UpdateAvailableDialog
 import com.minova.cinema.ui.update.UpdateDownloadDialog
 import com.minova.cinema.home.CinemaLightingController
+import com.minova.cinema.data.remote.PlexConnection
+import com.minova.cinema.cast.CastPlaybackStatus
+import com.minova.cinema.cast.MinovaCastController
+import com.minova.cinema.cast.MinovaCastState
+import com.minova.cinema.ui.cast.MinovaCastMiniController
+import kotlinx.coroutines.flow.MutableStateFlow
 
 private sealed interface CinemaRoute {
     data object Browse : CinemaRoute
@@ -173,6 +187,24 @@ private fun MainScreen(
     val context = LocalContext.current
     val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val phone = handheld && LocalConfiguration.current.smallestScreenWidthDp < 600
+    val castController = remember(context.applicationContext, handheld) {
+        if (handheld) {
+            runCatching { MinovaCastController(context.applicationContext) }.getOrNull()
+        } else {
+            null
+        }
+    }
+    val castStateFlow = remember(castController) {
+        castController?.state ?: MutableStateFlow(MinovaCastState())
+    }
+    val castState by castStateFlow.collectAsStateWithLifecycle()
+    val castPreferences = remember(context.applicationContext) {
+        CastPreferences(context.applicationContext)
+    }
+    var castServerUrl by remember { mutableStateOf(castPreferences.readServerUrl()) }
+    DisposableEffect(castController) {
+        onDispose { castController?.close() }
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
@@ -225,6 +257,33 @@ private fun MainScreen(
         )
         is CinemaUiState.Ready -> {
             val currentRoute = routes.last()
+            LaunchedEffect(
+                castState.content?.ratingKey,
+                castState.positionMs,
+                castState.status,
+            ) {
+                castState.content?.let { castContent ->
+                    val plexState = when (castState.status) {
+                        CastPlaybackStatus.Playing -> "playing"
+                        CastPlaybackStatus.Paused -> "paused"
+                        CastPlaybackStatus.Buffering -> "buffering"
+                        CastPlaybackStatus.Idle -> "stopped"
+                    }
+                    viewModel.reportPlayback(
+                        castContent,
+                        castState.positionMs,
+                        castState.durationMs.takeIf { it > 0L }
+                            ?: castContent.durationMs.orEmptyDuration(),
+                        plexState,
+                    )
+                }
+            }
+            LaunchedEffect(castState.errorMessage) {
+                castState.errorMessage?.let {
+                    android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+                    castController?.clearError()
+                }
+            }
             LaunchedEffect(phone, currentRoute is CinemaRoute.Player) {
                 if (phone) {
                     (context as? Activity)?.requestedOrientation = if (currentRoute is CinemaRoute.Player) {
@@ -307,7 +366,31 @@ private fun MainScreen(
                 ) { plan ->
                     if (plan != null) {
                         lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
-                        routes.add(CinemaRoute.Player(if (fromBeginning) plan.copy(mainFeature = plan.mainFeature.copy(viewOffsetMs = 0L)) else plan))
+                        val castStarted = handheld && castController?.cast(
+                            content = plan.mainFeature,
+                            connection = PlexConnection(
+                                baseUrl = castServerUrl ?: state.connection.baseUrl,
+                                token = state.connection.token,
+                            ),
+                            fromBeginning = fromBeginning,
+                        ) == true
+                        if (castStarted) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Playing on ${castState.deviceName ?: "TV"}",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            routes.add(
+                                CinemaRoute.Player(
+                                    if (fromBeginning) {
+                                        plan.copy(mainFeature = plan.mainFeature.copy(viewOffsetMs = 0L))
+                                    } else {
+                                        plan
+                                    },
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -361,6 +444,7 @@ private fun MainScreen(
                 },
                 onClose = { experienceOpen = false })
             MinovaCinemaTheme(highContrast = experience.highContrast) {
+            Box(Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState = currentRoute,
                 transitionSpec = { fadeIn(tween(if (experience.reducedMotion) 0 else 220)) togetherWith fadeOut(tween(if (experience.reducedMotion) 0 else 180)) },
@@ -583,9 +667,31 @@ private fun MainScreen(
                         onCustomizeHome = { customizeHome = true },
                         onTestTapoLights = tapoLightsViewModel::testLights,
                         onExperienceSettings = { experienceOpen = true },
+                        castServerUrl = castServerUrl,
+                        onCastServerUrlChanged = { address ->
+                            runCatching { castPreferences.saveServerUrl(address) }
+                                .onSuccess { castServerUrl = it }
+                                .isSuccess
+                        },
                         onBack = {
                             if (routes.size > 1) routes.removeAt(routes.lastIndex)
                         },
+                    )
+                }
+            }
+                if (handheld && currentRoute !is CinemaRoute.Player) {
+                    MinovaCastMiniController(
+                        state = castState,
+                        onOpen = { castController?.openExpandedControls(context) },
+                        onTogglePlayback = { castController?.togglePlayback() },
+                        onStop = { castController?.stop() },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(
+                                start = 12.dp,
+                                end = 12.dp,
+                                bottom = if (currentRoute == CinemaRoute.Browse) 78.dp else 14.dp,
+                            ),
                     )
                 }
             }
@@ -594,6 +700,8 @@ private fun MainScreen(
         }
     }
 }
+
+private fun Long?.orEmptyDuration(): Long = this?.coerceAtLeast(0L) ?: 0L
 
 @Composable
 private fun rememberRoutes() = androidx.compose.runtime.remember {

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -131,6 +132,8 @@ fun SettingsScreen(
     onCustomizeHome: () -> Unit = {},
     onTestTapoLights: () -> Unit = {},
     onExperienceSettings: () -> Unit = {},
+    castServerUrl: String? = null,
+    onCastServerUrlChanged: (String) -> Boolean = { true },
     onBack: () -> Unit = {},
 ) {
     val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
@@ -138,6 +141,7 @@ fun SettingsScreen(
     var pin by remember { mutableStateOf("") }
     var timerDialog by remember { mutableStateOf<TimerSettingType?>(null) }
     var savedMessage by remember { mutableStateOf<String?>(null) }
+    var castServerDraft by remember(castServerUrl) { mutableStateOf(castServerUrl.orEmpty()) }
     var activeSection by remember { mutableStateOf(SettingsSection.Plex) }
     var contentFocusActive by remember { mutableStateOf(false) }
     val sectionEntryFocus = remember { SettingsSection.entries.associateWith { FocusRequester() } }
@@ -251,6 +255,48 @@ fun SettingsScreen(
                     color = MinovaCyan,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                if (handheld) {
+                    Text(
+                        "TV PLAYBACK ADDRESS",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MinovaMuted,
+                        modifier = Modifier.padding(top = 22.dp),
+                    )
+                    Text(
+                        "Optional. Use a LAN Plex address that your Chromecast or Google TV can reach. Leave blank to use the connected server above.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MinovaMuted,
+                        modifier = Modifier.padding(top = 5.dp),
+                    )
+                    BasicTextField(
+                        value = castServerDraft,
+                        onValueChange = { castServerDraft = it },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                            .background(Color(0xFF1B2633), RoundedCornerShape(12.dp))
+                            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 15.dp, vertical = 16.dp),
+                        decorationBox = { input ->
+                            if (castServerDraft.isBlank()) {
+                                Text("http://192.168.1.10:32400", color = MinovaMuted)
+                            }
+                            input()
+                        },
+                    )
+                    SettingsSecondaryButton(
+                        onClick = {
+                            savedMessage = if (onCastServerUrlChanged(castServerDraft)) {
+                                "TV playback address saved"
+                            } else {
+                                "Enter a valid http:// or https:// address"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    ) { Text("Save TV address") }
+                }
                 if (handheld) {
                     Column(
                         Modifier.fillMaxWidth().padding(top = 16.dp),
@@ -721,8 +767,13 @@ internal fun SettingsPrimaryButton(
                 disabledContainerColor = Color(0xFF26313D).copy(alpha = 0.45f),
                 disabledContentColor = Color.White.copy(alpha = 0.45f),
             ),
-            content = content,
-        )
+        ) {
+            CompositionLocalProvider(
+                androidx.tv.material3.LocalContentColor provides Color.White,
+            ) {
+                content()
+            }
+        }
         return
     }
     Button(
@@ -765,8 +816,13 @@ internal fun SettingsSecondaryButton(
                 disabledContainerColor = Color(0xFF121C25).copy(alpha = 0.45f),
                 disabledContentColor = Color.White.copy(alpha = 0.45f),
             ),
-            content = content,
-        )
+        ) {
+            CompositionLocalProvider(
+                androidx.tv.material3.LocalContentColor provides Color.White,
+            ) {
+                content()
+            }
+        }
         return
     }
     OutlinedButton(

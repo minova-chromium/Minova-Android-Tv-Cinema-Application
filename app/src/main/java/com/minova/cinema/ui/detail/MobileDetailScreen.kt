@@ -62,6 +62,7 @@ import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
 import com.minova.cinema.ui.theme.MinovaWhite
+import com.minova.cinema.ui.cast.MinovaCastButton
 
 @Composable
 internal fun MobileDetailScreen(
@@ -146,6 +147,9 @@ internal fun MobileDetailScreen(
                         description = "Back",
                         onClick = onBack,
                         modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start = 16.dp, top = 12.dp),
+                    )
+                    MinovaCastButton(
+                        Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 12.dp, top = 8.dp),
                     )
                     Column(
                         Modifier.align(Alignment.BottomCenter).padding(horizontal = 18.dp, vertical = 18.dp),
