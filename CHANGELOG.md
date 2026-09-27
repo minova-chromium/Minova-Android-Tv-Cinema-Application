@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.9.6 — 2026-09-27
+
+- Added Google Cast from the phone interface to Chromecast and Google TV devices, including the native device chooser, compact and expanded controls, Plex progress synchronization, and resume support.
+- Added an optional TV-accessible Plex server address for networks where the casting device cannot use the phone's saved Plex address.
+- Reduced Cast startup buffering by selecting direct play for compatible MP4/H.264/AAC media, direct-stream remuxing for compatible H.264 sources, and a 720p compatibility transcode only when conversion is required.
+- Added an automatic eight-second Cast startup recovery that retries with the compatibility stream when a higher-quality stream cannot begin promptly.
+
 ## 2.9.5 — 2026-09-26
 
 - Replaced the phone player's text transport controls with large icon buttons for 10-second rewind, play/pause, 10-second forward, and a right-side subtitle language picker with an explicit Off option.
