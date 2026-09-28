@@ -5,9 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.minova.cinema.data.PlexRepository
+import com.minova.cinema.data.PlexAccountRepository
+import com.minova.cinema.data.PlexDiscoveredServer
 import com.minova.cinema.data.PlexProfileRepository
 import com.minova.cinema.data.PlaybackCapabilityAssistant
 import com.minova.cinema.data.local.PlexPreferences
+import com.minova.cinema.data.local.PlexDeviceIdentity
 import com.minova.cinema.data.local.PlexCatalogCache
 import com.minova.cinema.data.remote.PlexConfig
 import com.minova.cinema.data.remote.PlexConnection
@@ -43,6 +46,8 @@ class CinemaViewModel(
     private val catalogCache: PlexCatalogCache,
     private val tvHomePublisher: TvHomePublisher,
     private val offlineDownloadsStore: OfflineDownloadsStore,
+    private val clientIdentifier: String,
+    private val accountRepository: PlexAccountRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<CinemaUiState>(CinemaUiState.Loading)
     val uiState: StateFlow<CinemaUiState> = _uiState.asStateFlow()
@@ -62,12 +67,17 @@ class CinemaViewModel(
     private val _offlineDownloads = MutableStateFlow<List<OfflineDownload>>(emptyList())
     val offlineDownloads: StateFlow<List<OfflineDownload>> = _offlineDownloads.asStateFlow()
 
+    private val _plexSignIn = MutableStateFlow<PlexSignInUiState>(PlexSignInUiState.Idle)
+    val plexSignIn: StateFlow<PlexSignInUiState> = _plexSignIn.asStateFlow()
+
     private var connection: PlexConnection? = null
     private var repository: PlexRepository? = null
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
     private var watchlistJob: Job? = null
     private var offlineDownloadsJob: Job? = null
+    private var plexSignInJob: Job? = null
+    private var discoveredServers: Map<String, PlexDiscoveredServer> = emptyMap()
 
     init {
         val saved = preferences.readConnection()
@@ -90,7 +100,80 @@ class CinemaViewModel(
             _uiState.value = CinemaUiState.Onboarding(error = "Enter your Plex token.")
             return
         }
-        connectInternal(PlexConnection(normalized, token), persist = true, onboarding = true)
+        cancelPlexSignIn()
+        connectInternal(
+            PlexConnection(normalized, token, clientIdentifier),
+            persist = true,
+            onboarding = true,
+        )
+    }
+
+    fun startPlexSignIn() {
+        plexSignInJob?.cancel()
+        discoveredServers = emptyMap()
+        plexSignInJob = viewModelScope.launch {
+            _plexSignIn.value = PlexSignInUiState.Starting
+            try {
+                val challenge = accountRepository.createPin()
+                _plexSignIn.value = PlexSignInUiState.Waiting(
+                    code = challenge.code,
+                    authorizationUrl = challenge.authorizationUrl,
+                )
+                val accountToken = accountRepository.awaitAuthorization(challenge)
+                _plexSignIn.value = PlexSignInUiState.Discovering
+                val servers = accountRepository.discoverServers(accountToken)
+                if (servers.isEmpty()) {
+                    throw IllegalStateException(
+                        "Plex sign-in succeeded, but this account has no available Plex Media Server.",
+                    )
+                }
+                discoveredServers = servers.associateBy(PlexDiscoveredServer::id)
+                if (servers.size == 1) {
+                    connectDiscoveredServer(servers.single())
+                } else {
+                    _plexSignIn.value = PlexSignInUiState.SelectServer(
+                        servers.map { PlexServerChoice(it.id, it.name, it.owned) },
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _plexSignIn.value = PlexSignInUiState.Error(error.userMessage())
+            }
+        }
+    }
+
+    fun selectPlexServer(serverId: String) {
+        val server = discoveredServers[serverId] ?: return
+        plexSignInJob?.cancel()
+        plexSignInJob = viewModelScope.launch {
+            try {
+                connectDiscoveredServer(server)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _plexSignIn.value = PlexSignInUiState.Error(error.userMessage())
+            }
+        }
+    }
+
+    fun cancelPlexSignIn() {
+        plexSignInJob?.cancel()
+        plexSignInJob = null
+        discoveredServers = emptyMap()
+        _plexSignIn.value = PlexSignInUiState.Idle
+    }
+
+    private suspend fun connectDiscoveredServer(server: PlexDiscoveredServer) {
+        _plexSignIn.value = PlexSignInUiState.Connecting(server.name)
+        val discoveredConnection = accountRepository.resolveConnection(server)
+        _plexSignIn.value = PlexSignInUiState.Idle
+        connectInternal(
+            newConnection = discoveredConnection,
+            persist = true,
+            onboarding = true,
+            ownerToken = server.accountToken,
+        )
     }
 
     fun retry() {
@@ -103,6 +186,7 @@ class CinemaViewModel(
         catalogJob?.cancel()
         detailJob?.cancel()
         watchlistJob?.cancel()
+        cancelPlexSignIn()
         preferences.clearConnection()
         connection = null
         repository = null
@@ -683,6 +767,7 @@ class CinemaViewModel(
         newConnection: PlexConnection,
         persist: Boolean,
         onboarding: Boolean,
+        ownerToken: String? = null,
     ) {
         catalogJob?.cancel()
         watchlistJob?.cancel()
@@ -707,7 +792,10 @@ class CinemaViewModel(
                 repository = newRepository
                 startOfflineDownloadMonitor()
                 val catalog = applyLocalLibrary(newRepository.loadCatalog())
-                if (persist) preferences.saveConnection(newConnection)
+                if (persist) preferences.saveConnection(
+                    newConnection,
+                    ownerToken = ownerToken ?: newConnection.token,
+                )
                 _uiState.value = CinemaUiState.Ready(catalog, newConnection)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     catalogCache.write(newConnection, catalog)
@@ -756,6 +844,11 @@ class CinemaViewModel(
         private val catalogCache = PlexCatalogCache(appContext)
         private val tvHomePublisher = TvHomePublisher(appContext)
         private val offlineDownloadsStore = OfflineDownloadsStore(appContext)
+        private val clientIdentifier = PlexDeviceIdentity(appContext).get()
+        private val accountRepository = PlexAccountRepository(
+            clientIdentifier,
+            PlexServiceFactory.createAccount(clientIdentifier),
+        )
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -765,6 +858,8 @@ class CinemaViewModel(
                 catalogCache,
                 tvHomePublisher,
                 offlineDownloadsStore,
+                clientIdentifier,
+                accountRepository,
             ) as T
         }
     }

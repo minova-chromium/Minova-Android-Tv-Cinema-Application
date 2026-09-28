@@ -15,16 +15,22 @@ class PlexPreferences(context: Context) {
             ?: return null
         val token = preferences.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
             ?: return null
-        return PlexConnection(baseUrl = baseUrl, token = token)
+        val clientIdentifier = preferences.getString(KEY_CLIENT_IDENTIFIER, null)
+            ?.takeIf(String::isNotBlank)
+            ?: com.minova.cinema.BuildConfig.PLEX_CLIENT_ID
+        return PlexConnection(
+            baseUrl = baseUrl,
+            token = token,
+            clientIdentifier = clientIdentifier,
+        )
     }
 
-    fun saveConnection(connection: PlexConnection) {
+    fun saveConnection(connection: PlexConnection, ownerToken: String = connection.token) {
         preferences.edit {
             putString(KEY_BASE_URL, connection.baseUrl)
             putString(KEY_TOKEN, connection.token)
-            if (!preferences.contains(KEY_OWNER_TOKEN)) {
-                putString(KEY_OWNER_TOKEN, connection.token)
-            }
+            putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
+            putString(KEY_OWNER_TOKEN, ownerToken)
         }
     }
 
@@ -40,6 +46,7 @@ class PlexPreferences(context: Context) {
         preferences.edit {
             putString(KEY_BASE_URL, connection.baseUrl)
             putString(KEY_TOKEN, connection.token)
+            putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
             putString(KEY_ACTIVE_PROFILE_UUID, profileUuid)
         }
     }
@@ -53,6 +60,7 @@ class PlexPreferences(context: Context) {
             remove(KEY_TOKEN)
             remove(KEY_OWNER_TOKEN)
             remove(KEY_ACTIVE_PROFILE_UUID)
+            remove(KEY_CLIENT_IDENTIFIER)
         }
     }
 
@@ -70,5 +78,6 @@ class PlexPreferences(context: Context) {
         const val KEY_DISMISSED_CONTINUE = "dismissed_continue_watching"
         const val KEY_OWNER_TOKEN = "owner_token"
         const val KEY_ACTIVE_PROFILE_UUID = "active_profile_uuid"
+        const val KEY_CLIENT_IDENTIFIER = "client_identifier"
     }
 }

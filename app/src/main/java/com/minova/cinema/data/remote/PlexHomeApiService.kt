@@ -47,6 +47,7 @@ data class PlexHomeSwitchResponse(
 data class PlexResourceDto(
     @SerializedName("name") val name: String? = null,
     @SerializedName("provides") val provides: String? = null,
+    @SerializedName("owned") val owned: Boolean = false,
     @SerializedName("accessToken") val accessToken: String? = null,
     @SerializedName("clientIdentifier") val clientIdentifier: String? = null,
     @SerializedName("connections") val connections: List<PlexResourceConnectionDto> = emptyList(),

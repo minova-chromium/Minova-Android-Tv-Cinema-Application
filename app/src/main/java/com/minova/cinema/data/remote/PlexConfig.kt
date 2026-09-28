@@ -8,6 +8,7 @@ import java.util.UUID
 data class PlexConnection(
     val baseUrl: String,
     val token: String,
+    val clientIdentifier: String = BuildConfig.PLEX_CLIENT_ID,
 )
 
 object PlexConfig {
@@ -49,7 +50,7 @@ object PlexConfig {
     fun requestHeaders(connection: PlexConnection): Map<String, String> = mapOf(
         HEADER_ACCEPT to "application/json",
         HEADER_TOKEN to connection.token,
-        HEADER_CLIENT_ID to CLIENT_IDENTIFIER,
+        HEADER_CLIENT_ID to connection.clientIdentifier,
         "X-Plex-Product" to "Minova Cinema",
         "X-Plex-Version" to BuildConfig.VERSION_NAME,
         "X-Plex-Platform" to "Android",
@@ -119,7 +120,7 @@ class PlexUrlFactory(
             .appendQueryParameter("location", "lan")
             .appendQueryParameter("session", sessionId)
             .appendQueryParameter(PlexConfig.HEADER_TOKEN, connection.token)
-            .appendQueryParameter(PlexConfig.HEADER_CLIENT_ID, PlexConfig.CLIENT_IDENTIFIER)
+            .appendQueryParameter(PlexConfig.HEADER_CLIENT_ID, connection.clientIdentifier)
             .appendQueryParameter("X-Plex-Product", "Minova Cinema")
             .appendQueryParameter("X-Plex-Version", BuildConfig.VERSION_NAME)
             .appendQueryParameter("X-Plex-Platform", "Android")

@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.7/Minova-Cinema-2.9.7.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.8/Minova-Cinema-2.9.8.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -16,7 +16,7 @@
 
 Minova Cinema connects directly to a Plex Media Server and presents personal movies and series through adaptive touch-first phone and D-pad-native television interfaces. It is an independent Minova project and is not affiliated with Plex, Inc.
 
-- First-launch setup for a local Plex server address and token; no personal token is compiled into the app.
+- Secure Plex browser sign-in with automatic owned/shared server discovery, plus advanced manual server and token setup; no personal token is compiled into the app.
 - Separate Home, Movies, and Series destinations with shelves, full-library grids, genre filters, and global search.
 - A phone-native layout with compact media shelves, library shortcuts, persistent bottom navigation, software-keyboard search, touch playback controls, and portrait or landscape support.
 - Plex-synced watched state, watchlist, Continue Watching progress, manual mark watched/unwatched, and dismiss-from-continue actions.
@@ -51,12 +51,12 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 
 ## Install
 
-1. [Download the Minova Cinema 2.9.7 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.7/Minova-Cinema-2.9.7.apk).
+1. [Download the Minova Cinema 2.9.8 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.8/Minova-Cinema-2.9.8.apk).
 2. Transfer it to an Android 10-or-newer phone, tablet, or TV and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and allow local-network access when Android asks. This is required on Android 17 and newer so the app can reach Plex and Tapo devices on your LAN.
-4. Enter the Plex server address and token during setup.
+4. Select **Sign in with Plex**. On TV, scan the QR code with any phone browser; on a phone or tablet, open the Plex website directly. Minova discovers the available servers after approval.
 
-The Plex server can be entered as `192.168.1.10:32400` or as a complete `http://`/`https://` URL. Keep the token private—it grants access to the server.
+Advanced manual setup remains available for custom connections. The Plex server can be entered as `192.168.1.10:32400` or as a complete `http://`/`https://` URL. Keep manually entered tokens private—they grant access to the server.
 
 Versions 2.3.0 and 2.4.0 have an Android TV installer hand-off bug. Install 2.4.1 manually once if you are using either version; automatic updates work normally from 2.4.1 onward.
 

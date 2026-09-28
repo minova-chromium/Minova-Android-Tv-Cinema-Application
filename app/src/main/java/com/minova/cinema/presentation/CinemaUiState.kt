@@ -23,6 +23,25 @@ sealed interface CinemaUiState {
     data class Error(val message: String) : CinemaUiState
 }
 
+data class PlexServerChoice(
+    val id: String,
+    val name: String,
+    val owned: Boolean,
+)
+
+sealed interface PlexSignInUiState {
+    data object Idle : PlexSignInUiState
+    data object Starting : PlexSignInUiState
+    data class Waiting(
+        val code: String,
+        val authorizationUrl: String,
+    ) : PlexSignInUiState
+    data object Discovering : PlexSignInUiState
+    data class SelectServer(val servers: List<PlexServerChoice>) : PlexSignInUiState
+    data class Connecting(val serverName: String) : PlexSignInUiState
+    data class Error(val message: String) : PlexSignInUiState
+}
+
 sealed interface ShowDetailUiState {
     data object Idle : ShowDetailUiState
     data class Loading(val show: MediaContent) : ShowDetailUiState

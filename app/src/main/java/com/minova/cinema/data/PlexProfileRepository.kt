@@ -50,6 +50,7 @@ class PlexProfileRepository(
         return PlexConnection(
             baseUrl = ownerConnection.baseUrl,
             token = matchingServer?.accessToken?.takeIf(String::isNotBlank) ?: switchedToken,
+            clientIdentifier = ownerConnection.clientIdentifier,
         )
     }
 }

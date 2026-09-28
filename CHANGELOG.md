@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.9.8 — 2026-09-29
+
+- Added official Plex browser sign-in on Android phones, tablets, and TV so users can authorize Minova without finding or copying a Plex token.
+- Added automatic discovery of owned and shared Plex servers after sign-in, including a server picker and local-first connection selection with direct-remote and relay fallbacks.
+- Added a TV-friendly QR sign-in screen and a phone browser hand-off using Plex's prefilled four-character link-code flow; the Plex mobile app is not required.
+- Preserved advanced manual server and token setup for reverse proxies, Tailscale, and custom Plex addresses.
+- Added a stable per-install Plex client identity so authenticated sessions, Plex Home switching, playback, and saved connections consistently use the same device identity.
+
 ## 2.9.7 — 2026-09-28
 
 - Added bounded automatic playback recovery on Android: transient failures retry once, incompatible direct-play sources move to an unconstrained Plex compatibility stream, and persistent failures step down through 1080p, 720p, and 480p while preserving position and track choices.

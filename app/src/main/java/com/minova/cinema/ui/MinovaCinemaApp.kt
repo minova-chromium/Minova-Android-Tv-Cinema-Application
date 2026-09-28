@@ -220,6 +220,7 @@ private fun MainScreen(
     val profilesState by viewModel.profiles.collectAsStateWithLifecycle()
     val networkAssistantState by viewModel.networkAssistant.collectAsStateWithLifecycle()
     val offlineDownloads by viewModel.offlineDownloads.collectAsStateWithLifecycle()
+    val plexSignIn by viewModel.plexSignIn.collectAsStateWithLifecycle()
     val lightingState by cinemaLightingController.state.collectAsStateWithLifecycle()
     val tapoLightsState by tapoLightsViewModel.state.collectAsStateWithLifecycle()
     val routes = rememberRoutes()
@@ -268,6 +269,10 @@ private fun MainScreen(
         is CinemaUiState.Onboarding -> OnboardingScreen(
             connecting = state.connecting,
             error = state.error,
+            plexSignIn = plexSignIn,
+            onStartPlexSignIn = viewModel::startPlexSignIn,
+            onCancelPlexSignIn = viewModel::cancelPlexSignIn,
+            onSelectPlexServer = viewModel::selectPlexServer,
             onConnect = viewModel::connect,
         )
         CinemaUiState.Loading -> LoadingScreen()
