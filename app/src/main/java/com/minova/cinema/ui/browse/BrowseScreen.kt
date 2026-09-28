@@ -111,6 +111,7 @@ import com.minova.cinema.R
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
+import com.minova.cinema.domain.hasSeriesPlaybackProgress
 import com.minova.cinema.ui.theme.MinovaBlack
 import com.minova.cinema.ui.theme.MinovaCobalt
 import com.minova.cinema.ui.theme.MinovaCyan
@@ -149,6 +150,7 @@ fun BrowseScreen(
     onPlay: (MediaContent) -> Unit,
     onToggleMyList: (MediaContent) -> Unit,
     onSettings: () -> Unit,
+    onDownloads: () -> Unit = {},
     onWatchlistRefresh: () -> Unit,
     homePreferences: HomeLayoutPreferences = HomeLayoutPreferences(),
     onPlayFromBeginning: (MediaContent) -> Unit = onPlay,
@@ -167,6 +169,7 @@ fun BrowseScreen(
             onPlay = onPlay,
             onToggleMyList = onToggleMyList,
             onSettings = onSettings,
+            onDownloads = onDownloads,
             onWatchlistRefresh = onWatchlistRefresh,
             homePreferences = homePreferences,
             onPlayFromBeginning = onPlayFromBeginning,
@@ -967,7 +970,7 @@ private fun CinematicBrowser(
                 ),
             ) {
                 Column {
-                    Box(Modifier.fillMaxWidth().height(206.dp)) {
+                    Box(Modifier.fillMaxWidth().height(232.dp)) {
                         hero?.let { content ->
                             HeroContent(
                                 content = content,
@@ -986,6 +989,7 @@ private fun CinematicBrowser(
                                 },
                                 onOpen = onOpen,
                                 onPlay = onPlay,
+                                seriesHasProgress = hasSeriesPlaybackProgress(content, continueWatching),
                                 onToggleMyList = onToggleMyList,
                             )
                         }
@@ -1352,9 +1356,10 @@ private fun HeroContent(
     onDown: () -> Unit,
     onOpen: (MediaContent) -> Unit,
     onPlay: (MediaContent) -> Unit,
+    seriesHasProgress: Boolean,
     onToggleMyList: (MediaContent) -> Unit,
 ) {
-    val directlyPlayable = content.kind == MediaKind.Movie ||
+    val canStartPlayback = content.kind == MediaKind.Movie || content.kind == MediaKind.Show ||
         content.kind == MediaKind.Episode || content.kind == MediaKind.Extra
     val hasCarousel = carouselPosition != null && carouselCount > 1
     val watchlistFocus = remember { FocusRequester() }
@@ -1362,12 +1367,12 @@ private fun HeroContent(
     val titleWraps = content.title.length > 34
     Column(
         modifier = Modifier
-            .width(510.dp)
-            .height(206.dp)
-            .padding(start = 34.dp, top = 24.dp, bottom = 8.dp),
+            .width(570.dp)
+            .height(232.dp)
+            .padding(start = 34.dp, top = 16.dp, bottom = 8.dp),
     ) {
         if (hasCarousel) {
-            Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            Row(Modifier.padding(bottom = 5.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 HeroCarouselIndicator(activeIndex = requireNotNull(carouselPosition), count = carouselCount)
                 Text(
@@ -1381,13 +1386,17 @@ private fun HeroContent(
             modifier = Modifier.testTag("hero-title"),
             color = MinovaWhite,
             fontSize = when {
-                content.title.length > 55 -> 24.sp
+                content.title.length > 55 -> 22.sp
                 titleWraps -> 26.sp
                 else -> 34.sp
             },
-            lineHeight = if (titleWraps) 29.sp else 37.sp,
+            lineHeight = when {
+                content.title.length > 55 -> 25.sp
+                titleWraps -> 29.sp
+                else -> 37.sp
+            },
             fontWeight = FontWeight.Bold,
-            maxLines = 2,
+            maxLines = 3,
             overflow = TextOverflow.Ellipsis,
         )
         if (content.metadataLine.isNotBlank()) {
@@ -1404,9 +1413,9 @@ private fun HeroContent(
                 color = MinovaWhite.copy(alpha = 0.82f),
                 fontSize = 13.sp,
                 lineHeight = 17.sp,
-                maxLines = if (titleWraps) 1 else 2,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = 7.dp).testTag("hero-summary"),
             )
         }
         Spacer(Modifier.weight(1f))
@@ -1415,7 +1424,9 @@ private fun HeroContent(
         ) {
             HeroAction(
                 label = when {
-                    !directlyPlayable -> "View details"
+                    content.kind == MediaKind.Show && seriesHasProgress -> "Resume"
+                    content.kind == MediaKind.Show -> "Play"
+                    !canStartPlayback -> "View details"
                     content.viewOffsetMs > 0L -> "Resume"
                     else -> "Play"
                 },
@@ -1442,7 +1453,7 @@ private fun HeroContent(
                         else -> false
                     }
                 },
-                onClick = { if (directlyPlayable) onPlay(content) else onOpen(content) },
+                onClick = { if (canStartPlayback) onPlay(content) else onOpen(content) },
             )
             HeroAction(
                 label = if (inMyList) "In Watchlist" else "Watchlist",

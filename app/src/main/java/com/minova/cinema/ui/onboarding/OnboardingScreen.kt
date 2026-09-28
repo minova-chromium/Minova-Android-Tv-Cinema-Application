@@ -67,7 +67,12 @@ fun OnboardingScreen(
     var token by rememberSaveable { mutableStateOf("") }
     val serverFocus = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) { serverFocus.requestFocus() }
+    // A TV needs an initial D-pad target. On touch devices, requesting focus
+    // here also opens the keyboard and hides the token/connect controls before
+    // the user has chosen a field.
+    LaunchedEffect(handheld) {
+        if (!handheld) serverFocus.requestFocus()
+    }
 
     Box(
         modifier = Modifier

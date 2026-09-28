@@ -75,6 +75,8 @@ class PlayerSettingsShowcaseActivity : ComponentActivity() {
                     onAutoplayNextEpisodeChanged = {},
                     onInactivityTimeout = {},
                     onProgress = { _, _, _ -> },
+                    onHandoffRequested = { _, _, done -> done(null) },
+                    onHandoffFinished = {},
                     onSubtitleStreamSelected = { _, done -> done() },
                     onAudioStreamSelected = { _, done -> done() },
                     initialAudioDelayMs = 0,

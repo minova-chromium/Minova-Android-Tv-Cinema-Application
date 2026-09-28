@@ -7,6 +7,34 @@ data class PlexLibraryResponse(
     val mediaContainer: MediaContainer = MediaContainer(),
 )
 
+data class PlexDownloadResponse(
+    @SerializedName("MediaContainer")
+    val mediaContainer: PlexDownloadContainer = PlexDownloadContainer(),
+)
+
+data class PlexDownloadContainer(
+    @SerializedName("DownloadQueue") val queues: List<PlexDownloadQueue> = emptyList(),
+    @SerializedName("AddedQueueItems") val addedItems: List<PlexAddedDownloadItem> = emptyList(),
+    @SerializedName("DownloadQueueItem") val items: List<PlexDownloadQueueItem> = emptyList(),
+)
+
+data class PlexDownloadQueue(
+    @SerializedName("id") val id: Long = 0L,
+    @SerializedName("status") val status: String? = null,
+)
+
+data class PlexAddedDownloadItem(
+    @SerializedName("id") val id: Long = 0L,
+    @SerializedName("key") val key: String? = null,
+)
+
+data class PlexDownloadQueueItem(
+    @SerializedName("id") val id: Long = 0L,
+    @SerializedName("queueId") val queueId: Long = 0L,
+    @SerializedName("key") val key: String? = null,
+    @SerializedName("status") val status: String = "unknown",
+)
+
 data class MediaContainer(
     @SerializedName("size") val size: Int = 0,
     @SerializedName("offset") val offset: Int? = null,

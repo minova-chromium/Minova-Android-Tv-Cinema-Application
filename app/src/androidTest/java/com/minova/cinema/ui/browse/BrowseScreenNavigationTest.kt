@@ -41,6 +41,93 @@ class BrowseScreenNavigationTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun seriesHeroUsesPlayAndResumeWithoutClippingIntoContinueWatching() {
+        val show = MediaContent(
+            ratingKey = "show-1",
+            title = "Stuart Fails to Save the Universe",
+            secondaryTitle = null,
+            summary = "Comic-bookstore owner Stuart Bloom returns in a new series where he attempts to save the universe and keep his friends together.",
+            tagline = null,
+            year = 2026,
+            durationMs = null,
+            viewOffsetMs = 0L,
+            posterUrl = null,
+            backdropUrl = null,
+            contentRating = "TV-MA",
+            kind = MediaKind.Show,
+            childCount = 1,
+            viewedLeafCount = 1,
+        )
+        val continuingEpisode = show.copy(
+            ratingKey = "episode-2",
+            title = "Episode 2",
+            kind = MediaKind.Episode,
+            durationMs = 1_800_000L,
+            viewOffsetMs = 320_000L,
+            grandparentRatingKey = show.ratingKey,
+        )
+        var opened = 0
+        var played: MediaContent? = null
+        compose.setContent {
+            MinovaCinemaTheme {
+                BrowseScreen(
+                    catalog = CinemaCatalog(
+                        serverName = "Series test",
+                        movies = emptyList(),
+                        shows = listOf(show),
+                        continueWatching = listOf(continuingEpisode),
+                    ),
+                    onOpen = { opened++ },
+                    onPlay = { played = it },
+                    onToggleMyList = {},
+                    onSettings = {},
+                    onWatchlistRefresh = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag("hero-title").assertTextEquals(show.title)
+        compose.onNodeWithTag("hero-summary").assertIsDisplayed()
+        compose.onNodeWithTag("hero-primary-action").assertTextEquals("Resume").assertIsDisplayed()
+        val actionBottom = compose.onNodeWithTag("hero-primary-action").fetchSemanticsNode().boundsInRoot.bottom
+        val continueTop = compose.onNodeWithText("Continue Watching").fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Hero action must stay above Continue Watching", actionBottom <= continueTop)
+
+        compose.onNodeWithTag("hero-primary-action").performClick()
+        compose.runOnIdle {
+            assertEquals(0, opened)
+            assertEquals(show, played)
+        }
+    }
+
+    @Test
+    fun freshSeriesHeroSaysPlay() {
+        val show = MediaContent(
+            ratingKey = "fresh-show",
+            title = "Fresh Series",
+            secondaryTitle = null,
+            summary = "A series that has not been started.",
+            tagline = null,
+            year = 2026,
+            durationMs = null,
+            viewOffsetMs = 0L,
+            posterUrl = null,
+            backdropUrl = null,
+            contentRating = "TV-14",
+            kind = MediaKind.Show,
+        )
+        compose.setContent {
+            MinovaCinemaTheme {
+                BrowseScreen(
+                    catalog = CinemaCatalog("Series test", emptyList(), listOf(show), emptyList()),
+                    onOpen = {}, onPlay = {}, onToggleMyList = {}, onSettings = {}, onWatchlistRefresh = {},
+                )
+            }
+        }
+        compose.onNodeWithTag("hero-primary-action").assertTextEquals("Play")
+    }
+
+    @Test
     fun featuredCarouselRetainsPlayFocusForRemotePressesAndHeldRepeats() {
         var played: MediaContent? = null
         var watchlistChanges = 0

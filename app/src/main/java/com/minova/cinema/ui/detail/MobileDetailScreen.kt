@@ -29,6 +29,9 @@ import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
+import androidx.compose.material.icons.rounded.Downloading
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.runtime.Composable
@@ -52,6 +55,8 @@ import coil3.compose.AsyncImage
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaCredit
 import com.minova.cinema.domain.MediaKind
+import com.minova.cinema.offline.OfflineDownload
+import com.minova.cinema.offline.OfflineDownloadState
 import com.minova.cinema.presentation.ShowDetailUiState
 import com.minova.cinema.ui.browse.BrowseArtwork
 import com.minova.cinema.ui.theme.MinovaBlack
@@ -79,6 +84,10 @@ internal fun MobileDetailScreen(
     onRemoveFromContinueWatching: () -> Unit,
     onOpenEpisode: (MediaContent) -> Unit,
     onSeasonSelected: (MediaContent) -> Unit,
+    offlineDownloads: List<OfflineDownload>,
+    onDownload: (MediaContent) -> Unit,
+    onPlayOffline: (OfflineDownload) -> Unit,
+    onOpenDownloads: () -> Unit,
     onBack: () -> Unit,
 ) {
     val configuration = LocalConfiguration.current
@@ -115,6 +124,7 @@ internal fun MobileDetailScreen(
     val subtitleLabel = selectedSubtitle?.let { stream ->
         listOfNotNull(stream.language ?: stream.label, stream.codec?.uppercase()).joinToString(" · ")
     } ?: "Off"
+    val titleDownload = offlineDownloads.firstOrNull { it.ratingKey == content.ratingKey }
 
     Box(Modifier.fillMaxSize().background(MinovaNightDeep)) {
         LazyColumn(
@@ -231,6 +241,16 @@ internal fun MobileDetailScreen(
                     trailers.firstOrNull()?.let { trailer ->
                         item { MobileRoundAction("Trailer", Icons.Rounded.Movie) { onPlayTrailer(trailer) } }
                     }
+                    if (content.kind != MediaKind.Show) {
+                        item {
+                            MobileDownloadAction(
+                                download = titleDownload,
+                                onDownload = { onDownload(content) },
+                                onPlayOffline = onPlayOffline,
+                                onOpenDownloads = onOpenDownloads,
+                            )
+                        }
+                    }
                     item {
                         MobileRoundAction(
                             label = if (isWatched) "Watched" else "Mark watched",
@@ -304,7 +324,14 @@ internal fun MobileDetailScreen(
                                 item { MobileDetailMessage("Loading episodes…") }
                             } else {
                                 items(showDetail.episodes, key = MediaContent::ratingKey) { episode ->
-                                    MobileEpisodeRow(episode) { onOpenEpisode(episode) }
+                                    MobileEpisodeRow(
+                                        episode = episode,
+                                        download = offlineDownloads.firstOrNull { it.ratingKey == episode.ratingKey },
+                                        onClick = { onOpenEpisode(episode) },
+                                        onDownload = { onDownload(episode) },
+                                        onPlayOffline = onPlayOffline,
+                                        onOpenDownloads = onOpenDownloads,
+                                    )
                                 }
                             }
                         }
@@ -398,6 +425,41 @@ private fun MobileRoundAction(label: String, icon: ImageVector, onClick: () -> U
 }
 
 @Composable
+private fun MobileDownloadAction(
+    download: OfflineDownload?,
+    onDownload: () -> Unit,
+    onPlayOffline: (OfflineDownload) -> Unit,
+    onOpenDownloads: () -> Unit,
+) {
+    val label = when (download?.state) {
+        OfflineDownloadState.Preparing -> "Preparing"
+        OfflineDownloadState.Downloading -> "${(download.progress * 100).toInt()}%"
+        OfflineDownloadState.Paused -> "Waiting"
+        OfflineDownloadState.Ready -> "Downloaded"
+        OfflineDownloadState.Failed -> "Retry"
+        null -> "Download"
+    }
+    val icon = when (download?.state) {
+        OfflineDownloadState.Preparing,
+        OfflineDownloadState.Downloading,
+        OfflineDownloadState.Paused,
+        -> Icons.Rounded.Downloading
+        OfflineDownloadState.Ready -> Icons.Rounded.DownloadDone
+        else -> Icons.Rounded.Download
+    }
+    MobileRoundAction(label, icon) {
+        when (download?.state) {
+            OfflineDownloadState.Ready -> onPlayOffline(download)
+            OfflineDownloadState.Preparing,
+            OfflineDownloadState.Downloading,
+            OfflineDownloadState.Paused,
+            -> onOpenDownloads()
+            OfflineDownloadState.Failed, null -> onDownload()
+        }
+    }
+}
+
+@Composable
 private fun MobileTechnicalRow(label: String, value: String, accent: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(label, color = MinovaMuted, fontSize = 16.sp, modifier = Modifier.width(105.dp))
@@ -439,7 +501,14 @@ private fun MobileSeasonCard(season: MediaContent, selected: Boolean, onClick: (
 }
 
 @Composable
-private fun MobileEpisodeRow(episode: MediaContent, onClick: () -> Unit) {
+private fun MobileEpisodeRow(
+    episode: MediaContent,
+    download: OfflineDownload?,
+    onClick: () -> Unit,
+    onDownload: () -> Unit,
+    onPlayOffline: (OfflineDownload) -> Unit,
+    onOpenDownloads: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(12.dp)).background(MinovaSurface).clickable(onClick = onClick).padding(10.dp),
@@ -470,6 +539,40 @@ private fun MobileEpisodeRow(episode: MediaContent, onClick: () -> Unit) {
                 color = if (episode.isWatched) MinovaCyan else MinovaMuted,
                 maxLines = 1,
                 fontSize = 12.sp,
+            )
+        }
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).clickable {
+                when (download?.state) {
+                    OfflineDownloadState.Ready -> onPlayOffline(download)
+                    OfflineDownloadState.Preparing,
+                    OfflineDownloadState.Downloading,
+                    OfflineDownloadState.Paused,
+                    -> onOpenDownloads()
+                    OfflineDownloadState.Failed, null -> onDownload()
+                }
+            },
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.material3.Icon(
+                when (download?.state) {
+                    OfflineDownloadState.Ready -> Icons.Rounded.DownloadDone
+                    OfflineDownloadState.Preparing,
+                    OfflineDownloadState.Downloading,
+                    OfflineDownloadState.Paused,
+                    -> Icons.Rounded.Downloading
+                    else -> Icons.Rounded.Download
+                },
+                contentDescription = when (download?.state) {
+                    OfflineDownloadState.Ready -> "Play downloaded episode"
+                    OfflineDownloadState.Failed -> "Retry download"
+                    OfflineDownloadState.Preparing,
+                    OfflineDownloadState.Downloading,
+                    OfflineDownloadState.Paused,
+                    -> "Download in progress"
+                    null -> "Download episode"
+                },
+                tint = MinovaCyan,
             )
         }
         androidx.compose.material3.Icon(Icons.Rounded.PlayArrow, "Play", tint = MinovaCyan)

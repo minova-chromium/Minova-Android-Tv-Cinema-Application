@@ -106,6 +106,7 @@ data class MediaContent(
     val seasonNumber: Int? = null,
     val episodeNumber: Int? = null,
     val childCount: Int? = null,
+    val viewedLeafCount: Int = 0,
     val parentRatingKey: String? = null,
     val grandparentRatingKey: String? = null,
     val isWatched: Boolean = false,

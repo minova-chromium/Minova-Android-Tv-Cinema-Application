@@ -2,13 +2,42 @@ package com.minova.cinema.data.remote
 
 import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.DELETE
 import retrofit2.http.Header
+import retrofit2.http.Headers
 import retrofit2.http.Path
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Query
 import retrofit2.http.Url
 
 interface PlexApiService {
+    @Headers("X-Plex-Pms-Api-Version: 1.0.0")
+    @POST("downloadQueue")
+    suspend fun createDownloadQueue(): Response<PlexDownloadResponse>
+
+    @Headers("X-Plex-Pms-Api-Version: 1.0.0")
+    @POST("downloadQueue/{queueId}/add")
+    suspend fun addToDownloadQueue(
+        @Path("queueId") queueId: Long,
+        @Query("keys") keys: String,
+        @Query("advancedSubtitles") advancedSubtitles: String = "text",
+    ): Response<PlexDownloadResponse>
+
+    @Headers("X-Plex-Pms-Api-Version: 1.0.0")
+    @GET("downloadQueue/{queueId}/items/{itemId}")
+    suspend fun getDownloadQueueItem(
+        @Path("queueId") queueId: Long,
+        @Path("itemId") itemId: Long,
+    ): Response<PlexDownloadResponse>
+
+    @Headers("X-Plex-Pms-Api-Version: 1.0.0")
+    @DELETE("downloadQueue/{queueId}/items/{itemId}")
+    suspend fun deleteDownloadQueueItem(
+        @Path("queueId") queueId: Long,
+        @Path("itemId") itemId: Long,
+    ): Response<Unit>
+
     @GET("library/sections")
     suspend fun getLibrarySections(): PlexLibraryResponse
 

@@ -6,6 +6,11 @@ import com.minova.cinema.data.remote.MediaContainer
 import com.minova.cinema.data.remote.Metadata
 import com.minova.cinema.data.remote.PlexApiService
 import com.minova.cinema.data.remote.PlexConnection
+import com.minova.cinema.data.remote.PlexAddedDownloadItem
+import com.minova.cinema.data.remote.PlexDownloadContainer
+import com.minova.cinema.data.remote.PlexDownloadQueue
+import com.minova.cinema.data.remote.PlexDownloadQueueItem
+import com.minova.cinema.data.remote.PlexDownloadResponse
 import com.minova.cinema.data.remote.PlexLibraryResponse
 import com.minova.cinema.data.remote.PlexWatchlistApiService
 import com.minova.cinema.data.remote.TranscodeSession
@@ -13,6 +18,7 @@ import com.minova.cinema.data.remote.Session
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.PlexPlaybackMode
+import okhttp3.ResponseBody.Companion.toResponseBody
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -22,6 +28,101 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
 class PlexRepositoryWatchlistTest {
+    @Test
+    fun `offline download uses Plex queue and exact metadata key`() = runBlocking {
+        val api = FakePlexApi(emptyList(), emptyMap())
+        val repository = PlexRepository(
+            PlexConnection("http://127.0.0.1:32400/", "token"),
+            api,
+            FakeWatchlistApi(emptyMap(), 0),
+        )
+        val content = MediaContent(
+            ratingKey = "download-42",
+            title = "Offline test",
+            secondaryTitle = null,
+            summary = null,
+            tagline = null,
+            year = 2026,
+            durationMs = 90_000L,
+            viewOffsetMs = 0L,
+            posterUrl = null,
+            backdropUrl = null,
+            contentRating = null,
+            kind = MediaKind.Movie,
+        )
+
+        assertEquals(PlexDownloadTicket(7L, 9L), repository.createOfflineDownload(content))
+        assertEquals("/library/metadata/download-42", api.lastDownloadKey)
+    }
+
+    @Test
+    fun `offline download preserves Plex Pass denial`() = runBlocking {
+        val api = FakePlexApi(emptyList(), emptyMap()).apply {
+            createDownloadResponse = Response.error(403, "Forbidden".toResponseBody())
+        }
+        val repository = PlexRepository(
+            PlexConnection("http://127.0.0.1:32400/", "token"),
+            api,
+            FakeWatchlistApi(emptyMap(), 0),
+        )
+        val content = MediaContent(
+            ratingKey = "download-denied",
+            title = "Denied",
+            secondaryTitle = null,
+            summary = null,
+            tagline = null,
+            year = null,
+            durationMs = null,
+            viewOffsetMs = 0L,
+            posterUrl = null,
+            backdropUrl = null,
+            contentRating = null,
+            kind = MediaKind.Movie,
+        )
+
+        val error = runCatching { repository.createOfflineDownload(content) }.exceptionOrNull()
+
+        assertTrue(error is PlexDownloadUnavailableException)
+        assertTrue(error?.message.orEmpty().contains("Plex Pass"))
+    }
+
+    @Test
+    fun `handoff stores the exact paused position on Plex`() = runBlocking {
+        val api = FakePlexApi(emptyList(), emptyMap())
+        val repository = PlexRepository(
+            PlexConnection("http://127.0.0.1:32400/", "token"),
+            api,
+            FakeWatchlistApi(emptyMap(), 0),
+        )
+        val content = MediaContent(
+            ratingKey = "handoff-42",
+            title = "Handoff test",
+            secondaryTitle = null,
+            summary = null,
+            tagline = null,
+            year = 2026,
+            durationMs = 7_200_000L,
+            viewOffsetMs = 0L,
+            posterUrl = null,
+            backdropUrl = null,
+            contentRating = null,
+            kind = MediaKind.Movie,
+        )
+
+        repository.reportTimeline(content, 1_234_567L, 7_200_000L, "paused")
+
+        assertEquals(
+            FakePlexApi.TimelineCall(
+                ratingKey = "handoff-42",
+                key = "/library/metadata/handoff-42",
+                state = "paused",
+                timeMs = 1_234_567L,
+                durationMs = 7_200_000L,
+            ),
+            api.lastTimeline,
+        )
+    }
+
     @Test
     fun `live Plex session reports transcode components and reason`() = runBlocking {
         val api = FakePlexApi(emptyList(), emptyMap()).apply {
@@ -248,9 +349,53 @@ private class FakePlexApi(
     private val libraryItems: List<Metadata>,
     private val resolvedItems: Map<String, Metadata>,
 ) : PlexApiService {
+    data class TimelineCall(
+        val ratingKey: String,
+        val key: String,
+        val state: String,
+        val timeMs: Long,
+        val durationMs: Long,
+    )
+
     val resolveRequests = mutableListOf<String>()
     val containerStarts = mutableListOf<Int>()
     var sessionsResponse: PlexLibraryResponse = PlexLibraryResponse()
+    var lastTimeline: TimelineCall? = null
+    var createDownloadResponse: Response<PlexDownloadResponse> = Response.success(
+        PlexDownloadResponse(
+            PlexDownloadContainer(queues = listOf(PlexDownloadQueue(id = 7L))),
+        ),
+    )
+    var lastDownloadKey: String? = null
+
+    override suspend fun createDownloadQueue(): Response<PlexDownloadResponse> = createDownloadResponse
+
+    override suspend fun addToDownloadQueue(
+        queueId: Long,
+        keys: String,
+        advancedSubtitles: String,
+    ): Response<PlexDownloadResponse> {
+        lastDownloadKey = keys
+        return Response.success(
+            PlexDownloadResponse(
+                PlexDownloadContainer(addedItems = listOf(PlexAddedDownloadItem(id = 9L, key = keys))),
+            ),
+        )
+    }
+
+    override suspend fun getDownloadQueueItem(
+        queueId: Long,
+        itemId: Long,
+    ): Response<PlexDownloadResponse> = Response.success(
+        PlexDownloadResponse(
+            PlexDownloadContainer(
+                items = listOf(PlexDownloadQueueItem(id = itemId, queueId = queueId, status = "available")),
+            ),
+        ),
+    )
+
+    override suspend fun deleteDownloadQueueItem(queueId: Long, itemId: Long): Response<Unit> =
+        Response.success(Unit)
 
     override suspend fun getLibrarySections(): PlexLibraryResponse = PlexLibraryResponse(
         MediaContainer(
@@ -309,7 +454,10 @@ private class FakePlexApi(
         state: String,
         timeMs: Long,
         durationMs: Long,
-    ) = Response.success(Unit)
+    ): Response<Unit> {
+        lastTimeline = TimelineCall(ratingKey, key, state, timeMs, durationMs)
+        return Response.success(Unit)
+    }
 
     override suspend fun selectSubtitle(
         partId: Long,

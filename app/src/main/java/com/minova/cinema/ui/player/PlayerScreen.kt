@@ -1,6 +1,8 @@
 package com.minova.cinema.ui.player
 
 import android.app.Activity
+import android.app.PendingIntent
+import android.content.Intent
 import androidx.compose.runtime.mutableLongStateOf
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -33,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DevicesOther
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -86,6 +89,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.session.MediaSession
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.MaterialTheme
@@ -94,6 +98,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
+import com.minova.cinema.MainActivity
 import com.minova.cinema.data.remote.PlaybackQuality
 import com.minova.cinema.data.remote.PlexConfig
 import com.minova.cinema.data.remote.PlexConnection
@@ -121,6 +126,7 @@ import java.util.UUID
 private const val NEXT_EPISODE_COUNTDOWN_SECONDS = 10
 private const val INACTIVITY_PROMPT_SECONDS = 30
 private const val PLAYLIST_PRELOAD_DURATION_US = 30L * 1_000_000L
+private const val PLAYBACK_STARTUP_TIMEOUT_MS = 15_000L
 
 private data class SubtitleTrackOption(
     val id: String,
@@ -150,6 +156,7 @@ fun PlayerScreen(
     cinemaModeActive: Boolean,
     showMinovaTrailerPreRoll: Boolean,
     isTrailerRecordingMode: Boolean,
+    isInPictureInPictureMode: Boolean = false,
     connection: PlexConnection,
     autoplayNextEpisode: Boolean,
     inactivityCheckEnabled: Boolean,
@@ -161,6 +168,12 @@ fun PlayerScreen(
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
     onInactivityTimeout: () -> Unit,
     onProgress: (positionMs: Long, durationMs: Long, state: String) -> Unit,
+    onHandoffRequested: (
+        positionMs: Long,
+        durationMs: Long,
+        onComplete: (errorMessage: String?) -> Unit,
+    ) -> Unit,
+    onHandoffFinished: () -> Unit,
     onSubtitleStreamSelected: (subtitleStreamId: Long?, onComplete: () -> Unit) -> Unit,
     onAudioStreamSelected: (audioStreamId: Long, onComplete: () -> Unit) -> Unit,
     initialAudioDelayMs: Int,
@@ -189,6 +202,7 @@ fun PlayerScreen(
     }
 
     val context = LocalContext.current
+    val pictureInPictureHost = context as? PictureInPictureHost
     DisposableEffect(handheld, context) {
         val activity = context as? Activity
         if (handheld && activity != null) {
@@ -243,9 +257,19 @@ fun PlayerScreen(
     }
     var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
+    var handoffInProgress by remember(content.ratingKey) { mutableStateOf(false) }
+    var handoffCommitted by remember(content.ratingKey) { mutableStateOf(false) }
+    val latestHandoffCommitted by rememberUpdatedState(handoffCommitted)
     var recoveryMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var recoveryPosition by remember(content.ratingKey) { mutableLongStateOf(content.viewOffsetMs) }
     var retryAfterSourceChange by remember(content.ratingKey) { mutableStateOf(false) }
+    var observedPlaybackState by remember(content.ratingKey) { mutableStateOf(Player.STATE_IDLE) }
+    var retriedRecoverySources by remember(content.ratingKey) { mutableStateOf(emptySet<String>()) }
+    var attemptedRecoveryQualities by remember(content.ratingKey) {
+        mutableStateOf(emptySet<PlaybackQuality>())
+    }
+    var forceCompatibilityStream by remember(content.ratingKey) { mutableStateOf(false) }
+    var readyRecoverySources by remember(content.ratingKey) { mutableStateOf(emptySet<String>()) }
     var diagnostics by remember(content.ratingKey) {
         mutableStateOf(
             PlaybackDiagnostics(
@@ -364,9 +388,28 @@ fun PlayerScreen(
                 )
             }
     }
+    val mediaSessionActivity = remember(context) {
+        PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+    val mediaSession = remember(player, handheld, mediaSessionActivity) {
+        if (handheld) {
+            MediaSession.Builder(context, player)
+                .setSessionActivity(mediaSessionActivity)
+                .build()
+        } else {
+            null
+        }
+    }
 
     fun mainFeatureMediaItem(quality: PlaybackQuality): MediaItem {
-        val uri = if (quality == PlaybackQuality.Original) {
+        val uri = if (quality == PlaybackQuality.Original && !forceCompatibilityStream) {
             playback.directUrl.toUri().buildUpon()
                 .appendQueryParameter("X-Plex-Session-Identifier", playbackSessionId)
                 .build()
@@ -385,7 +428,12 @@ fun PlayerScreen(
         return MediaItem.Builder()
             .setUri(uri)
             .setMediaId("feature:${content.ratingKey}")
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(content.title).build())
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(content.title)
+                    .setArtworkUri((content.backdropUrl ?: content.posterUrl)?.toUri())
+                    .build(),
+            )
             .setSubtitleConfigurations(playback.subtitles.mapNotNull(::subtitleConfiguration))
             .build()
     }
@@ -405,9 +453,58 @@ fun PlayerScreen(
         .build()
 
     fun activeSourceKey(): String = if (selectedQuality == PlaybackQuality.Original) {
-        selectedQuality.name
+        if (forceCompatibilityStream) {
+            "${selectedQuality.name}:compatibility:$selectedPlexSubtitleId:$selectedPlexAudioId"
+        } else {
+            "${selectedQuality.name}:direct"
+        }
     } else {
         "${selectedQuality.name}:$selectedPlexSubtitleId:$selectedPlexAudioId"
+    }
+
+    fun attemptAutomaticRecovery(
+        failure: PlaybackFailureKind,
+        reason: String,
+    ): Boolean {
+        val sourceKey = activeSourceKey()
+        return when (
+            val recovery = PlaybackRecoveryPolicy.decide(
+                failure = failure,
+                currentQuality = selectedQuality,
+                currentSourceRetried = sourceKey in retriedRecoverySources,
+                usingCompatibilityStream = forceCompatibilityStream,
+                attemptedQualities = attemptedRecoveryQualities,
+            )
+        ) {
+            AutomaticPlaybackRecovery.RetryCurrent -> {
+                retriedRecoverySources = retriedRecoverySources + sourceKey
+                recoveryPosition = player.currentPosition.coerceAtLeast(0L)
+                recoveryMessage = null
+                playbackMessage = "$reason Retrying from ${formatPlayerTimestamp(recoveryPosition)}…"
+                player.seekTo(mainFeatureIndex, recoveryPosition)
+                player.prepare()
+                player.play()
+                true
+            }
+            AutomaticPlaybackRecovery.UseCompatibilityStream -> {
+                recoveryPosition = player.currentPosition.coerceAtLeast(0L)
+                recoveryMessage = null
+                retryAfterSourceChange = true
+                playbackMessage = "$reason Opening a Plex compatibility stream…"
+                forceCompatibilityStream = true
+                true
+            }
+            is AutomaticPlaybackRecovery.ChangeQuality -> {
+                attemptedRecoveryQualities = attemptedRecoveryQualities + recovery.quality
+                recoveryPosition = player.currentPosition.coerceAtLeast(0L)
+                recoveryMessage = null
+                retryAfterSourceChange = true
+                playbackMessage = "$reason Switching to ${recovery.quality.label}…"
+                selectedQuality = recovery.quality
+                true
+            }
+            AutomaticPlaybackRecovery.AskUser -> false
+        }
     }
 
     LaunchedEffect(
@@ -443,7 +540,13 @@ fun PlayerScreen(
         playlistInitialized = true
     }
 
-    LaunchedEffect(selectedQuality, selectedPlexSubtitleId, selectedPlexAudioId, player) {
+    LaunchedEffect(
+        selectedQuality,
+        selectedPlexSubtitleId,
+        selectedPlexAudioId,
+        forceCompatibilityStream,
+        player,
+    ) {
         if (!playlistInitialized) return@LaunchedEffect
         val sourceKey = activeSourceKey()
         if (sourceKey == lastAppliedSourceKey) return@LaunchedEffect
@@ -457,6 +560,31 @@ fun PlayerScreen(
             player.play()
         }
         lastAppliedSourceKey = sourceKey
+    }
+
+    // Do not leave the user staring at an endless spinner when the original
+    // file or a high-bitrate transcode never becomes ready. This only watches
+    // the first startup of each source; ordinary seek buffering is untouched.
+    LaunchedEffect(observedPlaybackState, activePlaylistIndex, selectedQuality, player) {
+        val sourceKey = activeSourceKey()
+        if (
+            observedPlaybackState != Player.STATE_BUFFERING ||
+            activePlaylistIndex != mainFeatureIndex ||
+            sourceKey in readyRecoverySources ||
+            !player.playWhenReady
+        ) return@LaunchedEffect
+        delay(PLAYBACK_STARTUP_TIMEOUT_MS)
+        if (
+            player.playbackState == Player.STATE_BUFFERING &&
+            player.currentMediaItemIndex == mainFeatureIndex &&
+            activeSourceKey() == sourceKey &&
+            player.playWhenReady
+        ) {
+            attemptAutomaticRecovery(
+                failure = PlaybackFailureKind.StartupTimeout,
+                reason = "Playback is taking too long to start.",
+            )
+        }
     }
 
     // Plex IDs are not Media3 group indices. Match the remembered stream only
@@ -521,6 +649,18 @@ fun PlayerScreen(
     // period in an HLS stream. Rebuild the D-pad menu from Player.Tracks each
     // time so selection is always based on Media3's real active track groups.
     DisposableEffect(player) {
+        fun reportPictureInPictureAvailability() {
+            val size = player.videoSize
+            pictureInPictureHost?.updatePictureInPicturePlayback(
+                active = handheld &&
+                    player.playWhenReady &&
+                    player.playbackState != Player.STATE_IDLE &&
+                    player.playbackState != Player.STATE_ENDED,
+                videoWidth = size.width,
+                videoHeight = size.height,
+            )
+        }
+
         fun reportPlaybackActivity() {
             val activelyPlaying = player.playbackState == Player.STATE_READY && player.isPlaying
             latestPlaybackActivityChanged(activelyPlaying)
@@ -616,6 +756,7 @@ fun PlayerScreen(
                     width = videoSize.width,
                     height = videoSize.height,
                 ) ?: activeVideoResolution
+                reportPictureInPictureAvailability()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -628,6 +769,22 @@ fun PlayerScreen(
                     return
                 }
                 recoveryPosition = player.currentPosition.coerceAtLeast(0L)
+                val failure = when (error.errorCode) {
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> PlaybackFailureKind.Network
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> PlaybackFailureKind.Http
+                    PlaybackException.ERROR_CODE_DECODING_FAILED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED -> PlaybackFailureKind.Decoder
+                    else -> PlaybackFailureKind.Other
+                }
+                val automaticReason = when (failure) {
+                    PlaybackFailureKind.Network -> "The Plex connection was interrupted."
+                    PlaybackFailureKind.Http -> "Plex rejected the current stream."
+                    PlaybackFailureKind.Decoder -> "This device cannot decode the current stream."
+                    else -> "Playback stopped unexpectedly."
+                }
+                if (attemptAutomaticRecovery(failure, automaticReason)) return
                 player.pause()
                 recoveryMessage = when (error.errorCode) {
                     PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
@@ -641,11 +798,14 @@ fun PlayerScreen(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                observedPlaybackState = playbackState
                 reportPlaybackActivity()
+                reportPictureInPictureAvailability()
                 if (playbackState == Player.STATE_READY) {
+                    readyRecoverySources = readyRecoverySources + activeSourceKey()
                     playbackMessage = null
                     if (player.currentMediaItemIndex == mainFeatureIndex) {
-                        val key = "${selectedQuality.name}:$playbackSessionId"
+                        val key = "${activeSourceKey()}:$playbackSessionId"
                         if (lastDiagnosticsKey != key) {
                             lastDiagnosticsKey = key
                             latestDiagnosticsRequested(
@@ -663,12 +823,19 @@ fun PlayerScreen(
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 reportPlaybackActivity()
+                reportPictureInPictureAvailability()
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                reportPictureInPictureAvailability()
             }
         }
         player.addListener(listener)
         reportPlaybackActivity()
+        reportPictureInPictureAvailability()
         onDispose {
             player.removeListener(listener)
+            pictureInPictureHost?.updatePictureInPicturePlayback(active = false)
             latestPlaybackActivityChanged(false)
             if (cinemaModeActive) onCinemaPlaybackChanged(false)
         }
@@ -767,15 +934,43 @@ fun PlayerScreen(
         showControlsForInteraction()
     }
 
+    fun continueElsewhere() {
+        if (handoffInProgress || !isMainFeatureActive) return
+        player.pause()
+        val duration = player.duration.takeIf { it > 0L } ?: content.durationMs ?: 0L
+        val position = player.currentPosition.coerceAtLeast(0L)
+        handoffInProgress = true
+        playbackMessage = "Saving your position to Plex…"
+        onHandoffRequested(position, duration) { errorMessage ->
+            handoffInProgress = false
+            if (errorMessage == null) {
+                handoffCommitted = true
+                playbackMessage = "Ready on your other device at ${formatPlayerTimestamp(position)}"
+            } else {
+                playbackMessage = "Couldn’t save your position. $errorMessage"
+            }
+        }
+    }
+
+    LaunchedEffect(handoffCommitted) {
+        if (handoffCommitted) {
+            delay(1_200)
+            onHandoffFinished()
+        }
+    }
+
     // Pause when the app loses the foreground and release every decoder,
     // surface and AudioTrack when this Composable leaves navigation.
-    DisposableEffect(player, lifecycleOwner) {
+    DisposableEffect(player, mediaSession, lifecycleOwner) {
         var resumePlayback = true
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
                     resumePlayback = player.playWhenReady
-                    player.pause()
+                    val activity = context as? Activity
+                    if (!(handheld && activity?.isInPictureInPictureMode == true)) {
+                        player.pause()
+                    }
                 }
                 Lifecycle.Event.ON_START -> if (resumePlayback) resumeSynchronized()
                 else -> Unit
@@ -783,11 +978,12 @@ fun PlayerScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            if (player.currentMediaItemIndex == mainFeatureIndex) {
+            if (!latestHandoffCommitted && player.currentMediaItemIndex == mainFeatureIndex) {
                 val duration = player.duration.takeIf { it > 0 } ?: content.durationMs ?: 0L
                 latestProgress(player.currentPosition, duration, "stopped")
             }
             lifecycleOwner.lifecycle.removeObserver(observer)
+            mediaSession?.release()
             playerView?.player = null
             player.release()
             renderersFactory.clearPendingSubtitleCues()
@@ -974,6 +1170,7 @@ fun PlayerScreen(
                 },
         )
 
+        if (!isInPictureInPictureMode) {
         // PlayerView's controller remains disabled so television remotes keep
         // their deterministic behavior. Phones receive a transparent tap
         // target above the video that reveals the shared Minova controls.
@@ -1081,6 +1278,16 @@ fun PlayerScreen(
                             onClick = { seekBy(player.seekForwardIncrement); onUserInteraction() },
                             modifier = Modifier.testTag("player-seek-forward"),
                         )
+                        TouchPlayerIconButton(
+                            icon = Icons.Rounded.DevicesOther,
+                            contentDescription = "Continue on another device",
+                            onClick = {
+                                continueElsewhere()
+                                onUserInteraction()
+                            },
+                            enabled = !handoffInProgress && isMainFeatureActive,
+                            modifier = Modifier.testTag("player-handoff"),
+                        )
                         val subtitlesAvailable = subtitleTracks.isNotEmpty() || playback.subtitles.isNotEmpty()
                         val selectedSubtitleLabel = subtitleTracks
                             .firstOrNull { it.id == selectedSubtitleId }
@@ -1104,6 +1311,13 @@ fun PlayerScreen(
                             modifier = Modifier.testTag("player-subtitles-toggle"),
                         )
                     } else {
+                        OutlinedButton(
+                            onClick = ::continueElsewhere,
+                            enabled = !handoffInProgress && isMainFeatureActive,
+                            modifier = Modifier.testTag("player-handoff"),
+                        ) {
+                            Text(if (handoffInProgress) "Saving…" else "Continue elsewhere")
+                        }
                         Button(
                             onClick = {
                             bottomControlsFocused = false
@@ -1220,6 +1434,7 @@ fun PlayerScreen(
                 plexSubtitles = playback.subtitles,
                 selectedPlexSubtitleId = selectedPlexSubtitleId,
                 onQualitySelected = {
+                    forceCompatibilityStream = false
                     selectedQuality = it
                     settingsVisible = false
                 },
@@ -1322,6 +1537,7 @@ fun PlayerScreen(
                         else -> PlaybackQuality.Sd
                     }
                 }, onReturn = onReturnToDetails)
+        }
         }
     }
 }
@@ -2113,22 +2329,6 @@ private fun audioDetail(
     channels?.let { add(if (it == 1) "Mono" else "$it channels") }
     if (passthroughSupported) add("Direct HDMI")
 }.ifEmpty { listOf("Audio track") }.joinToString("  •  ")
-
-private fun fallbackQualityFor(
-    current: PlaybackQuality,
-    error: PlaybackException,
-): PlaybackQuality? {
-    val decoderFailure = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
-        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
-        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
-    if (!decoderFailure) return null
-    return when (current) {
-        PlaybackQuality.Original, PlaybackQuality.UltraHd -> PlaybackQuality.FullHd
-        PlaybackQuality.FullHd -> PlaybackQuality.Hd
-        PlaybackQuality.Hd -> PlaybackQuality.Sd
-        PlaybackQuality.Sd -> null
-    }
-}
 
 private fun formatPlayerTimeLeft(remainingMs: Long): String {
     val totalMinutes = (remainingMs + 59_999L) / 60_000L

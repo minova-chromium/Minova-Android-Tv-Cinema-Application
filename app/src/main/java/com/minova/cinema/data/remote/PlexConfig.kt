@@ -14,6 +14,7 @@ object PlexConfig {
     const val HEADER_ACCEPT = "Accept"
     const val HEADER_TOKEN = "X-Plex-Token"
     const val HEADER_CLIENT_ID = "X-Plex-Client-Identifier"
+    const val HEADER_PMS_API_VERSION = "X-Plex-Pms-Api-Version"
     const val CLIENT_IDENTIFIER = BuildConfig.PLEX_CLIENT_ID
 
     fun normalizeServerAddress(input: String): String {

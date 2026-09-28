@@ -17,7 +17,12 @@ import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.CinemaPlaybackPlan
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.PlaybackDiagnostics
+import com.minova.cinema.domain.selectSeriesPlaybackEpisode
 import com.minova.cinema.data.remote.PlaybackQuality
+import com.minova.cinema.offline.OfflineDownload
+import com.minova.cinema.offline.OfflineDownloadState
+import com.minova.cinema.offline.OfflineDownloadsStore
+import com.minova.cinema.domain.PlaybackSource
 import com.minova.cinema.tvhome.TvHomePublisher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -25,6 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.UnknownHostException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -34,6 +42,7 @@ class CinemaViewModel(
     private val preferences: PlexPreferences,
     private val catalogCache: PlexCatalogCache,
     private val tvHomePublisher: TvHomePublisher,
+    private val offlineDownloadsStore: OfflineDownloadsStore,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<CinemaUiState>(CinemaUiState.Loading)
     val uiState: StateFlow<CinemaUiState> = _uiState.asStateFlow()
@@ -50,11 +59,15 @@ class CinemaViewModel(
     private val _networkAssistant = MutableStateFlow<NetworkAssistantUiState>(NetworkAssistantUiState.Idle)
     val networkAssistant: StateFlow<NetworkAssistantUiState> = _networkAssistant.asStateFlow()
 
+    private val _offlineDownloads = MutableStateFlow<List<OfflineDownload>>(emptyList())
+    val offlineDownloads: StateFlow<List<OfflineDownload>> = _offlineDownloads.asStateFlow()
+
     private var connection: PlexConnection? = null
     private var repository: PlexRepository? = null
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
     private var watchlistJob: Job? = null
+    private var offlineDownloadsJob: Job? = null
 
     init {
         val saved = preferences.readConnection()
@@ -188,6 +201,64 @@ class CinemaViewModel(
         }
     }
 
+    fun refreshOfflineDownloads() {
+        startOfflineDownloadMonitor()
+    }
+
+    fun downloadForOffline(content: MediaContent, onComplete: (String) -> Unit) {
+        val currentConnection = connection
+            ?: return onComplete("Connect to your Plex server before downloading.")
+        val currentRepository = repository
+            ?: return onComplete("Connect to your Plex server before downloading.")
+        viewModelScope.launch {
+            try {
+                val playable = currentRepository.loadPlayable(content.ratingKey)
+                    ?: error("Plex did not return a downloadable media item.")
+                withContext(Dispatchers.IO) {
+                    val existing = offlineDownloadsStore.list(currentConnection)
+                        .firstOrNull { it.ratingKey == playable.ratingKey }
+                    if (existing?.state == OfflineDownloadState.Failed) {
+                        offlineDownloadsStore.remove(existing)
+                    }
+                    offlineDownloadsStore.stage(playable, currentConnection)
+                }
+                startOfflineDownloadMonitor()
+                onComplete("Preparing download with Plex…")
+            } catch (error: Exception) {
+                onComplete(error.userMessage())
+            }
+        }
+    }
+
+    fun removeOfflineDownload(download: OfflineDownload) {
+        val currentRepository = repository
+        viewModelScope.launch {
+            download.ticket?.let { ticket ->
+                runCatching { currentRepository?.cancelOfflineDownload(ticket) }
+            }
+            withContext(Dispatchers.IO) { offlineDownloadsStore.remove(download) }
+            refreshOfflineDownloadsSnapshot()
+        }
+    }
+
+    fun retryOfflineDownload(download: OfflineDownload, onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            val request = download.asMediaRequest()
+            download.ticket?.let { ticket ->
+                runCatching { repository?.cancelOfflineDownload(ticket) }
+            }
+            withContext(Dispatchers.IO) { offlineDownloadsStore.remove(download) }
+            refreshOfflineDownloadsSnapshot()
+            downloadForOffline(request, onComplete)
+        }
+    }
+
+    fun playOffline(download: OfflineDownload, onReady: (MediaContent?) -> Unit) {
+        viewModelScope.launch {
+            onReady(withContext(Dispatchers.IO) { offlineDownloadsStore.playableContent(download) })
+        }
+    }
+
     /** Load a collection only when opened, including server-defined smart membership. */
     suspend fun loadCollectionMembers(ratingKey: String): List<MediaContent> =
         checkNotNull(repository) { "Connect to your library first." }.loadCollectionMembers(ratingKey)
@@ -293,11 +364,30 @@ class CinemaViewModel(
         bumperUri: String?,
         onReady: (CinemaPlaybackPlan?) -> Unit,
     ) {
+        if (offlineDownloadsStore.isOfflineContent(content)) {
+            onReady(CinemaPlaybackPlan(mainFeature = content))
+            return
+        }
         val currentRepository = repository ?: return onReady(null)
         viewModelScope.launch {
+            val playbackTarget = if (content.kind == MediaKind.Show) {
+                val continueWatching = (_uiState.value as? CinemaUiState.Ready)
+                    ?.catalog?.continueWatching.orEmpty()
+                selectSeriesPlaybackEpisode(content, continueWatching, emptyList())
+                    ?: runCatching {
+                        selectSeriesPlaybackEpisode(
+                            content,
+                            continueWatching,
+                            currentRepository.loadSeriesEpisodes(content.ratingKey),
+                        )
+                    }.getOrNull()
+                    ?: return@launch onReady(null)
+            } else {
+                content
+            }
             val playable = runCatching {
-                currentRepository.loadPlayable(content.ratingKey)
-            }.getOrNull() ?: content.takeIf(MediaContent::canPlay)
+                currentRepository.loadPlayable(playbackTarget.ratingKey)
+            }.getOrNull() ?: playbackTarget.takeIf(MediaContent::canPlay)
             if (playable == null) return@launch onReady(null)
 
             val shouldUseCinemaMode = cinemaModeEnabled && playable.kind == MediaKind.Movie
@@ -432,10 +522,121 @@ class CinemaViewModel(
         durationMs: Long,
         state: String,
     ) {
-        val currentRepository = repository ?: return
         viewModelScope.launch {
+            if (offlineDownloadsStore.isOfflineContent(content)) {
+                val currentConnection = connection
+                if (currentConnection != null) {
+                    withContext(Dispatchers.IO) {
+                        offlineDownloadsStore.list(currentConnection)
+                            .firstOrNull { it.ratingKey == content.ratingKey }
+                            ?.let { offlineDownloadsStore.updatePlaybackPosition(it, positionMs) }
+                    }
+                }
+            }
+            val currentRepository = repository ?: return@launch
             runCatching {
                 currentRepository.reportTimeline(content, positionMs, durationMs, state)
+            }
+        }
+    }
+
+    private fun startOfflineDownloadMonitor() {
+        offlineDownloadsJob?.cancel()
+        offlineDownloadsJob = viewModelScope.launch {
+            while (true) {
+                val currentConnection = connection ?: break
+                val currentRepository = repository ?: break
+                var downloads = withContext(Dispatchers.IO) {
+                    offlineDownloadsStore.list(currentConnection)
+                }
+                _offlineDownloads.value = downloads
+                val pending = downloads.filter {
+                    it.state == OfflineDownloadState.Preparing && it.systemDownloadId == null
+                }
+                pending.forEach { download ->
+                    try {
+                        var current = download
+                        var ticket = current.ticket
+                        if (ticket == null) {
+                            ticket = currentRepository.createOfflineDownload(current.asMediaRequest())
+                            current = withContext(Dispatchers.IO) {
+                                offlineDownloadsStore.attachTicket(current, ticket)
+                            }
+                        }
+                        val confirmedTicket = requireNotNull(ticket)
+                        val queueItem = currentRepository.offlineDownloadStatus(confirmedTicket)
+                        when (queueItem.status.lowercase()) {
+                            "available", "done", "complete", "completed" -> withContext(Dispatchers.IO) {
+                                offlineDownloadsStore.beginTransfer(
+                                    current,
+                                    currentConnection,
+                                    currentRepository.offlineDownloadMediaUrl(confirmedTicket),
+                                )
+                            }
+                            "error", "failed", "cancelled", "canceled" -> withContext(Dispatchers.IO) {
+                                offlineDownloadsStore.fail(current, "Plex could not prepare this download.")
+                            }
+                        }
+                    } catch (error: Exception) {
+                        withContext(Dispatchers.IO) {
+                            offlineDownloadsStore.fail(download, error.userMessage())
+                        }
+                    }
+                }
+                downloads = withContext(Dispatchers.IO) {
+                    offlineDownloadsStore.list(currentConnection)
+                }
+                downloads.filter { it.state == OfflineDownloadState.Ready && it.ticket != null }
+                    .forEach { ready ->
+                        val ticket = ready.ticket ?: return@forEach
+                        if (runCatching { currentRepository.cancelOfflineDownload(ticket) }.isSuccess) {
+                            withContext(Dispatchers.IO) {
+                                offlineDownloadsStore.clearTicket(ready)
+                            }
+                        }
+                    }
+                downloads = withContext(Dispatchers.IO) {
+                    offlineDownloadsStore.list(currentConnection)
+                }
+                _offlineDownloads.value = downloads
+                val stillWorking = downloads.any {
+                    it.state == OfflineDownloadState.Preparing ||
+                        it.state == OfflineDownloadState.Downloading ||
+                        it.state == OfflineDownloadState.Paused
+                }
+                delay(if (stillWorking) 1_500L else 5_000L)
+            }
+        }
+    }
+
+    private suspend fun refreshOfflineDownloadsSnapshot() {
+        val currentConnection = connection ?: return
+        _offlineDownloads.value = withContext(Dispatchers.IO) {
+            offlineDownloadsStore.list(currentConnection)
+        }
+    }
+
+    fun handoffPlayback(
+        content: MediaContent,
+        positionMs: Long,
+        durationMs: Long,
+        onComplete: (errorMessage: String?) -> Unit,
+    ) {
+        val currentRepository = repository
+            ?: return onComplete("Connect to your Plex library before continuing on another device.")
+        viewModelScope.launch {
+            runCatching {
+                currentRepository.reportTimeline(
+                    content = content,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    state = "paused",
+                )
+            }.onSuccess {
+                refresh(silent = true)
+                onComplete(null)
+            }.onFailure { error ->
+                onComplete(error.userMessage())
             }
         }
     }
@@ -504,6 +705,7 @@ class CinemaViewModel(
                 // paged background refresh is still in progress.
                 connection = newConnection
                 repository = newRepository
+                startOfflineDownloadMonitor()
                 val catalog = applyLocalLibrary(newRepository.loadCatalog())
                 if (persist) preferences.saveConnection(newConnection)
                 _uiState.value = CinemaUiState.Ready(catalog, newConnection)
@@ -553,6 +755,7 @@ class CinemaViewModel(
         private val preferences = PlexPreferences(appContext)
         private val catalogCache = PlexCatalogCache(appContext)
         private val tvHomePublisher = TvHomePublisher(appContext)
+        private val offlineDownloadsStore = OfflineDownloadsStore(appContext)
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -561,6 +764,7 @@ class CinemaViewModel(
                 preferences,
                 catalogCache,
                 tvHomePublisher,
+                offlineDownloadsStore,
             ) as T
         }
     }
@@ -570,3 +774,28 @@ private fun MediaContent.updateWatched(ratingKey: String, watched: Boolean): Med
     if (this.ratingKey == ratingKey) {
         copy(isWatched = watched, viewOffsetMs = if (watched) 0L else viewOffsetMs)
     } else this
+
+private fun OfflineDownload.asMediaRequest(): MediaContent = MediaContent(
+    ratingKey = ratingKey,
+    title = title,
+    secondaryTitle = secondaryTitle,
+    summary = summary,
+    tagline = null,
+    year = year,
+    durationMs = durationMs,
+    viewOffsetMs = viewOffsetMs,
+    posterUrl = null,
+    backdropUrl = null,
+    contentRating = contentRating,
+    kind = kind,
+    seasonNumber = seasonNumber,
+    episodeNumber = episodeNumber,
+    playback = PlaybackSource(
+        partId = -1L,
+        directUrl = "",
+        metadataKey = metadataKey,
+        audioStreams = emptyList(),
+        subtitles = emptyList(),
+        technicalInfo = technicalInfo,
+    ),
+)

@@ -41,6 +41,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -48,6 +51,7 @@ import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.CinemaPlaybackPlan
+import com.minova.cinema.domain.hasSeriesPlaybackProgress
 import com.minova.cinema.data.local.PlaybackPreferences
 import com.minova.cinema.presentation.CinemaUiState
 import com.minova.cinema.presentation.CinemaViewModel
@@ -64,6 +68,7 @@ import com.minova.cinema.ui.common.LoadingScreen
 import com.minova.cinema.ui.detail.DetailScreen
 import com.minova.cinema.ui.intro.AnimatedIntroScreen
 import com.minova.cinema.ui.onboarding.OnboardingScreen
+import com.minova.cinema.ui.offline.OfflineDownloadsScreen
 import com.minova.cinema.ui.player.PlayerScreen
 import com.minova.cinema.ui.platform.DeviceProfile
 import com.minova.cinema.ui.platform.rememberDeviceProfile
@@ -83,6 +88,7 @@ private sealed interface CinemaRoute {
     data class Detail(val content: MediaContent) : CinemaRoute
     data class Player(val plan: CinemaPlaybackPlan, val sessionId: String = java.util.UUID.randomUUID().toString()) : CinemaRoute
     data class Finished(val content: MediaContent) : CinemaRoute
+    data object Downloads : CinemaRoute
     data object Settings : CinemaRoute
 }
 
@@ -102,6 +108,7 @@ fun MinovaCinemaApp(
     onDeepLinkConsumed: () -> Unit = {},
     isTrailerRecordingMode: Boolean = false,
     disablePlexTrailersForCapture: Boolean = false,
+    isInPictureInPictureMode: Boolean = false,
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
@@ -149,6 +156,7 @@ fun MinovaCinemaApp(
                 onDeepLinkConsumed,
                 isTrailerRecordingMode,
                 disablePlexTrailersForCapture,
+                isInPictureInPictureMode,
             )
 
             (updateState as? UpdateUiState.Available)?.let { available ->
@@ -183,6 +191,7 @@ private fun MainScreen(
     onDeepLinkConsumed: () -> Unit,
     isTrailerRecordingMode: Boolean,
     disablePlexTrailersForCapture: Boolean,
+    isInPictureInPictureMode: Boolean,
 ) {
     val context = LocalContext.current
     val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
@@ -210,15 +219,27 @@ private fun MainScreen(
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
     val profilesState by viewModel.profiles.collectAsStateWithLifecycle()
     val networkAssistantState by viewModel.networkAssistant.collectAsStateWithLifecycle()
+    val offlineDownloads by viewModel.offlineDownloads.collectAsStateWithLifecycle()
     val lightingState by cinemaLightingController.state.collectAsStateWithLifecycle()
     val tapoLightsState by tapoLightsViewModel.state.collectAsStateWithLifecycle()
     val routes = rememberRoutes()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val playbackPreferences = remember(context.applicationContext) {
         PlaybackPreferences(context.applicationContext)
     }
     var playbackSettings by remember { mutableStateOf(playbackPreferences.read()) }
     var lastPlaybackInteractionAtMs by remember {
         mutableLongStateOf(SystemClock.elapsedRealtime())
+    }
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refresh(silent = true)
+                viewModel.refreshOfflineDownloads()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val bumperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -457,6 +478,7 @@ private fun MainScreen(
                         onPlay = { play(it) },
                         onToggleMyList = viewModel::toggleMyList,
                         onSettings = { routes.add(CinemaRoute.Settings) },
+                        onDownloads = { routes.add(CinemaRoute.Downloads) },
                         onWatchlistRefresh = viewModel::refreshWatchlist,
                         loadCollectionMembers = viewModel::loadCollectionMembers,
                         homePreferences = homePreferences,
@@ -474,8 +496,10 @@ private fun MainScreen(
                     is CinemaRoute.Detail -> {
                         val detailedMovie = (movieDetail as? MovieDetailUiState.Ready)
                             ?.takeIf { it.movie.ratingKey == route.content.ratingKey }
+                        val detailedShow = (showDetail as? ShowDetailUiState.Ready)
+                            ?.takeIf { it.show.ratingKey == route.content.ratingKey }
                         DetailScreen(
-                            content = detailedMovie?.movie ?: route.content,
+                            content = detailedMovie?.movie ?: detailedShow?.show ?: route.content,
                             showDetail = showDetail,
                             trailers = detailedMovie?.trailers.orEmpty(),
                             isWatched = currentWatchedState(
@@ -489,6 +513,10 @@ private fun MainScreen(
                             isInContinueWatching = state.catalog.continueWatching.any {
                                 it.ratingKey == route.content.ratingKey
                             },
+                            seriesHasProgress = hasSeriesPlaybackProgress(
+                                detailedShow?.show ?: route.content,
+                                state.catalog.continueWatching,
+                            ),
                             onPlay = { play(it) },
                             onPlayTrailer = { play(it) },
                             onWatchedChanged = { watched ->
@@ -503,6 +531,34 @@ private fun MainScreen(
                             // instead of opening a second detail screen.
                             onOpenEpisode = { play(it) },
                             onSeasonSelected = viewModel::selectSeason,
+                            offlineDownloads = offlineDownloads,
+                            onDownload = { content ->
+                                viewModel.downloadForOffline(content) { message ->
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        message,
+                                        android.widget.Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            },
+                            onPlayOffline = { download ->
+                                viewModel.playOffline(download) { offlineContent ->
+                                    if (offlineContent == null) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "The downloaded file is no longer available.",
+                                            android.widget.Toast.LENGTH_LONG,
+                                        ).show()
+                                    } else {
+                                        routes.add(
+                                            CinemaRoute.Player(
+                                                CinemaPlaybackPlan(mainFeature = offlineContent),
+                                            ),
+                                        )
+                                    }
+                                }
+                            },
+                            onOpenDownloads = { routes.add(CinemaRoute.Downloads) },
                             onBack = {
                                 if (routes.size > 1) routes.removeAt(routes.lastIndex)
                             },
@@ -522,6 +578,7 @@ private fun MainScreen(
                         isTrailerRecordingMode = isTrailerRecordingMode,
                         experienceSettings = experience,
                         initialTrackPreference = experiencePreferences.tracks(route.plan.mainFeature.ratingKey),
+                        isInPictureInPictureMode = isInPictureInPictureMode,
                         onReturnToDetails = {
                             routes.removeAt(routes.lastIndex)
                             if (routes.lastOrNull() !is CinemaRoute.Detail) open(route.plan.mainFeature)
@@ -559,6 +616,20 @@ private fun MainScreen(
                                 duration,
                                 playbackState,
                             )
+                        },
+                        onHandoffRequested = { position, duration, onComplete ->
+                            viewModel.handoffPlayback(
+                                content = route.plan.mainFeature,
+                                positionMs = position,
+                                durationMs = duration,
+                                onComplete = onComplete,
+                            )
+                        },
+                        onHandoffFinished = {
+                            if (routes.lastOrNull() is CinemaRoute.Player) {
+                                routes.removeAt(routes.lastIndex)
+                            }
+                            viewModel.refresh(silent = true)
                         },
                         onSubtitleStreamSelected = { subtitleId, onComplete ->
                             val key = route.plan.mainFeature.ratingKey
@@ -610,6 +681,39 @@ private fun MainScreen(
                         onRate = { rating, onComplete -> viewModel.rate(route.content, rating, onComplete) },
                         onOpen = ::open,
                         onHome = { routes.clear(); routes.add(CinemaRoute.Browse) })
+                    CinemaRoute.Downloads -> OfflineDownloadsScreen(
+                        downloads = offlineDownloads,
+                        onBack = {
+                            if (routes.size > 1) routes.removeAt(routes.lastIndex)
+                        },
+                        onPlay = { download ->
+                            viewModel.playOffline(download) { offlineContent ->
+                                if (offlineContent == null) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "The downloaded file is no longer available.",
+                                        android.widget.Toast.LENGTH_LONG,
+                                    ).show()
+                                } else {
+                                    routes.add(
+                                        CinemaRoute.Player(
+                                            CinemaPlaybackPlan(mainFeature = offlineContent),
+                                        ),
+                                    )
+                                }
+                            }
+                        },
+                        onRetry = { download ->
+                            viewModel.retryOfflineDownload(download) { message ->
+                                android.widget.Toast.makeText(
+                                    context,
+                                    message,
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
+                        onRemove = viewModel::removeOfflineDownload,
+                    )
                     CinemaRoute.Settings -> SettingsScreen(
                         serverUrl = state.connection.baseUrl,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,

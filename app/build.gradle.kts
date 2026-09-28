@@ -52,8 +52,8 @@ android {
         // intentionally use API 29 as the public platform baseline.
         minSdk = 29
         targetSdk = 37
-        versionCode = 47
-        versionName = "2.9.6"
+        versionCode = 48
+        versionName = "2.9.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -166,6 +166,7 @@ dependencies {
 
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
+    implementation("androidx.media3:media3-session:1.10.1")
     implementation("androidx.media3:media3-ui:1.10.1")
 
     // Phone and tablet sender support. The TV application remains a normal

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Movie
@@ -114,6 +115,7 @@ internal fun MobileBrowseScreen(
     onPlay: (MediaContent) -> Unit,
     onToggleMyList: (MediaContent) -> Unit,
     onSettings: () -> Unit,
+    onDownloads: () -> Unit,
     onWatchlistRefresh: () -> Unit,
     homePreferences: HomeLayoutPreferences,
     onPlayFromBeginning: (MediaContent) -> Unit,
@@ -164,6 +166,7 @@ internal fun MobileBrowseScreen(
                 onSearch = { tab = MobileBrowseTab.Search },
                 onRefresh = onRefresh,
                 refreshing = refreshing,
+                onDownloads = onDownloads,
                 onSettings = onSettings,
             )
             Box(Modifier.weight(1f)) {
@@ -234,6 +237,7 @@ private fun MobileTopBar(
     onSearch: () -> Unit,
     onRefresh: () -> Unit,
     refreshing: Boolean,
+    onDownloads: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val configuration = LocalConfiguration.current
@@ -247,29 +251,36 @@ private fun MobileTopBar(
             contentDescription = null,
             modifier = Modifier.size(if (landscape) 34.dp else 40.dp),
         )
-        Column(Modifier.padding(start = 9.dp).weight(1f)) {
-            Text("MINOVA", color = MinovaWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-            Text(
-                "CINEMA",
-                color = MinovaCyan,
-                fontSize = 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                letterSpacing = 0.7.sp,
-            )
-        }
-        MobileIconButton(Icons.Rounded.Search, "Search", onSearch, background = false)
-        if (refreshing) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                androidx.compose.material3.CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
+        if (configuration.screenWidthDp >= 380) {
+            Column(Modifier.padding(start = 9.dp).weight(1f)) {
+                Text("MINOVA", color = MinovaWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                Text(
+                    "CINEMA",
                     color = MinovaCyan,
-                    strokeWidth = 2.dp,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    letterSpacing = 0.7.sp,
                 )
             }
         } else {
-            MobileIconButton(Icons.Rounded.Refresh, "Refresh library", onRefresh, background = false)
+            Spacer(Modifier.weight(1f))
         }
+        MobileIconButton(Icons.Rounded.Search, "Search", onSearch, background = false)
+        if (landscape) {
+            if (refreshing) {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = MinovaCyan,
+                        strokeWidth = 2.dp,
+                    )
+                }
+            } else {
+                MobileIconButton(Icons.Rounded.Refresh, "Refresh library", onRefresh, background = false)
+            }
+        }
+        MobileIconButton(Icons.Rounded.Download, "Downloads", onDownloads, background = false)
         MinovaCastButton()
         MobileIconButton(Icons.Rounded.Settings, "Settings", onSettings, background = false)
     }

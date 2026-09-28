@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.6/Minova-Cinema-2.9.6.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.7/Minova-Cinema-2.9.7.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -20,6 +20,8 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Separate Home, Movies, and Series destinations with shelves, full-library grids, genre filters, and global search.
 - A phone-native layout with compact media shelves, library shortcuts, persistent bottom navigation, software-keyboard search, touch playback controls, and portrait or landscape support.
 - Plex-synced watched state, watchlist, Continue Watching progress, manual mark watched/unwatched, and dismiss-from-continue actions.
+- One-tap Continue elsewhere handoff that saves the exact paused position to the active Plex server before closing playback.
+- Phone-only movie and episode downloads through Plex Media Server's official queue, stored privately on the device with progress, retry, removal, and offline resume support. Plex Pass and the server owner's Allow Downloads permission are required.
 - Show details with season artwork, episodes, cast and crew; movie details with trailers when Plex exposes them.
 - Next-up experience after an episode finishes.
 - Optional ten-second autoplay for the next episode, with a persistent TV setting.
@@ -32,7 +34,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Live Direct Play, Direct Stream, and Transcoding diagnostics with the Plex decision reason.
 - Manual audio-delay and subtitle-delay correction for television synchronization issues.
 - Media3 frame-rate matching and supported surround-audio passthrough.
-- Private local metadata caching, paged large-library loading, and upcoming-artwork prefetching.
+- Private per-server metadata caching, duplicate-request coalescing, paged large-library loading, visible-first artwork loading, and upcoming-artwork prefetching.
 - Personalized Plex shelves using viewing progress, watched history, ratings, genres, and only server artwork.
 - Plex Home profile switching for full, managed, and PIN-protected users.
 - Android TV Home Continue Watching and Watchlist channels with title deep links.
@@ -49,7 +51,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 
 ## Install
 
-1. [Download the Minova Cinema 2.9.6 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.6/Minova-Cinema-2.9.6.apk).
+1. [Download the Minova Cinema 2.9.7 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.7/Minova-Cinema-2.9.7.apk).
 2. Transfer it to an Android 10-or-newer phone, tablet, or TV and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and allow local-network access when Android asks. This is required on Android 17 and newer so the app can reach Plex and Tapo devices on your LAN.
 4. Enter the Plex server address and token during setup.
@@ -140,6 +142,7 @@ GitHub releases/latest -> UpdateViewModel -> TV update dialog
 - `data/remote` — Retrofit endpoints, Plex DTOs, authentication headers, and playback URL construction.
 - `data/PlexRepository.kt` — library, metadata, watch-state, watchlist, stream-selection, and playback mapping.
 - `presentation` — application state and coroutine-backed catalog/detail operations.
+- `offline` — Plex-authorized phone downloads, app-private file storage, progress, retry, and offline playback metadata.
 - `update` — GitHub release checks, semantic version comparison, APK download, and installer hand-off.
 - `ui` — intro, onboarding, adaptive phone/TV browsing, search, details, settings, and fullscreen playback.
 - `docs` — the static GitHub Pages product website.

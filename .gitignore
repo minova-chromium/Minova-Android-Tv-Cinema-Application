@@ -15,3 +15,9 @@ release-signing/
 *.jks
 *.keystore
 home.android.sdk_*.zip
+/desktop/
+/desktop-native/
+/Build Minova Cinema Desktop.cmd
+/Build Minova Cinema Native.cmd
+/Install Minova Cinema Native.cmd
+/Launch Minova Cinema Desktop.cmd

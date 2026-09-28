@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.9.7 — 2026-09-28
+
+- Added bounded automatic playback recovery on Android: transient failures retry once, incompatible direct-play sources move to an unconstrained Plex compatibility stream, and persistent failures step down through 1080p, 720p, and 480p while preserving position and track choices.
+- Added matching native desktop playback recovery with a 15-second startup watchdog, Direct Play-to-compatible-stream fallback, reconnect handling, and a loop-safe quality ladder.
+- Added native phone Picture-in-Picture playback with Android media-session controls, automatic Home-gesture entry, clean video-only PiP chrome, and uninterrupted Plex progress reporting.
+- Polished the native Windows experience with remembered and monitor-safe window placement, responsive settings/player controls, a video-first mini-player, expanded keyboard and controller shortcuts, right-click playback actions, and drag-and-drop external subtitles.
+- Fixed the Electron Windows app losing sight of previously encrypted Plex credentials after its profile-folder name changed; desktop 1.0.2 migrates the saved login automatically and gives actionable DNS, Tailscale, timeout, connection-refused, and TLS errors instead of raw fetch failures.
+- Added cross-device playback handoff on Android phones, Android TV, and Windows: the player pauses, confirms the exact position was saved to Plex, closes without overwriting that paused state, and refreshes Continue Watching when another device returns to the foreground.
+- Added phone-only offline downloads for movies and episodes through Plex Media Server's official download queue, with Plex Pass and Allow Downloads enforcement, app-private storage, Wi-Fi progress, retry/removal controls, offline resume tracking, and a dedicated Downloads library. The Android TV interface is unchanged.
+- Improved Android and Windows browsing performance by coalescing duplicate Plex metadata requests, reusing short-lived title, season, trailer, and library-section responses, restoring a private token-free Windows catalog immediately at startup, and prioritizing artwork that is actually visible before filling the rest of each page. Windows Settings now reports and clears local artwork and metadata caches without removing the saved Plex login.
+- Hardened first launch on phones so the software keyboard waits until a field is tapped, keeping the complete Plex connection form visible, and repaired the repeatable Android TV regression script's instrumentation filter.
+- Improved the Android TV showcase for long series titles and descriptions, replaced the series View details action with Play or Resume, and made series playback continue the in-progress episode or select the next unwatched episode automatically.
+
 ## 2.9.6 — 2026-09-27
 
 - Added Google Cast from the phone interface to Chromecast and Google TV devices, including the native device chooser, compact and expanded controls, Plex progress synchronization, and resume support.

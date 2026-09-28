@@ -34,6 +34,8 @@ class PhonePlayerSettingsTest {
         compose.onNodeWithTag("player-seek-back").assertIsDisplayed()
         compose.onNodeWithTag("player-play-pause").assertIsDisplayed()
         compose.onNodeWithTag("player-seek-forward").assertIsDisplayed()
+        compose.onNodeWithTag("player-handoff").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Continue on another device")).assertIsDisplayed()
         compose.onNodeWithTag("player-subtitles-toggle").assertIsDisplayed()
         compose.onNodeWithTag("player-playback-settings").assertDoesNotExist()
 

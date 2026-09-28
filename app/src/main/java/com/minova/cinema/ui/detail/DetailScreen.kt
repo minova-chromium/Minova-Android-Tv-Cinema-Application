@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +58,7 @@ import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.MediaCredit
 import com.minova.cinema.presentation.ShowDetailUiState
+import com.minova.cinema.offline.OfflineDownload
 import com.minova.cinema.ui.theme.MinovaCyan
 import com.minova.cinema.ui.theme.MinovaBlack
 import com.minova.cinema.ui.theme.MinovaMuted
@@ -75,6 +77,7 @@ fun DetailScreen(
     isWatched: Boolean,
     isInMyList: Boolean,
     isInContinueWatching: Boolean,
+    seriesHasProgress: Boolean = false,
     onPlay: (MediaContent) -> Unit,
     onPlayTrailer: (MediaContent) -> Unit,
     onWatchedChanged: (Boolean) -> Unit,
@@ -82,6 +85,10 @@ fun DetailScreen(
     onRemoveFromContinueWatching: () -> Unit,
     onOpenEpisode: (MediaContent) -> Unit,
     onSeasonSelected: (MediaContent) -> Unit,
+    offlineDownloads: List<OfflineDownload> = emptyList(),
+    onDownload: (MediaContent) -> Unit = {},
+    onPlayOffline: (OfflineDownload) -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
     onBack: () -> Unit = {},
 ) {
     if (rememberDeviceProfile() == DeviceProfile.Handheld) {
@@ -99,6 +106,10 @@ fun DetailScreen(
             onRemoveFromContinueWatching = onRemoveFromContinueWatching,
             onOpenEpisode = onOpenEpisode,
             onSeasonSelected = onSeasonSelected,
+            offlineDownloads = offlineDownloads,
+            onDownload = onDownload,
+            onPlayOffline = onPlayOffline,
+            onOpenDownloads = onOpenDownloads,
             onBack = onBack,
         )
         return
@@ -149,6 +160,7 @@ fun DetailScreen(
                     isWatched = isWatched,
                     isInMyList = isInMyList,
                     isInContinueWatching = isInContinueWatching,
+                    seriesHasProgress = seriesHasProgress,
                     trailers = trailers,
                     titleFocusRequester = titleFocusRequester,
                     firstSeasonFocusRequester = firstSeasonFocusRequester,
@@ -183,6 +195,7 @@ private fun DetailHero(
     isWatched: Boolean,
     isInMyList: Boolean,
     isInContinueWatching: Boolean,
+    seriesHasProgress: Boolean,
     trailers: List<MediaContent>,
     titleFocusRequester: FocusRequester,
     firstSeasonFocusRequester: FocusRequester,
@@ -210,11 +223,7 @@ private fun DetailHero(
             modifier = Modifier
                 .focusRequester(titleFocusRequester)
                 .focusProperties {
-                    down = if (content.kind == MediaKind.Show) {
-                        firstSeasonFocusRequester
-                    } else {
-                        primaryActionFocusRequester
-                    }
+                    down = primaryActionFocusRequester
                 }
                 .focusable(),
         )
@@ -260,17 +269,26 @@ private fun DetailHero(
                 modifier = Modifier.padding(top = 12.dp),
             )
         }
-        if (content.kind != MediaKind.Show) {
-            Row(
-                modifier = Modifier.padding(top = 20.dp).focusGroup(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Row(
+            modifier = Modifier.padding(top = 20.dp).focusGroup(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(
+                onClick = { onPlay(content) },
+                modifier = Modifier
+                    .testTag("detail-primary-action")
+                    .focusRequester(primaryActionFocusRequester)
+                    .focusProperties {
+                        if (content.kind == MediaKind.Show) down = firstSeasonFocusRequester
+                    },
             ) {
-                Button(
-                    onClick = { onPlay(content) },
-                    modifier = Modifier.focusRequester(primaryActionFocusRequester),
-                ) {
-                    Text(if (content.viewOffsetMs > 0L) "Resume" else "Play")
-                }
+                Text(
+                    if (content.kind == MediaKind.Show && seriesHasProgress) "Resume"
+                    else if (content.viewOffsetMs > 0L) "Resume"
+                    else "Play",
+                )
+            }
+            if (content.kind != MediaKind.Show) {
                 trailers.firstOrNull()?.let { trailer ->
                     Button(onClick = { onPlayTrailer(trailer) }) {
                         Text("Watch trailer")

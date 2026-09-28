@@ -22,7 +22,10 @@ if (-not $SkipDeviceTests) {
     # its Plex configuration remain installed and untouched.
     $tasks += 'connectedDebugAndroidTest'
     # Keep promotional recording orchestration out of regression runs.
-    $tasks += '-Pandroid.testInstrumentationRunnerArguments.package=com.minova.cinema.ui'
+    # The long -P form is misparsed by the Windows batch wrapper; passing the
+    # project property as its own argument works reliably in PowerShell.
+    $tasks += '--project-prop'
+    $tasks += 'android.testInstrumentationRunnerArguments.package=com.minova.cinema.ui'
 }
 
 Push-Location $projectRoot

@@ -6,6 +6,8 @@ import com.minova.cinema.data.remote.PlexApiService
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexUrlFactory
 import com.minova.cinema.data.remote.PlexWatchlistApiService
+import com.minova.cinema.data.remote.PlexDownloadQueueItem
+import com.minova.cinema.data.remote.PlexDownloadResponse
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaCollection
 import com.minova.cinema.domain.AudioStream
@@ -29,6 +31,11 @@ import java.net.URLEncoder
 import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import retrofit2.Response
+
+data class PlexDownloadTicket(val queueId: Long, val itemId: Long)
+
+class PlexDownloadUnavailableException(message: String) : IllegalStateException(message)
 
 class PlexRepository(
     private val connection: PlexConnection,
@@ -36,6 +43,49 @@ class PlexRepository(
     private val watchlistApi: PlexWatchlistApiService,
 ) {
     private val urls by lazy(LazyThreadSafetyMode.NONE) { PlexUrlFactory(connection) }
+    private val playableReads = RequestCoalescer<String, MediaContent?>(
+        ttlMs = DETAIL_CACHE_TTL_MS,
+        maxEntries = DETAIL_CACHE_ENTRIES,
+    )
+    private val childReads = RequestCoalescer<String, List<MediaContent>>(
+        ttlMs = CHILD_CACHE_TTL_MS,
+        maxEntries = CHILD_CACHE_ENTRIES,
+    )
+    private val trailerReads = RequestCoalescer<String, List<MediaContent>>(
+        ttlMs = DETAIL_CACHE_TTL_MS,
+        maxEntries = DETAIL_CACHE_ENTRIES,
+    )
+
+    suspend fun createOfflineDownload(content: MediaContent): PlexDownloadTicket {
+        val metadataKey = content.playback?.metadataKey
+            ?: "/library/metadata/${content.ratingKey}"
+        val queueResponse = api.createDownloadQueue()
+        queueResponse.requireDownloadAccess()
+        val queueId = queueResponse.body()?.mediaContainer?.queues?.firstOrNull()?.id
+            ?.takeIf { it > 0L }
+            ?: error("Plex did not create a download queue.")
+        val addResponse = api.addToDownloadQueue(queueId, metadataKey)
+        addResponse.requireDownloadAccess()
+        val itemId = addResponse.body()?.mediaContainer?.addedItems?.firstOrNull()?.id
+            ?.takeIf { it > 0L }
+            ?: error("Plex did not add this title to the download queue.")
+        return PlexDownloadTicket(queueId, itemId)
+    }
+
+    suspend fun offlineDownloadStatus(ticket: PlexDownloadTicket): PlexDownloadQueueItem {
+        val response = api.getDownloadQueueItem(ticket.queueId, ticket.itemId)
+        response.requireDownloadAccess()
+        return response.body()?.mediaContainer?.items?.firstOrNull()
+            ?: error("Plex did not return the queued download.")
+    }
+
+    suspend fun cancelOfflineDownload(ticket: PlexDownloadTicket) {
+        api.deleteDownloadQueueItem(ticket.queueId, ticket.itemId)
+    }
+
+    fun offlineDownloadMediaUrl(ticket: PlexDownloadTicket): String =
+        connection.baseUrl.trimEnd('/') +
+            "/downloadQueue/${ticket.queueId}/item/${ticket.itemId}/media"
 
     suspend fun loadCatalog(): CinemaCatalog = coroutineScope {
         val sectionsResponse = api.getLibrarySections().mediaContainer
@@ -92,7 +142,22 @@ class PlexRepository(
     }
 
     suspend fun loadChildren(ratingKey: String): List<MediaContent> {
-        return api.getChildren(ratingKey).mediaContainer.metadata.map(::toContent)
+        return childReads.get(ratingKey) {
+            api.getChildren(ratingKey).mediaContainer.metadata.map(::toContent)
+        }
+    }
+
+    suspend fun loadSeriesEpisodes(showRatingKey: String): List<MediaContent> {
+        val seasons = loadChildren(showRatingKey)
+            .filter { it.kind == MediaKind.Season }
+            .sortedBy { season ->
+                season.seasonNumber?.takeIf { it > 0 } ?: Int.MAX_VALUE
+            }
+        return seasons.flatMap { season ->
+            loadChildren(season.ratingKey)
+                .filter { it.kind == MediaKind.Episode }
+                .sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
+        }
     }
 
     suspend fun loadCollectionMembers(ratingKey: String): List<MediaContent> =
@@ -117,7 +182,9 @@ class PlexRepository(
     }
 
     suspend fun loadPlayable(ratingKey: String): MediaContent? {
-        return api.getMetadata(ratingKey).mediaContainer.metadata.firstOrNull()?.let(::toContent)
+        return playableReads.get(ratingKey) {
+            api.getMetadata(ratingKey).mediaContainer.metadata.firstOrNull()?.let(::toContent)
+        }
     }
 
     /** Reads Plex's live session decision, which is authoritative for Direct Play/Stream/Transcode. */
@@ -168,10 +235,12 @@ class PlexRepository(
     }
 
     suspend fun loadTrailers(ratingKey: String): List<MediaContent> {
-        return api.getExtras(ratingKey).mediaContainer.metadata
-            .filter { it.subtype.equals("trailer", ignoreCase = true) || it.extraType == 1 }
-            .map(::toContent)
-            .filter { it.canPlay }
+        return trailerReads.get(ratingKey) {
+            api.getExtras(ratingKey).mediaContainer.metadata
+                .filter { it.subtype.equals("trailer", ignoreCase = true) || it.extraType == 1 }
+                .map(::toContent)
+                .filter { it.canPlay }
+        }
     }
 
     /**
@@ -232,13 +301,16 @@ class PlexRepository(
         durationMs: Long,
         state: String,
     ) {
-        api.reportTimeline(
+        val response = api.reportTimeline(
             ratingKey = content.ratingKey,
             key = content.playback?.metadataKey ?: "/library/metadata/${content.ratingKey}",
             state = state,
             timeMs = positionMs.coerceAtLeast(0L),
             durationMs = durationMs.coerceAtLeast(0L),
         )
+        check(response.isSuccessful) {
+            "Plex could not save playback progress (${response.code()})."
+        }
     }
 
     suspend fun selectSubtitle(content: MediaContent, subtitleStreamId: Long?) {
@@ -247,11 +319,13 @@ class PlexRepository(
             partId = partId,
             subtitleStreamId = subtitleStreamId ?: 0L,
         )
+        playableReads.invalidate(content.ratingKey)
     }
 
     suspend fun selectAudio(content: MediaContent, audioStreamId: Long) {
         val partId = content.playback?.partId ?: return
         api.selectAudio(partId = partId, audioStreamId = audioStreamId)
+        playableReads.invalidate(content.ratingKey)
     }
 
     suspend fun rate(content: MediaContent, rating: Int): Boolean = api.rate(content.ratingKey, rating.coerceIn(1, 10)).isSuccessful
@@ -260,6 +334,7 @@ class PlexRepository(
         val response = if (watched) api.markWatched(content.ratingKey)
         else api.markUnwatched(content.ratingKey)
         check(response.isSuccessful) { "Plex could not update watched status (${response.code()})." }
+        playableReads.invalidate(content.ratingKey)
     }
 
     suspend fun setWatchlisted(content: MediaContent, watchlisted: Boolean) {
@@ -564,6 +639,7 @@ class PlexRepository(
             seasonNumber = if (kind == MediaKind.Season) metadata.index else metadata.parentIndex,
             episodeNumber = if (kind == MediaKind.Episode) metadata.index else null,
             childCount = metadata.childCount ?: metadata.leafCount,
+            viewedLeafCount = metadata.viewedLeafCount ?: 0,
             parentRatingKey = metadata.parentRatingKey,
             grandparentRatingKey = metadata.grandparentRatingKey,
             isWatched = when (kind) {
@@ -621,6 +697,10 @@ private const val WATCHLIST_GUID_BATCH_SIZE = 10
 private const val MAX_CINEMA_TRAILER_CANDIDATES = 16
 private const val LIBRARY_PAGE_SIZE = 200
 private const val MAX_LIBRARY_PAGES = 2_000
+private const val DETAIL_CACHE_TTL_MS = 30_000L
+private const val CHILD_CACHE_TTL_MS = 60_000L
+private const val DETAIL_CACHE_ENTRIES = 64
+private const val CHILD_CACHE_ENTRIES = 48
 
 private fun Metadata.identityKeys(): Set<String> = buildSet {
     listOfNotNull(guid, primaryGuid).mapNotNullTo(this, ::normalizeGuid)
@@ -648,3 +728,18 @@ private fun String.encodePathSegment(): String =
 private fun String.watchlistTitleKey(): String = trim()
     .lowercase(Locale.ROOT)
     .replace(Regex("\\s+"), " ")
+
+private fun Response<PlexDownloadResponse>.requireDownloadAccess() {
+    if (isSuccessful) return
+    throw when (code()) {
+        403 -> PlexDownloadUnavailableException(
+            "Downloads require Plex Pass and the server owner’s Allow Downloads permission.",
+        )
+        404 -> PlexDownloadUnavailableException(
+            "This Plex server is too old for secure Downloads. Update Plex Media Server and try again.",
+        )
+        else -> PlexDownloadUnavailableException(
+            "Plex could not prepare this download (${code()}).",
+        )
+    }
+}

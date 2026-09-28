@@ -1,10 +1,13 @@
 package com.minova.cinema
 
+import android.app.PictureInPictureParams
+import android.content.res.Configuration
 import android.os.Bundle
 import android.os.Build
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.util.Rational
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
@@ -32,8 +35,9 @@ import com.minova.cinema.home.CinemaLightingController
 import com.minova.cinema.home.CinemaLightingProvider
 import com.minova.cinema.ui.platform.DeviceProfile
 import com.minova.cinema.ui.platform.deviceProfile
+import com.minova.cinema.ui.player.PictureInPictureHost
 
-class MainActivity : FragmentActivity() {
+class MainActivity : FragmentActivity(), PictureInPictureHost {
     private val viewModel: CinemaViewModel by viewModels { CinemaViewModel.Factory(this) }
     private val updateViewModel: UpdateViewModel by viewModels()
     private val tapoLightsViewModel: TapoLightsViewModel by viewModels {
@@ -44,6 +48,9 @@ class MainActivity : FragmentActivity() {
     private var pendingDeepLinkRatingKey by mutableStateOf<String?>(null)
     private var isTrailerRecordingMode by mutableStateOf(false)
     private var disablePlexTrailersForCapture by mutableStateOf(false)
+    private var pictureInPictureMode by mutableStateOf(false)
+    private var pictureInPicturePlaybackActive = false
+    private var pictureInPictureAspectRatio = Rational(16, 9)
     private val localNetworkPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -98,6 +105,7 @@ class MainActivity : FragmentActivity() {
                         onDeepLinkConsumed = { pendingDeepLinkRatingKey = null },
                         isTrailerRecordingMode = isTrailerRecordingMode,
                         disablePlexTrailersForCapture = disablePlexTrailersForCapture,
+                        isInPictureInPictureMode = pictureInPictureMode,
                     )
                 }
             }
@@ -114,6 +122,37 @@ class MainActivity : FragmentActivity() {
         // If Android sent the user to "Install unknown apps", returning to
         // Minova Cinema continues the pending installation automatically.
         UpdateInstaller.resumePendingInstall(this)
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (
+            pictureInPicturePlaybackActive &&
+            supportsPictureInPicture() &&
+            !isInPictureInPictureMode
+        ) {
+            runCatching { enterPictureInPictureMode(buildPictureInPictureParams()) }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pictureInPictureMode = isInPictureInPictureMode
+    }
+
+    override fun updatePictureInPicturePlayback(
+        active: Boolean,
+        videoWidth: Int,
+        videoHeight: Int,
+    ) {
+        pictureInPicturePlaybackActive = active && deviceProfile() == DeviceProfile.Handheld
+        pictureInPictureAspectRatio = safePictureInPictureRatio(videoWidth, videoHeight)
+        if (supportsPictureInPicture()) {
+            runCatching { setPictureInPictureParams(buildPictureInPictureParams()) }
+        }
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -156,6 +195,31 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun supportsPictureInPicture(): Boolean =
+        packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) &&
+            deviceProfile() == DeviceProfile.Handheld
+
+    private fun buildPictureInPictureParams(): PictureInPictureParams =
+        PictureInPictureParams.Builder()
+            .setAspectRatio(pictureInPictureAspectRatio)
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setAutoEnterEnabled(pictureInPicturePlaybackActive)
+                    setSeamlessResizeEnabled(true)
+                }
+            }
+            .build()
+
+    private fun safePictureInPictureRatio(width: Int, height: Int): Rational {
+        if (width <= 0 || height <= 0) return Rational(16, 9)
+        val ratio = width.toDouble() / height.toDouble()
+        return if (ratio in MIN_PIP_ASPECT_RATIO..MAX_PIP_ASPECT_RATIO) {
+            Rational(width, height)
+        } else {
+            Rational(16, 9)
+        }
+    }
+
     private class AmbientWindowCallback(
         private val delegate: Window.Callback,
         private val tracker: AmbientInactivityTracker,
@@ -172,6 +236,8 @@ class MainActivity : FragmentActivity() {
         const val TABLET_MIN_WIDTH_DP = 600
         const val ANDROID_17_API_LEVEL = 37
         const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
+        const val MIN_PIP_ASPECT_RATIO = 1.0 / 2.39
+        const val MAX_PIP_ASPECT_RATIO = 2.39
     }
 }
 
