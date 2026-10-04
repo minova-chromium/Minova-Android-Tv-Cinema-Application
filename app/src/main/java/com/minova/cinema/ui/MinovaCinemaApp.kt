@@ -48,6 +48,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.minova.cinema.domain.MediaContent
+import com.minova.cinema.domain.MediaCredit
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.CinemaPlaybackPlan
@@ -57,6 +58,7 @@ import com.minova.cinema.presentation.CinemaUiState
 import com.minova.cinema.presentation.CinemaViewModel
 import com.minova.cinema.presentation.ShowDetailUiState
 import com.minova.cinema.presentation.MovieDetailUiState
+import com.minova.cinema.presentation.PersonProfileUiState
 import com.minova.cinema.presentation.TapoLightsViewModel
 import com.minova.cinema.update.UpdateUiState
 import com.minova.cinema.update.UpdateViewModel
@@ -66,6 +68,7 @@ import com.minova.cinema.ui.ambient.AmbientInactivityTracker
 import com.minova.cinema.ui.common.ConnectionErrorScreen
 import com.minova.cinema.ui.common.LoadingScreen
 import com.minova.cinema.ui.detail.DetailScreen
+import com.minova.cinema.ui.detail.PersonProfileScreen
 import com.minova.cinema.ui.intro.AnimatedIntroScreen
 import com.minova.cinema.ui.onboarding.OnboardingScreen
 import com.minova.cinema.ui.offline.OfflineDownloadsScreen
@@ -86,6 +89,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 private sealed interface CinemaRoute {
     data object Browse : CinemaRoute
     data class Detail(val content: MediaContent) : CinemaRoute
+    data class Person(val credit: MediaCredit) : CinemaRoute
     data class Player(val plan: CinemaPlaybackPlan, val sessionId: String = java.util.UUID.randomUUID().toString()) : CinemaRoute
     data class Finished(val content: MediaContent) : CinemaRoute
     data object Downloads : CinemaRoute
@@ -217,6 +221,7 @@ private fun MainScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDetail by viewModel.showDetail.collectAsStateWithLifecycle()
     val movieDetail by viewModel.movieDetail.collectAsStateWithLifecycle()
+    val personProfile by viewModel.personProfile.collectAsStateWithLifecycle()
     val profilesState by viewModel.profiles.collectAsStateWithLifecycle()
     val networkAssistantState by viewModel.networkAssistant.collectAsStateWithLifecycle()
     val offlineDownloads by viewModel.offlineDownloads.collectAsStateWithLifecycle()
@@ -380,6 +385,12 @@ private fun MainScreen(
                 routes.add(CinemaRoute.Detail(content))
             }
 
+            fun openPerson(credit: MediaCredit) {
+                if (credit.personId.isNullOrBlank()) return
+                viewModel.loadPerson(credit)
+                routes.add(CinemaRoute.Person(credit))
+            }
+
             fun play(content: MediaContent, fromBeginning: Boolean = false) {
                 viewModel.resolvePlaybackPlan(
                     content = content,
@@ -531,6 +542,7 @@ private fun MainScreen(
                             onRemoveFromContinueWatching = {
                                 viewModel.removeFromContinueWatching(route.content)
                             },
+                            onOpenPerson = ::openPerson,
                             // Episode cards are playback actions. Resolve the
                             // full Plex metadata and enter the player directly
                             // instead of opening a second detail screen.
@@ -569,6 +581,22 @@ private fun MainScreen(
                             },
                         )
                     }
+                    is CinemaRoute.Person -> PersonProfileScreen(
+                        state = when (val profileState = personProfile) {
+                            is PersonProfileUiState.Ready -> profileState.takeIf {
+                                it.profile.personId == route.credit.personId
+                            } ?: PersonProfileUiState.Loading(route.credit)
+                            is PersonProfileUiState.Error -> profileState.takeIf {
+                                it.credit.personId == route.credit.personId
+                            } ?: PersonProfileUiState.Loading(route.credit)
+                            is PersonProfileUiState.Loading -> profileState
+                            PersonProfileUiState.Idle -> PersonProfileUiState.Loading(route.credit)
+                        },
+                        onBack = {
+                            if (routes.size > 1) routes.removeAt(routes.lastIndex)
+                        },
+                        onOpen = ::open,
+                    )
                     is CinemaRoute.Player -> PlayerScreen(
                         content = route.plan.mainFeature,
                         preRollTrailers = route.plan.trailers,

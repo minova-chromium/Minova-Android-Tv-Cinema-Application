@@ -87,6 +87,12 @@ interface PlexApiService {
     @GET("library/metadata/{ratingKey}/extras")
     suspend fun getExtras(@Path("ratingKey") ratingKey: String): PlexLibraryResponse
 
+    @GET("library/people/{personId}")
+    suspend fun getPerson(@Path("personId") personId: String): PlexLibraryResponse
+
+    @GET("library/people/{personId}/media")
+    suspend fun getPersonMedia(@Path("personId") personId: String): PlexLibraryResponse
+
     @GET(":/scrobble")
     suspend fun markWatched(
         @Query("key") ratingKey: String,

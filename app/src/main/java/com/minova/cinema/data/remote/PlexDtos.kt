@@ -61,6 +61,10 @@ data class Directory(
     @SerializedName("type") val type: String = "",
     @SerializedName("agent") val agent: String? = null,
     @SerializedName("scanner") val scanner: String? = null,
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("tag") val tag: String? = null,
+    @SerializedName("tagKey") val tagKey: String? = null,
+    @SerializedName("thumb") val thumb: String? = null,
 )
 
 data class Metadata(
@@ -162,6 +166,9 @@ data class PersonTag(
     @SerializedName("tag") val tag: String = "",
     @SerializedName("role") val role: String? = null,
     @SerializedName("thumb") val thumb: String? = null,
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("tagKey") val tagKey: String? = null,
+    @SerializedName("filter") val filter: String? = null,
 )
 
 data class Media(

@@ -3,6 +3,8 @@ package com.minova.cinema.presentation
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaContent
+import com.minova.cinema.domain.MediaCredit
+import com.minova.cinema.domain.PersonProfile
 import com.minova.cinema.domain.PlexHomeProfile
 import com.minova.cinema.data.PlaybackCapabilityReport
 
@@ -63,6 +65,13 @@ sealed interface MovieDetailUiState {
         val trailers: List<MediaContent>,
     ) : MovieDetailUiState
     data class Error(val movie: MediaContent, val message: String) : MovieDetailUiState
+}
+
+sealed interface PersonProfileUiState {
+    data object Idle : PersonProfileUiState
+    data class Loading(val credit: MediaCredit) : PersonProfileUiState
+    data class Ready(val profile: PersonProfile) : PersonProfileUiState
+    data class Error(val credit: MediaCredit, val message: String) : PersonProfileUiState
 }
 
 sealed interface PlexProfilesUiState {

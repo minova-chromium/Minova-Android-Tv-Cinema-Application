@@ -12,11 +12,14 @@ import com.minova.cinema.data.remote.PlexDownloadQueue
 import com.minova.cinema.data.remote.PlexDownloadQueueItem
 import com.minova.cinema.data.remote.PlexDownloadResponse
 import com.minova.cinema.data.remote.PlexLibraryResponse
+import com.minova.cinema.data.remote.PersonBackground
+import com.minova.cinema.data.remote.PersonMetadataLookup
 import com.minova.cinema.data.remote.PlexWatchlistApiService
 import com.minova.cinema.data.remote.TranscodeSession
 import com.minova.cinema.data.remote.Session
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
+import com.minova.cinema.domain.MediaCredit
 import com.minova.cinema.domain.PlexPlaybackMode
 import okhttp3.ResponseBody.Companion.toResponseBody
 import kotlinx.coroutines.runBlocking
@@ -28,6 +31,47 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
 class PlexRepositoryWatchlistTest {
+    @Test
+    fun `person profile combines Plex identity library media and reference background`() = runBlocking {
+        val api = FakePlexApi(emptyList(), emptyMap()).apply {
+            personResponse = PlexLibraryResponse(
+                MediaContainer(
+                    directories = listOf(Directory(tag = "Liam Example")),
+                ),
+            )
+            personMediaResponse = PlexLibraryResponse(
+                MediaContainer(
+                    metadata = listOf(
+                        movie("movie-42", "A Library Film", null, year = 2026),
+                    ),
+                ),
+            )
+        }
+        val metadata = PersonMetadataLookup {
+            PersonBackground(
+                biography = "A verified reference biography.",
+                sourceLabel = "Wikipedia",
+                sourceUrl = "https://en.wikipedia.org/wiki/Liam_Example",
+                imdbUrl = "https://www.imdb.com/name/nm42/",
+            )
+        }
+        val repository = PlexRepository(
+            PlexConnection("http://127.0.0.1:32400/", "token"),
+            api,
+            FakeWatchlistApi(emptyMap(), 0),
+            metadata,
+        )
+
+        val profile = repository.loadPersonProfile(
+            MediaCredit("Liam Example", "Actor", null, "42"),
+        )
+
+        assertEquals("Liam Example", profile.name)
+        assertEquals("A verified reference biography.", profile.biography)
+        assertEquals(listOf("movie-42"), profile.media.map(MediaContent::ratingKey))
+        assertEquals("https://www.imdb.com/name/nm42/", profile.imdbUrl)
+    }
+
     @Test
     fun `offline download uses Plex queue and exact metadata key`() = runBlocking {
         val api = FakePlexApi(emptyList(), emptyMap())
@@ -360,6 +404,8 @@ private class FakePlexApi(
     val resolveRequests = mutableListOf<String>()
     val containerStarts = mutableListOf<Int>()
     var sessionsResponse: PlexLibraryResponse = PlexLibraryResponse()
+    var personResponse: PlexLibraryResponse = PlexLibraryResponse()
+    var personMediaResponse: PlexLibraryResponse = PlexLibraryResponse()
     var lastTimeline: TimelineCall? = null
     var createDownloadResponse: Response<PlexDownloadResponse> = Response.success(
         PlexDownloadResponse(
@@ -445,6 +491,8 @@ private class FakePlexApi(
     override suspend fun getUnwatchedMovies(sectionId: String) = unused()
     override suspend fun getChildren(ratingKey: String) = unused()
     override suspend fun getExtras(ratingKey: String) = unused()
+    override suspend fun getPerson(personId: String) = personResponse
+    override suspend fun getPersonMedia(personId: String) = personMediaResponse
     override suspend fun markWatched(ratingKey: String, identifier: String) = Response.success(Unit)
     override suspend fun rate(ratingKey: String, rating: Int, identifier: String) = Response.success(Unit)
     override suspend fun markUnwatched(ratingKey: String, identifier: String) = Response.success(Unit)

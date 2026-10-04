@@ -37,6 +37,19 @@ data class MediaCredit(
     val name: String,
     val role: String,
     val imageUrl: String?,
+    val personId: String? = null,
+)
+
+data class PersonProfile(
+    val personId: String,
+    val name: String,
+    val role: String,
+    val imageUrl: String?,
+    val biography: String?,
+    val biographySource: String?,
+    val biographySourceUrl: String?,
+    val imdbUrl: String?,
+    val media: List<MediaContent>,
 )
 
 data class MediaMarker(

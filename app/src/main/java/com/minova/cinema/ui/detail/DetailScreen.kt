@@ -83,6 +83,7 @@ fun DetailScreen(
     onWatchedChanged: (Boolean) -> Unit,
     onToggleMyList: () -> Unit,
     onRemoveFromContinueWatching: () -> Unit,
+    onOpenPerson: (MediaCredit) -> Unit = {},
     onOpenEpisode: (MediaContent) -> Unit,
     onSeasonSelected: (MediaContent) -> Unit,
     offlineDownloads: List<OfflineDownload> = emptyList(),
@@ -104,6 +105,7 @@ fun DetailScreen(
             onWatchedChanged = onWatchedChanged,
             onToggleMyList = onToggleMyList,
             onRemoveFromContinueWatching = onRemoveFromContinueWatching,
+            onOpenPerson = onOpenPerson,
             onOpenEpisode = onOpenEpisode,
             onSeasonSelected = onSeasonSelected,
             offlineDownloads = offlineDownloads,
@@ -179,11 +181,12 @@ fun DetailScreen(
                         firstSeasonFocusRequester = firstSeasonFocusRequester,
                         onSeasonSelected = onSeasonSelected,
                         onOpenEpisode = onOpenEpisode,
+                        onOpenPerson = onOpenPerson,
                     )
                 }
             }
-            if (content.kind == MediaKind.Movie && content.credits.isNotEmpty()) {
-                item { CastAndCrew(content.credits) }
+            if (content.kind != MediaKind.Show && content.credits.isNotEmpty()) {
+                item { CastAndCrew(content.credits, onOpenPerson) }
             }
         }
     }
@@ -325,6 +328,7 @@ private fun ShowBrowser(
     firstSeasonFocusRequester: FocusRequester,
     onSeasonSelected: (MediaContent) -> Unit,
     onOpenEpisode: (MediaContent) -> Unit,
+    onOpenPerson: (MediaCredit) -> Unit = {},
 ) {
     when (state) {
         ShowDetailUiState.Idle -> Unit
@@ -359,11 +363,7 @@ private fun ShowBrowser(
                     }
                 }
 
-                if (state.selectedSeason == null) {
-                    if (state.show.credits.isNotEmpty()) {
-                        CastAndCrew(state.show.credits)
-                    }
-                } else {
+                if (state.selectedSeason != null) {
                     Text(
                         state.selectedSeason.title,
                         color = Color.White,
@@ -383,6 +383,9 @@ private fun ShowBrowser(
                             }
                         }
                     }
+                }
+                if (state.show.credits.isNotEmpty()) {
+                    CastAndCrew(state.show.credits, onOpenPerson)
                 }
             }
         }
@@ -461,7 +464,7 @@ private fun SeasonPosterCard(
 }
 
 @Composable
-private fun CastAndCrew(credits: List<MediaCredit>) {
+private fun CastAndCrew(credits: List<MediaCredit>, onOpenPerson: (MediaCredit) -> Unit) {
     Column(Modifier.padding(top = 12.dp)) {
         Text(
             "Cast & Crew",
@@ -475,14 +478,14 @@ private fun CastAndCrew(credits: List<MediaCredit>) {
             horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             items(credits.take(30), key = { "${it.name}:${it.role}" }) { credit ->
-                CreditCard(credit)
+                CreditCard(credit) { onOpenPerson(credit) }
             }
         }
     }
 }
 
 @Composable
-private fun CreditCard(credit: MediaCredit) {
+private fun CreditCard(credit: MediaCredit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.06f else 1f,
@@ -495,6 +498,11 @@ private fun CreditCard(credit: MediaCredit) {
             .width(126.dp)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .onFocusChanged { focused = it.isFocused }
+            .clickable(
+                enabled = !credit.personId.isNullOrBlank(),
+                role = Role.Button,
+                onClick = onClick,
+            )
             .focusable(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

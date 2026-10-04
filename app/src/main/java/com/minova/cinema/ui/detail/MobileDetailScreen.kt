@@ -82,6 +82,7 @@ internal fun MobileDetailScreen(
     onWatchedChanged: (Boolean) -> Unit,
     onToggleMyList: () -> Unit,
     onRemoveFromContinueWatching: () -> Unit,
+    onOpenPerson: (MediaCredit) -> Unit,
     onOpenEpisode: (MediaContent) -> Unit,
     onSeasonSelected: (MediaContent) -> Unit,
     offlineDownloads: List<OfflineDownload>,
@@ -335,13 +336,13 @@ internal fun MobileDetailScreen(
                                 }
                             }
                         }
-                        if (showDetail.selectedSeason == null && showDetail.show.credits.isNotEmpty()) {
-                            item { MobileCredits(showDetail.show.credits) }
+                        if (showDetail.show.credits.isNotEmpty()) {
+                            item { MobileCredits(showDetail.show.credits, onOpenPerson) }
                         }
                     }
                 }
             } else if (content.credits.isNotEmpty()) {
-                item { MobileCredits(content.credits) }
+                item { MobileCredits(content.credits, onOpenPerson) }
             }
         }
         Spacer(Modifier.fillMaxWidth().height(1.dp).statusBarsPadding())
@@ -580,12 +581,17 @@ private fun MobileEpisodeRow(
 }
 
 @Composable
-private fun MobileCredits(credits: List<MediaCredit>) {
+private fun MobileCredits(credits: List<MediaCredit>, onOpenPerson: (MediaCredit) -> Unit) {
     Column(Modifier.padding(top = 14.dp)) {
         MobileSectionTitle("Cast & crew")
         LazyRow(contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(credits, key = { "${it.name}-${it.role}" }) { credit ->
-                Column(Modifier.width(104.dp)) {
+                Column(
+                    Modifier.width(104.dp).clickable(
+                        enabled = !credit.personId.isNullOrBlank(),
+                        onClick = { onOpenPerson(credit) },
+                    ),
+                ) {
                     AsyncImage(credit.imageUrl, credit.name, contentScale = ContentScale.Crop, modifier = Modifier.size(92.dp).clip(RoundedCornerShape(12.dp)).background(MinovaSurface))
                     Text(credit.name, color = MinovaWhite, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp))
                     Text(credit.role, color = MinovaMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 10.sp)

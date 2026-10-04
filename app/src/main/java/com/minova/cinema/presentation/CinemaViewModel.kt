@@ -16,6 +16,7 @@ import com.minova.cinema.data.remote.PlexConfig
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexServiceFactory
 import com.minova.cinema.domain.MediaContent
+import com.minova.cinema.domain.MediaCredit
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.CinemaPlaybackPlan
 import com.minova.cinema.domain.MediaKind
@@ -58,6 +59,9 @@ class CinemaViewModel(
     private val _movieDetail = MutableStateFlow<MovieDetailUiState>(MovieDetailUiState.Idle)
     val movieDetail: StateFlow<MovieDetailUiState> = _movieDetail.asStateFlow()
 
+    private val _personProfile = MutableStateFlow<PersonProfileUiState>(PersonProfileUiState.Idle)
+    val personProfile: StateFlow<PersonProfileUiState> = _personProfile.asStateFlow()
+
     private val _profiles = MutableStateFlow<PlexProfilesUiState>(PlexProfilesUiState.Loading)
     val profiles: StateFlow<PlexProfilesUiState> = _profiles.asStateFlow()
 
@@ -74,6 +78,7 @@ class CinemaViewModel(
     private var repository: PlexRepository? = null
     private var catalogJob: Job? = null
     private var detailJob: Job? = null
+    private var personJob: Job? = null
     private var watchlistJob: Job? = null
     private var offlineDownloadsJob: Job? = null
     private var plexSignInJob: Job? = null
@@ -192,6 +197,7 @@ class CinemaViewModel(
         repository = null
         _showDetail.value = ShowDetailUiState.Idle
         _movieDetail.value = MovieDetailUiState.Idle
+        _personProfile.value = PersonProfileUiState.Idle
         _uiState.value = CinemaUiState.Onboarding()
     }
 
@@ -403,6 +409,23 @@ class CinemaViewModel(
                 throw cancellation
             } catch (error: Exception) {
                 _movieDetail.value = MovieDetailUiState.Error(movie, error.userMessage())
+            }
+        }
+    }
+
+    fun loadPerson(credit: MediaCredit) {
+        val currentRepository = repository ?: return
+        personJob?.cancel()
+        personJob = viewModelScope.launch {
+            _personProfile.value = PersonProfileUiState.Loading(credit)
+            try {
+                _personProfile.value = PersonProfileUiState.Ready(
+                    currentRepository.loadPersonProfile(credit),
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                _personProfile.value = PersonProfileUiState.Error(credit, error.userMessage())
             }
         }
     }

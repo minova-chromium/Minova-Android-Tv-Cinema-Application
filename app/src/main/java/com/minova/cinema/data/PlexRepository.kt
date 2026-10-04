@@ -5,15 +5,19 @@ import com.minova.cinema.data.remote.MediaContainer
 import com.minova.cinema.data.remote.PlexApiService
 import com.minova.cinema.data.remote.PlexConnection
 import com.minova.cinema.data.remote.PlexUrlFactory
+import com.minova.cinema.data.remote.PersonMetadataService
+import com.minova.cinema.data.remote.PersonMetadataLookup
 import com.minova.cinema.data.remote.PlexWatchlistApiService
 import com.minova.cinema.data.remote.PlexDownloadQueueItem
 import com.minova.cinema.data.remote.PlexDownloadResponse
+import com.minova.cinema.data.remote.PersonTag
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaCollection
 import com.minova.cinema.domain.AudioStream
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
 import com.minova.cinema.domain.MediaCredit
+import com.minova.cinema.domain.PersonProfile
 import com.minova.cinema.domain.MediaMarker
 import com.minova.cinema.domain.MediaChapter
 import com.minova.cinema.domain.MediaTechnicalInfo
@@ -41,6 +45,7 @@ class PlexRepository(
     private val connection: PlexConnection,
     private val api: PlexApiService,
     private val watchlistApi: PlexWatchlistApiService,
+    private val personMetadataService: PersonMetadataLookup = PersonMetadataService(),
 ) {
     private val urls by lazy(LazyThreadSafetyMode.NONE) { PlexUrlFactory(connection) }
     private val playableReads = RequestCoalescer<String, MediaContent?>(
@@ -366,6 +371,28 @@ class PlexRepository(
         return episodes.getOrNull(currentIndex + 1)
     }
 
+    suspend fun loadPersonProfile(credit: MediaCredit): PersonProfile {
+        val personId = credit.personId?.takeIf(String::isNotBlank)
+            ?: error("Plex did not provide a profile identity for ${credit.name}.")
+        val person = runCatching { api.getPerson(personId).mediaContainer.directories.firstOrNull() }.getOrNull()
+        val media = api.getPersonMedia(personId).mediaContainer.metadata
+            .map(::toContent)
+            .filter { it.kind == MediaKind.Movie || it.kind == MediaKind.Show }
+            .distinctBy(MediaContent::ratingKey)
+        val background = personMetadataService.lookup(credit.name)
+        return PersonProfile(
+            personId = personId,
+            name = person?.tag?.takeIf(String::isNotBlank) ?: person?.title?.takeIf(String::isNotBlank) ?: credit.name,
+            role = credit.role,
+            imageUrl = (person?.thumb ?: credit.imageUrl)?.let(urls::authenticated),
+            biography = background.biography,
+            biographySource = background.sourceLabel,
+            biographySourceUrl = background.sourceUrl,
+            imdbUrl = background.imdbUrl,
+            media = media,
+        )
+    }
+
     private suspend fun loadLibrary(library: PlexLibrary): List<MediaContent> {
         // includeGuids makes older Watchlist entries resolvable even when the
         // local Plex agent and Discover use different primary identifiers.
@@ -605,17 +632,18 @@ class PlexRepository(
                         name = person.tag,
                         role = person.role?.takeIf { it.isNotBlank() } ?: "Cast",
                         imageUrl = person.thumb?.let(urls::authenticated),
+                        personId = person.profileId(),
                     ),
                 )
             }
             metadata.directors.forEach { person ->
-                add(MediaCredit(person.tag, "Director", person.thumb?.let(urls::authenticated)))
+                add(MediaCredit(person.tag, "Director", person.thumb?.let(urls::authenticated), person.profileId()))
             }
             metadata.writers.forEach { person ->
-                add(MediaCredit(person.tag, "Writer", person.thumb?.let(urls::authenticated)))
+                add(MediaCredit(person.tag, "Writer", person.thumb?.let(urls::authenticated), person.profileId()))
             }
             metadata.producers.forEach { person ->
-                add(MediaCredit(person.tag, "Producer", person.thumb?.let(urls::authenticated)))
+                add(MediaCredit(person.tag, "Producer", person.thumb?.let(urls::authenticated), person.profileId()))
             }
         }.filter { it.name.isNotBlank() }.distinctBy { it.name to it.role }
 
@@ -686,6 +714,10 @@ class PlexRepository(
         )
     }
 }
+
+private fun PersonTag.profileId(): String? = tagKey?.takeIf(String::isNotBlank)
+    ?: id?.takeIf(String::isNotBlank)
+    ?: filter?.substringAfter('=', missingDelimiterValue = "")?.substringBefore('&')?.takeIf(String::isNotBlank)
 
 // Plex Discover has rejected or silently capped larger page sizes for some
 // accounts. Ten is the stable size used by affected official Plex clients.
