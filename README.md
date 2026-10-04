@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://minova-chromium.github.io/Minova-Android-Tv-Cinema-Application/">Website</a> ·
-  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.8/Minova-Cinema-2.9.8.apk">Download APK</a> ·
+  <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.9/Minova-Cinema-2.9.9.apk">Download APK</a> ·
   <a href="https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/issues">Issues</a>
 </p>
 
@@ -22,7 +22,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Plex-synced watched state, watchlist, Continue Watching progress, manual mark watched/unwatched, and dismiss-from-continue actions.
 - One-tap Continue elsewhere handoff that saves the exact paused position to the active Plex server before closing playback.
 - Phone-only movie and episode downloads through Plex Media Server's official queue, stored privately on the device with progress, retry, removal, and offline resume support. Plex Pass and the server owner's Allow Downloads permission are required.
-- Show details with season artwork, episodes, cast and crew; movie details with trailers when Plex exposes them.
+- Show details with season artwork, episodes, cast and crew; movie details with trailers when Plex exposes them. Cast members open biography profiles, an IMDb link, and their titles from the connected libraries.
 - Next-up experience after an episode finishes.
 - Optional ten-second autoplay for the next episode, with a persistent TV setting.
 - Plex-powered Skip Intro and Skip Credits when the server provides analyzed markers, plus chapter seeking.
@@ -32,7 +32,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Audio and subtitle track selection with language, codec, and channel details.
 - Google Cast from phones to Chromecast and Google TV, with native device selection, remote controls, progress synchronization, and automatic stream compatibility fallback.
 - Live Direct Play, Direct Stream, and Transcoding diagnostics with the Plex decision reason.
-- Manual audio-delay and subtitle-delay correction for television synchronization issues.
+- Automatic post-seek A/V timestamp stabilization, a manual playback-pipeline resync action, and manual audio/subtitle delay correction for television synchronization issues.
 - Media3 frame-rate matching and supported surround-audio passthrough.
 - Private per-server metadata caching, duplicate-request coalescing, paged large-library loading, visible-first artwork loading, and upcoming-artwork prefetching.
 - Personalized Plex shelves using viewing progress, watched history, ratings, genres, and only server artwork.
@@ -51,7 +51,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 
 ## Install
 
-1. [Download the Minova Cinema 2.9.8 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.8/Minova-Cinema-2.9.8.apk).
+1. [Download the Minova Cinema 2.9.9 APK directly](https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v2.9.9/Minova-Cinema-2.9.9.apk).
 2. Transfer it to an Android 10-or-newer phone, tablet, or TV and allow installation from the sending app when Android asks.
 3. Launch Minova Cinema and allow local-network access when Android asks. This is required on Android 17 and newer so the app can reach Plex and Tapo devices on your LAN.
 4. Select **Sign in with Plex**. On TV, scan the QR code with any phone browser; on a phone or tablet, open the Plex website directly. Minova discovers the available servers after approval.
@@ -71,6 +71,7 @@ Android does not allow a normal third-party application to power off the televis
 | Player | OK / Enter | Play or pause immediately |
 | Player | Left / Right | Seek backward or forward |
 | Player | Down, Menu, or Settings | Reveal the bottom playback controls |
+| Player | Resync A/V | Rebuild playback at the current position when sound and picture drift after seeking |
 | Player | Back | Close playback settings first, then leave playback |
 | Phone browse | Tap | Open titles, destinations, filters, and actions |
 | Phone browse | Long press or ⋮ | Open title actions |

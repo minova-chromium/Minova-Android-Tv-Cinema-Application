@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.9.9 — 2026-10-04
+
+- Added cast-member profiles across Android phones, tablets, and TV with biography information, an IMDb link, and the actor's movies and shows available in the connected Plex libraries.
+- Added automatic playback timestamp stabilization after seeking and a manual Resync A/V control that rebuilds the Media3 playback pipeline at the current position without changing optical/passthrough or saved delay settings.
+- Improved personalized Android shelves with recent-viewing anchors, rarity-weighted genre matching, exposure-aware title selection, and redundant-row suppression so Because You Watched, Top Picks, and favorite-genre rows no longer repeat the same leading catalog.
+- Kept the existing touch-first phone layout and D-pad-native Android TV interface while sharing the improved recommendation and synchronization behavior across both experiences.
+
 ## 2.9.8 — 2026-09-29
 
 - Added official Plex browser sign-in on Android phones, tablets, and TV so users can authorize Minova without finding or copying a Plex token.
