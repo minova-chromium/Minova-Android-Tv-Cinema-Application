@@ -471,35 +471,41 @@ internal fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoverySh
     }
     val history = (media.filter(MediaContent::isWatched) + catalog.continueWatching)
         .distinctBy(MediaContent::ratingKey)
-    val preferredGenres = history.flatMap(MediaContent::genres)
-        .groupingBy { it.lowercase(Locale.ROOT) }
-        .eachCount()
-        .entries
-        .sortedByDescending(Map.Entry<String, Int>::value)
-        .map(Map.Entry<String, Int>::key)
+        .sortedByDescending(::viewingActivity)
+    val preferredGenres = preferredGenreWeights(history)
+    val counts = mediaGenreCounts(media)
     val watchedKeys = history.mapTo(mutableSetOf(), MediaContent::ratingKey)
-    val topPicks = media.asSequence()
+    val rankedTopPicks = media.asSequence()
         .filterNot { it.ratingKey in watchedKeys }
-        .map { item ->
-            val affinity = item.genres.sumOf { genre ->
-                val index = preferredGenres.indexOf(genre.lowercase(Locale.ROOT))
-                if (index < 0) 0 else (preferredGenres.size - index).coerceAtMost(8)
-            }
-            item to (affinity * 10 + ((item.audienceRating ?: 0.0) * 2).toInt())
-        }
-        .sortedByDescending(Pair<MediaContent, Int>::second)
-        .map(Pair<MediaContent, Int>::first)
-        .take(30)
+        .sortedByDescending { recommendationScore(it, null, preferredGenres, counts, media.size) }
         .toList()
-    val recentReference = history.maxByOrNull { it.addedAtEpochSeconds ?: Long.MIN_VALUE }
-    val becauseYouWatched = recentReference?.let { watched ->
-        val genres = watched.genres.map { it.lowercase(Locale.ROOT) }.toSet()
+    val recentReference = history.maxByOrNull(::viewingActivity)
+    val rankedBecauseYouWatched = recentReference?.let { watched ->
+        val genres = distinctiveAnchorGenres(watched, media, counts)
         media.filter { candidate ->
             candidate.ratingKey !in watchedKeys && candidate.genres.any {
-                it.lowercase(Locale.ROOT) in genres
+                normalizedGenre(it) in genres
             }
-        }.sortedByDescending { it.audienceRating ?: 0.0 }.take(30)
+        }.sortedByDescending {
+            recommendationScore(it, watched, preferredGenres, counts, media.size)
+        }
     }.orEmpty()
+    // Select the anchor row first even though Top Picks remains the first
+    // personalized shelf on screen. Exposure-aware selection then gives each
+    // row a different leading set instead of repeating the same posters.
+    val exposure = mutableMapOf<String, Int>()
+    val becauseYouWatched = diversifyRecommendations(rankedBecauseYouWatched, exposure)
+    val topPicks = diversifyRecommendations(rankedTopPicks, exposure)
+    val favoriteGenre = preferredGenres.maxByOrNull(Map.Entry<String, Int>::value)?.key
+    val favoriteTitle = genreGroups.keys.firstOrNull { normalizedGenre(it) == favoriteGenre }
+    val favoriteCandidates = favoriteGenre?.let { genre ->
+        rankedTopPicks.filter { item -> item.genres.any { normalizedGenre(it) == genre } }
+    }.orEmpty()
+    val favoritePicks = diversifyRecommendations(favoriteCandidates, exposure)
+    val showFavoriteShelf = favoriteTitle != null && favoritePicks.size >= 2 &&
+        listOf(topPicks, becauseYouWatched).filter(List<MediaContent>::isNotEmpty).all {
+            recommendationOverlap(favoritePicks, it) < 0.8
+        }
     val unfinishedSeries = catalog.continueWatching.filter {
         it.kind == MediaKind.Episode || it.kind == MediaKind.Show || it.kind == MediaKind.Season
     }
@@ -514,6 +520,9 @@ internal fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoverySh
                 ),
             )
         }
+        if (showFavoriteShelf) {
+            add(DiscoveryShelf("favorite-$favoriteGenre", "More $favoriteTitle for You", favoritePicks))
+        }
         if (unfinishedSeries.isNotEmpty()) {
             add(DiscoveryShelf("finish-series", "Finish Your Series", unfinishedSeries))
         }
@@ -523,6 +532,84 @@ internal fun buildHomeDiscoveryShelves(catalog: CinemaCatalog): List<DiscoverySh
             add(DiscoveryShelf("genre-$genre", genre, titles))
         }
     }.filter { it.media.isNotEmpty() }
+}
+
+private fun normalizedGenre(value: String): String = value.trim().lowercase(Locale.ROOT)
+
+private fun viewingActivity(item: MediaContent): Long = item.lastViewedAtEpochSeconds
+    ?: item.addedAtEpochSeconds?.takeIf { item.isWatched || item.viewOffsetMs > 0L }
+    ?: if (item.isWatched || item.viewOffsetMs > 0L) 1L else 0L
+
+private fun mediaGenreCounts(items: List<MediaContent>): Map<String, Int> = buildMap {
+    items.forEach { item ->
+        item.genres.map(::normalizedGenre).filter(String::isNotBlank).distinct().forEach { genre ->
+            put(genre, (get(genre) ?: 0) + 1)
+        }
+    }
+}
+
+private fun preferredGenreWeights(history: List<MediaContent>): Map<String, Int> = buildMap {
+    history.sortedByDescending(::viewingActivity).forEachIndexed { index, item ->
+        val weight = (8 - index).coerceAtLeast(1)
+        item.genres.map(::normalizedGenre).filter(String::isNotBlank).distinct().forEach { genre ->
+            put(genre, (get(genre) ?: 0) + weight)
+        }
+    }
+}
+
+private fun distinctiveAnchorGenres(
+    anchor: MediaContent,
+    library: List<MediaContent>,
+    counts: Map<String, Int>,
+): Set<String> {
+    val ordered = anchor.genres.map(::normalizedGenre).filter(String::isNotBlank).distinct()
+        .sortedBy { counts[it] ?: library.size }
+    val threshold = maxOf(4, (library.size * 45 + 99) / 100)
+    return ordered.filter { (counts[it] ?: library.size) <= threshold }
+        .ifEmpty { ordered.take(2) }
+        .toSet()
+}
+
+private fun recommendationScore(
+    candidate: MediaContent,
+    anchor: MediaContent?,
+    preferredGenres: Map<String, Int>,
+    counts: Map<String, Int>,
+    librarySize: Int,
+): Double {
+    val anchorGenres = anchor?.genres?.map(::normalizedGenre)?.toSet().orEmpty()
+    val shared = candidate.genres.map(::normalizedGenre).filter { it in anchorGenres }.distinct()
+        .sumOf { genre ->
+            val frequency = (counts[genre] ?: librarySize).coerceAtLeast(1)
+            80.0 + minOf(140.0, librarySize.coerceAtLeast(1).toDouble() / frequency * 24.0)
+        }
+    val affinity = candidate.genres.map(::normalizedGenre).distinct()
+        .sumOf { preferredGenres[it] ?: 0 }
+    val recency = ((candidate.year ?: 0) - 2016).coerceIn(0, 10)
+    return shared + affinity * 12.0 + (candidate.audienceRating ?: 0.0) * 2.0 + recency +
+        (candidate.addedAtEpochSeconds ?: 0L) / 10_000_000_000.0
+}
+
+private fun diversifyRecommendations(
+    ranked: List<MediaContent>,
+    exposure: MutableMap<String, Int>,
+    limit: Int = 24,
+): List<MediaContent> {
+    val selected = ranked.distinctBy(MediaContent::ratingKey)
+        .mapIndexed { rank, item -> Triple(item, exposure[item.ratingKey] ?: 0, rank) }
+        .sortedWith(compareBy<Triple<MediaContent, Int, Int>> { it.second }.thenBy { it.third })
+        .take(limit)
+        .map(Triple<MediaContent, Int, Int>::first)
+    selected.forEach { item -> exposure[item.ratingKey] = (exposure[item.ratingKey] ?: 0) + 1 }
+    return selected
+}
+
+private fun recommendationOverlap(left: List<MediaContent>, right: List<MediaContent>): Double {
+    val leftKeys = left.mapTo(mutableSetOf(), MediaContent::ratingKey)
+    val rightKeys = right.mapTo(mutableSetOf(), MediaContent::ratingKey)
+    val smaller = minOf(leftKeys.size, rightKeys.size)
+    if (smaller == 0) return 0.0
+    return leftKeys.count(rightKeys::contains).toDouble() / smaller
 }
 
 @Composable

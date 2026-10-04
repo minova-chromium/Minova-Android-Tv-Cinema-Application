@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -230,6 +231,7 @@ fun PlayerScreen(
     var requestBottomFocus by remember { mutableStateOf(false) }
     var bottomControlsFocused by remember { mutableStateOf(false) }
     var controlsInteractionId by remember { mutableStateOf(0L) }
+    var seekResyncRequestId by remember(content.ratingKey) { mutableLongStateOf(0L) }
     var selectedQuality by remember { mutableStateOf(PlaybackQuality.Original) }
     var settingsVisible by remember { mutableStateOf(false) }
     var phoneSubtitleMenuVisible by remember { mutableStateOf(false) }
@@ -634,6 +636,24 @@ fun PlayerScreen(
         player.play()
     }
 
+    fun resynchronizePlayback(rebuildPipeline: Boolean, announce: Boolean = true) {
+        if (player.mediaItemCount == 0 || player.playbackState == Player.STATE_IDLE) return
+        val itemIndex = player.currentMediaItemIndex.coerceIn(0, player.mediaItemCount - 1)
+        val position = player.currentPosition.coerceAtLeast(0L)
+        val shouldPlay = player.playWhenReady
+        if (rebuildPipeline) player.stop()
+        player.seekTo(itemIndex, position)
+        if (rebuildPipeline) player.prepare()
+        player.playWhenReady = shouldPlay
+        if (announce) {
+            playbackMessage = if (rebuildPipeline) {
+                "Resynchronizing audio and video…"
+            } else {
+                "Audio and video synchronized"
+            }
+        }
+    }
+
     fun completePlayback() {
         if (endHandled) return
         endHandled = true
@@ -928,10 +948,20 @@ fun PlayerScreen(
             (current + deltaMs).coerceAtLeast(0L)
         }
         player.seekTo(target)
+        // Repeating Left/Right cancels and restarts the debounce below. Once
+        // seeking has settled, a precise same-position seek flushes stale
+        // audio/video timestamps without changing optical/passthrough settings.
+        seekResyncRequestId += 1L
         playbackPositionMs = target
         playbackDurationMs = duration
         playbackTimeLeftMs = (duration - target).coerceAtLeast(0L)
         showControlsForInteraction()
+    }
+
+    LaunchedEffect(seekResyncRequestId) {
+        if (seekResyncRequestId == 0L) return@LaunchedEffect
+        delay(650)
+        resynchronizePlayback(rebuildPipeline = false, announce = false)
     }
 
     fun continueElsewhere() {
@@ -1279,6 +1309,15 @@ fun PlayerScreen(
                             modifier = Modifier.testTag("player-seek-forward"),
                         )
                         TouchPlayerIconButton(
+                            icon = Icons.Rounded.Sync,
+                            contentDescription = "Resync audio and video",
+                            onClick = {
+                                resynchronizePlayback(rebuildPipeline = true)
+                                onUserInteraction()
+                            },
+                            modifier = Modifier.testTag("player-resync"),
+                        )
+                        TouchPlayerIconButton(
                             icon = Icons.Rounded.DevicesOther,
                             contentDescription = "Continue on another device",
                             onClick = {
@@ -1311,6 +1350,14 @@ fun PlayerScreen(
                             modifier = Modifier.testTag("player-subtitles-toggle"),
                         )
                     } else {
+                        OutlinedButton(
+                            onClick = { resynchronizePlayback(rebuildPipeline = true) },
+                            modifier = Modifier.testTag("player-resync"),
+                        ) {
+                            Icon(Icons.Rounded.Sync, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Resync A/V")
+                        }
                         OutlinedButton(
                             onClick = ::continueElsewhere,
                             enabled = !handoffInProgress && isMainFeatureActive,
@@ -1463,6 +1510,7 @@ fun PlayerScreen(
                 },
                 onChapterSelected = { chapter ->
                     player.seekTo(chapter.startTimeOffsetMs)
+                    seekResyncRequestId += 1L
                     playbackPositionMs = chapter.startTimeOffsetMs
                     settingsVisible = false
                     playerView?.requestFocus()
