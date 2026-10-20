@@ -1,6 +1,7 @@
 package com.minova.cinema.showcase
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -9,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaCollection
 import com.minova.cinema.domain.MediaContent
@@ -42,7 +44,36 @@ class PhoneShowcaseActivity : ComponentActivity() {
                     mutableStateOf(intent.getBooleanExtra("showAppPreferences", false))
                 }
                 var experience by remember { mutableStateOf(ExperienceSettings()) }
-                val catalog = remember { phoneShowcaseCatalog() }
+                val context = LocalContext.current
+                var catalog by remember { mutableStateOf(phoneShowcaseCatalog()) }
+                var autoplayNextEpisode by remember { mutableStateOf(true) }
+                var inactivityCheckEnabled by remember { mutableStateOf(true) }
+                var inactivityTimeoutMs by remember { mutableStateOf(3 * 60 * 60 * 1_000L) }
+                var screensaverTimeoutMs by remember { mutableStateOf(5 * 60 * 1_000L) }
+                var cinemaModeEnabled by remember { mutableStateOf(true) }
+                var cinemaTrailersEnabled by remember { mutableStateOf(true) }
+                var cinemaBumperConfigured by remember { mutableStateOf(false) }
+
+                fun notify(message: String) {
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
+
+                fun updateContent(content: MediaContent) {
+                    catalog = catalog.replaceContent(content)
+                    if (selected?.ratingKey == content.ratingKey) selected = content
+                }
+
+                fun toggleMyList(content: MediaContent) {
+                    val saved = catalog.myList.any { it.ratingKey == content.ratingKey }
+                    catalog = catalog.copy(
+                        myList = if (saved) {
+                            catalog.myList.filterNot { it.ratingKey == content.ratingKey }
+                        } else {
+                            catalog.myList + content
+                        },
+                    )
+                    notify(if (saved) "Removed from Watchlist" else "Added to Watchlist")
+                }
                 BackHandler(enabled = page != PhoneShowcasePage.Browse) {
                     selected = null
                     page = PhoneShowcasePage.Browse
@@ -53,11 +84,20 @@ class PhoneShowcaseActivity : ComponentActivity() {
                     BrowseScreen(
                         catalog = catalog,
                         onOpen = { selected = it; page = PhoneShowcasePage.Detail },
-                        onPlay = { selected = it; page = PhoneShowcasePage.Detail },
-                        onToggleMyList = {},
+                        onPlay = { notify("Play selected: ${it.title}") },
+                        onToggleMyList = ::toggleMyList,
                         onSettings = { page = PhoneShowcasePage.Settings },
-                        onWatchlistRefresh = {},
-                        onDiscover = {},
+                        onDownloads = { notify("Downloads selected") },
+                        onWatchlistRefresh = { notify("Watchlist refreshed") },
+                        onDiscover = { notify("Discover selected") },
+                        onPlayFromBeginning = { notify("Starting ${it.title} from the beginning") },
+                        onSetWatched = { item, watched ->
+                            updateContent(item.copy(isWatched = watched))
+                            notify(if (watched) "Marked watched" else "Marked unwatched")
+                        },
+                        onRefresh = { notify("Library refreshed") },
+                        onResetPlaybackPreferences = { notify("Playback preferences reset") },
+                        loadCollectionMembers = { catalog.movies.take(4) },
                     )
                     }
                     PhoneShowcasePage.Detail -> if (content != null) {
@@ -68,39 +108,68 @@ class PhoneShowcaseActivity : ComponentActivity() {
                         isWatched = content.isWatched,
                         isInMyList = catalog.myList.any { it.ratingKey == content.ratingKey },
                         isInContinueWatching = catalog.continueWatching.any { it.ratingKey == content.ratingKey },
-                        onPlay = {},
-                        onPlayTrailer = {},
-                        onWatchedChanged = {},
-                        onToggleMyList = {},
-                        onRemoveFromContinueWatching = {},
-                        onOpenEpisode = {},
-                        onSeasonSelected = {},
+                        onPlay = { notify("Play selected: ${content.title}") },
+                        onPlayTrailer = { notify("Trailer selected") },
+                        onWatchedChanged = { watched ->
+                            updateContent(content.copy(isWatched = watched))
+                            notify(if (watched) "Marked watched" else "Marked unwatched")
+                        },
+                        onToggleMyList = { toggleMyList(content) },
+                        onRemoveFromContinueWatching = {
+                            catalog = catalog.copy(
+                                continueWatching = catalog.continueWatching.filterNot {
+                                    it.ratingKey == content.ratingKey
+                                },
+                            )
+                            notify("Removed from Continue Watching")
+                        },
+                        onOpenEpisode = { notify("Episode selected: ${it.title}") },
+                        onSeasonSelected = { notify("Season selected: ${it.title}") },
                         onBack = { selected = null; page = PhoneShowcasePage.Browse },
                     )
                     }
                     PhoneShowcasePage.Settings -> SettingsScreen(
                         serverUrl = "http://192.168.1.10:32400",
-                        autoplayNextEpisode = true,
-                        inactivityCheckEnabled = true,
-                        inactivityTimeoutMs = 3 * 60 * 60 * 1_000L,
-                        screensaverTimeoutMs = 5 * 60 * 1_000L,
-                        cinemaModeEnabled = true,
-                        cinemaTrailersEnabled = true,
-                        cinemaBumperConfigured = false,
+                        autoplayNextEpisode = autoplayNextEpisode,
+                        inactivityCheckEnabled = inactivityCheckEnabled,
+                        inactivityTimeoutMs = inactivityTimeoutMs,
+                        screensaverTimeoutMs = screensaverTimeoutMs,
+                        cinemaModeEnabled = cinemaModeEnabled,
+                        cinemaTrailersEnabled = cinemaTrailersEnabled,
+                        cinemaBumperConfigured = cinemaBumperConfigured,
                         lightingState = LightingUiState(message = "Google Home is ready when enabled in a release build."),
                         tapoLightsState = TapoLightsUiState(),
                         profilesState = PlexProfilesUiState.Ready(emptyList()),
                         networkAssistantState = NetworkAssistantUiState.Idle,
-                        onRefresh = {}, onChangeServer = {},
-                        onAutoplayNextEpisodeChanged = {}, onInactivityCheckChanged = {},
-                        onInactivityTimeoutChanged = {}, onScreensaverTimeoutChanged = {},
-                        onCinemaModeChanged = {}, onCinemaTrailersChanged = {},
-                        onChooseCinemaBumper = {}, onClearCinemaBumper = {},
-                        onRequestHomePermission = {}, onRefreshLights = {}, onLightAssignmentChanged = { _, _ -> },
-                        onSaveTapoCredentials = { _, _ -> }, onClearTapoCredentials = {},
-                        onDiscoverTapoLights = {}, onTapoLightAssignmentChanged = { _, _ -> },
-                        onRefreshProfiles = {}, onSwitchProfile = { _, _ -> }, onRunNetworkTest = {},
-                        onRequestTvHomeChannels = {},
+                        onRefresh = { notify("Library refreshed") },
+                        onChangeServer = { notify("Change server selected") },
+                        onAutoplayNextEpisodeChanged = { autoplayNextEpisode = it },
+                        onInactivityCheckChanged = { inactivityCheckEnabled = it },
+                        onInactivityTimeoutChanged = { inactivityTimeoutMs = it },
+                        onScreensaverTimeoutChanged = { screensaverTimeoutMs = it },
+                        onCinemaModeChanged = { cinemaModeEnabled = it },
+                        onCinemaTrailersChanged = { cinemaTrailersEnabled = it },
+                        onChooseCinemaBumper = {
+                            cinemaBumperConfigured = true
+                            notify("Bumper selected")
+                        },
+                        onClearCinemaBumper = { cinemaBumperConfigured = false },
+                        onRequestHomePermission = { notify("Home permission selected") },
+                        onRefreshLights = { notify("Lights refreshed") },
+                        onLightAssignmentChanged = { _, _ -> notify("Light assignment changed") },
+                        onSaveTapoCredentials = { _, _ -> notify("Tapo credentials saved") },
+                        onClearTapoCredentials = { notify("Tapo credentials cleared") },
+                        onDiscoverTapoLights = { notify("Discovering Tapo lights") },
+                        onTapoLightAssignmentChanged = { _, _ -> notify("Tapo light assignment changed") },
+                        onRefreshProfiles = { notify("Profiles refreshed") },
+                        onSwitchProfile = { profile, _ -> notify("Profile selected: ${profile.title}") },
+                        onRunNetworkTest = { notify("Network test started") },
+                        onRequestTvHomeChannels = { notify("TV Home channels selected") },
+                        onCustomizeHome = { notify("Customize Home selected") },
+                        onCastServerUrlChanged = {
+                            notify("TV playback address saved")
+                            true
+                        },
                         onExperienceSettings = { experienceOpen = true },
                         onBack = { page = PhoneShowcasePage.Browse },
                     )
@@ -119,6 +188,18 @@ class PhoneShowcaseActivity : ComponentActivity() {
             }
         }
     }
+}
+
+private fun CinemaCatalog.replaceContent(updated: MediaContent): CinemaCatalog {
+    fun List<MediaContent>.replace(): List<MediaContent> = map {
+        if (it.ratingKey == updated.ratingKey) updated else it
+    }
+    return copy(
+        movies = movies.replace(),
+        shows = shows.replace(),
+        continueWatching = continueWatching.replace(),
+        myList = myList.replace(),
+    )
 }
 
 private fun phoneShowcaseCatalog(): CinemaCatalog {

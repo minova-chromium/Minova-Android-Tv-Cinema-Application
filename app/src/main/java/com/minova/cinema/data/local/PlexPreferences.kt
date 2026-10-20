@@ -25,12 +25,39 @@ class PlexPreferences(context: Context) {
         )
     }
 
-    fun saveConnection(connection: PlexConnection, ownerToken: String = connection.token) {
+    fun saveConnection(
+        connection: PlexConnection,
+        ownerToken: String = connection.token,
+        serverId: String? = null,
+        serverName: String? = null,
+    ) {
         preferences.edit {
             putString(KEY_BASE_URL, connection.baseUrl)
             putString(KEY_TOKEN, connection.token)
             putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
             putString(KEY_OWNER_TOKEN, ownerToken)
+            if (serverId.isNullOrBlank()) remove(KEY_SERVER_ID)
+            else putString(KEY_SERVER_ID, serverId)
+            if (serverName.isNullOrBlank()) remove(KEY_SERVER_NAME)
+            else putString(KEY_SERVER_NAME, serverName)
+        }
+    }
+
+    /**
+     * Updates the address selected by Plex discovery without losing the owner
+     * credential or the currently selected Plex Home profile.
+     */
+    fun saveRecoveredConnection(
+        connection: PlexConnection,
+        serverId: String,
+        serverName: String,
+    ) {
+        preferences.edit {
+            putString(KEY_BASE_URL, connection.baseUrl)
+            putString(KEY_TOKEN, connection.token)
+            putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
+            putString(KEY_SERVER_ID, serverId)
+            putString(KEY_SERVER_NAME, serverName)
         }
     }
 
@@ -54,6 +81,12 @@ class PlexPreferences(context: Context) {
     fun readActiveProfileUuid(): String? =
         preferences.getString(KEY_ACTIVE_PROFILE_UUID, null)?.takeIf(String::isNotBlank)
 
+    fun readServerId(): String? =
+        preferences.getString(KEY_SERVER_ID, null)?.takeIf(String::isNotBlank)
+
+    fun readServerName(): String? =
+        preferences.getString(KEY_SERVER_NAME, null)?.takeIf(String::isNotBlank)
+
     fun clearConnection() {
         preferences.edit {
             remove(KEY_BASE_URL)
@@ -61,6 +94,8 @@ class PlexPreferences(context: Context) {
             remove(KEY_OWNER_TOKEN)
             remove(KEY_ACTIVE_PROFILE_UUID)
             remove(KEY_CLIENT_IDENTIFIER)
+            remove(KEY_SERVER_ID)
+            remove(KEY_SERVER_NAME)
         }
     }
 
@@ -79,5 +114,7 @@ class PlexPreferences(context: Context) {
         const val KEY_OWNER_TOKEN = "owner_token"
         const val KEY_ACTIVE_PROFILE_UUID = "active_profile_uuid"
         const val KEY_CLIENT_IDENTIFIER = "client_identifier"
+        const val KEY_SERVER_ID = "server_id"
+        const val KEY_SERVER_NAME = "server_name"
     }
 }

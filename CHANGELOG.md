@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.10.0 — 2026-10-20
+
+- Added automatic Plex connection recovery after Wi-Fi, mobile-data, VPN, Tailscale, and other network changes so phones and tablets can reconnect without signing out and signing in again.
+- Remembered the selected Plex server identity and safely refreshed its current connection address while preserving the active Plex Home profile and credentials.
+- Rebuilt the tablet experience around the complete touch-first phone feature set, with adaptive tablet proportions in portrait and landscape instead of a separate non-functional interface.
+- Improved tablet navigation, responsive browse shelves and grids, search, collections, title details, playback actions, and settings while keeping Continue Watching landscape and discovery artwork portrait.
+- Added regression coverage for reconnecting to the correct Plex server after its address changes and for avoiding ambiguous server switches.
+
 ## 2.9.9 — 2026-10-04
 
 - Added cast-member profiles across Android phones, tablets, and TV with biography information, an IMDb link, and the actor's movies and shows available in the connected Plex libraries.

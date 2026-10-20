@@ -7,6 +7,8 @@ import android.os.Build
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.util.Rational
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -51,6 +53,15 @@ class MainActivity : FragmentActivity(), PictureInPictureHost {
     private var pictureInPictureMode by mutableStateOf(false)
     private var pictureInPicturePlaybackActive = false
     private var pictureInPictureAspectRatio = Rational(16, 9)
+    private val connectivityManager by lazy {
+        getSystemService(ConnectivityManager::class.java)
+    }
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            viewModel.onNetworkAvailable()
+        }
+    }
+    private var networkCallbackRegistered = false
     private val localNetworkPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -122,6 +133,24 @@ class MainActivity : FragmentActivity(), PictureInPictureHost {
         // If Android sent the user to "Install unknown apps", returning to
         // Minova Cinema continues the pending installation automatically.
         UpdateInstaller.resumePendingInstall(this)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!networkCallbackRegistered) {
+            runCatching {
+                connectivityManager.registerDefaultNetworkCallback(networkCallback)
+                networkCallbackRegistered = true
+            }
+        }
+    }
+
+    override fun onStop() {
+        if (networkCallbackRegistered) {
+            runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
+            networkCallbackRegistered = false
+        }
+        super.onStop()
     }
 
     override fun onUserLeaveHint() {

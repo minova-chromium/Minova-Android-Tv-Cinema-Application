@@ -82,6 +82,7 @@ class CinemaViewModel(
     private var watchlistJob: Job? = null
     private var offlineDownloadsJob: Job? = null
     private var plexSignInJob: Job? = null
+    private var networkReconnectJob: Job? = null
     private var discoveredServers: Map<String, PlexDiscoveredServer> = emptyMap()
 
     init {
@@ -178,6 +179,8 @@ class CinemaViewModel(
             persist = true,
             onboarding = true,
             ownerToken = server.accountToken,
+            serverId = server.id,
+            serverName = server.name,
         )
     }
 
@@ -187,7 +190,19 @@ class CinemaViewModel(
         else connectInternal(saved, persist = false, onboarding = false)
     }
 
+    fun onNetworkAvailable() {
+        if (preferences.readConnection() == null) return
+        networkReconnectJob?.cancel()
+        networkReconnectJob = viewModelScope.launch {
+            // Android often sends several callbacks while Wi-Fi and validation
+            // settle. One delayed attempt avoids racing DNS and DHCP updates.
+            delay(NETWORK_RECONNECT_DEBOUNCE_MS)
+            retry()
+        }
+    }
+
     fun changeServer() {
+        networkReconnectJob?.cancel()
         catalogJob?.cancel()
         detailJob?.cancel()
         watchlistJob?.cancel()
@@ -791,6 +806,8 @@ class CinemaViewModel(
         persist: Boolean,
         onboarding: Boolean,
         ownerToken: String? = null,
+        serverId: String? = null,
+        serverName: String? = null,
     ) {
         catalogJob?.cancel()
         watchlistJob?.cancel()
@@ -804,24 +821,50 @@ class CinemaViewModel(
                 else -> CinemaUiState.Loading
             }
             try {
-                val newRepository = PlexRepository(
-                    connection = newConnection,
-                    api = PlexServiceFactory.create(newConnection),
-                    watchlistApi = PlexServiceFactory.createWatchlist(newConnection),
-                )
+                var activeConnection = newConnection
+                var activeRepository = createRepository(activeConnection)
                 // Cached browsing can resolve details immediately while the
                 // paged background refresh is still in progress.
-                connection = newConnection
-                repository = newRepository
+                connection = activeConnection
+                repository = activeRepository
                 startOfflineDownloadMonitor()
-                val catalog = applyLocalLibrary(newRepository.loadCatalog())
+                val catalog = try {
+                    applyLocalLibrary(activeRepository.loadCatalog())
+                } catch (error: Exception) {
+                    if (onboarding || !error.isRecoverableConnectionFailure()) throw error
+                    val ownerConnection = preferences.readOwnerConnection() ?: throw error
+                    val recovered = try {
+                        accountRepository.recoverConnection(
+                            accountToken = ownerConnection.token,
+                            currentConnection = newConnection,
+                            serverId = preferences.readServerId(),
+                            serverName = preferences.readServerName(),
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        throw error
+                    }
+                    activeConnection = recovered.connection
+                    activeRepository = createRepository(activeConnection)
+                    connection = activeConnection
+                    repository = activeRepository
+                    preferences.saveRecoveredConnection(
+                        connection = activeConnection,
+                        serverId = recovered.server.id,
+                        serverName = recovered.server.name,
+                    )
+                    applyLocalLibrary(activeRepository.loadCatalog())
+                }
                 if (persist) preferences.saveConnection(
-                    newConnection,
-                    ownerToken = ownerToken ?: newConnection.token,
+                    activeConnection,
+                    ownerToken = ownerToken ?: activeConnection.token,
+                    serverId = serverId,
+                    serverName = serverName,
                 )
-                _uiState.value = CinemaUiState.Ready(catalog, newConnection)
+                _uiState.value = CinemaUiState.Ready(catalog, activeConnection)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    catalogCache.write(newConnection, catalog)
+                    catalogCache.write(activeConnection, catalog)
                     tvHomePublisher.publish(catalog)
                 }
                 refreshProfiles()
@@ -838,6 +881,12 @@ class CinemaViewModel(
             }
         }
     }
+
+    private fun createRepository(connection: PlexConnection): PlexRepository = PlexRepository(
+        connection = connection,
+        api = PlexServiceFactory.create(connection),
+        watchlistApi = PlexServiceFactory.createWatchlist(connection),
+    )
 
     private fun applyLocalLibrary(catalog: CinemaCatalog): CinemaCatalog {
         val dismissed = preferences.readDismissedContinueWatchingIds()
@@ -859,6 +908,16 @@ class CinemaViewModel(
             message?.contains("Failed to connect") == true -> "Could not reach that Plex server on your network."
             else -> message ?: "Could not load the Plex library."
         }
+    }
+
+    private fun Throwable.isRecoverableConnectionFailure(): Boolean {
+        val causes = generateSequence(this as Throwable?) { it.cause }.toList()
+        return causes.any {
+            it is UnknownHostException ||
+                it is ConnectException ||
+                it is SocketTimeoutException ||
+                it is SSLException
+        } || message?.contains("Failed to connect", ignoreCase = true) == true
     }
 
     class Factory(context: Context) : ViewModelProvider.Factory {
@@ -885,6 +944,10 @@ class CinemaViewModel(
                 accountRepository,
             ) as T
         }
+    }
+
+    private companion object {
+        const val NETWORK_RECONNECT_DEBOUNCE_MS = 1_000L
     }
 }
 

@@ -33,4 +33,80 @@ class PlexAccountRepositoryTest {
 
         assertEquals(1, rankPlexConnections(listOf(connection, duplicate)).size)
     }
+
+    @Test
+    fun `reconnect selects the saved Plex server id after its address changes`() {
+        val oldServer = server("old", "Old server", "http://old-server.example:32400")
+        val selectedServer = server("selected", "Living room", "http://living-room.example:32400")
+
+        assertEquals(
+            selectedServer,
+            selectReconnectServer(
+                servers = listOf(oldServer, selectedServer),
+                serverId = "selected",
+                serverName = "Living room",
+                currentBaseUrl = "http://previous-address.example:32400",
+            ),
+        )
+    }
+
+    @Test
+    fun `reconnect identifies an existing install by its previously saved address`() {
+        val selectedServer = server("selected", "Living room", "https://plex.example:32400/")
+        val otherServer = server("other", "Other", "http://other.example:32400")
+
+        assertEquals(
+            selectedServer,
+            selectReconnectServer(
+                servers = listOf(otherServer, selectedServer),
+                serverId = null,
+                serverName = null,
+                currentBaseUrl = "https://PLEX.example:32400",
+            ),
+        )
+    }
+
+    @Test
+    fun `reconnect safely falls back when the account has one server`() {
+        val onlyServer = server("only", "Home", "https://home.example")
+
+        assertEquals(
+            onlyServer,
+            selectReconnectServer(
+                servers = listOf(onlyServer),
+                serverId = null,
+                serverName = null,
+                currentBaseUrl = "http://unavailable.local:32400",
+            ),
+        )
+    }
+
+    @Test
+    fun `reconnect does not silently switch among ambiguous servers`() {
+        val servers = listOf(
+            server("one", "One", "https://one.example"),
+            server("two", "Two", "https://two.example"),
+        )
+
+        assertEquals(
+            null,
+            selectReconnectServer(
+                servers = servers,
+                serverId = null,
+                serverName = null,
+                currentBaseUrl = "http://unavailable.local:32400",
+            ),
+        )
+    }
+
+    private fun server(id: String, name: String, address: String) = PlexDiscoveredServer(
+        id = id,
+        name = name,
+        owned = true,
+        accountToken = "account-token",
+        accessToken = "server-token",
+        connections = listOf(
+            PlexResourceConnectionDto(address, local = true, relay = false),
+        ),
+    )
 }

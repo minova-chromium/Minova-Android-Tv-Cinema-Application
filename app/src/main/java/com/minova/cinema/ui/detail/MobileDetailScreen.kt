@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -93,6 +96,7 @@ internal fun MobileDetailScreen(
 ) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val tablet = configuration.smallestScreenWidthDp >= 600
     val readyShow = showDetail as? ShowDetailUiState.Ready
     val playableEpisode = readyShow?.episodes?.firstOrNull { it.viewOffsetMs > 0L }
         ?: readyShow?.episodes?.firstOrNull { !it.isWatched }
@@ -129,11 +133,21 @@ internal fun MobileDetailScreen(
 
     Box(Modifier.fillMaxSize().background(MinovaNightDeep)) {
         LazyColumn(
-            Modifier.fillMaxSize().navigationBarsPadding(),
+            (if (tablet) {
+                Modifier.align(Alignment.TopCenter).widthIn(max = 1100.dp).fillMaxWidth().fillMaxHeight()
+            } else {
+                Modifier.fillMaxSize()
+            }).navigationBarsPadding(),
             contentPadding = PaddingValues(bottom = 36.dp),
         ) {
             item {
-                Box(Modifier.fillMaxWidth().height(if (landscape) 330.dp else 470.dp)) {
+                Box(
+                    Modifier.fillMaxWidth().height(
+                        if (tablet) {
+                            if (landscape) 410.dp else 540.dp
+                        } else if (landscape) 330.dp else 470.dp,
+                    ),
+                ) {
                     AsyncImage(
                         model = if (landscape) {
                             content.backdropUrl ?: content.posterUrl
@@ -163,7 +177,10 @@ internal fun MobileDetailScreen(
                         Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 12.dp, top = 8.dp),
                     )
                     Column(
-                        Modifier.align(Alignment.BottomCenter).padding(horizontal = 18.dp, vertical = 18.dp),
+                        Modifier.align(Alignment.BottomCenter).padding(
+                            horizontal = if (tablet) 28.dp else 18.dp,
+                            vertical = if (tablet) 26.dp else 18.dp,
+                        ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         content.secondaryTitle?.let {
@@ -172,8 +189,8 @@ internal fun MobileDetailScreen(
                         Text(
                             content.title,
                             color = MinovaWhite,
-                            fontSize = if (landscape) 29.sp else 32.sp,
-                            lineHeight = 35.sp,
+                            fontSize = if (tablet) 38.sp else if (landscape) 29.sp else 32.sp,
+                            lineHeight = if (tablet) 43.sp else 35.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
@@ -387,8 +404,14 @@ private fun MobilePrimaryPlayButton(
     },
     onClick: () -> Unit,
 ) {
+    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)
+        (if (tablet) {
+            Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).width(620.dp)
+        } else {
+            Modifier.fillMaxWidth()
+        })
+            .padding(horizontal = 18.dp, vertical = 8.dp)
             .height(56.dp).clip(RoundedCornerShape(28.dp)).background(MinovaCyan)
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,

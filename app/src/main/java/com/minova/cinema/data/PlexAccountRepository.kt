@@ -26,6 +26,11 @@ data class PlexDiscoveredServer(
     val connections: List<PlexResourceConnectionDto>,
 )
 
+data class PlexRecoveredServer(
+    val server: PlexDiscoveredServer,
+    val connection: PlexConnection,
+)
+
 class PlexSignInException(message: String) : IllegalStateException(message)
 
 class PlexAccountRepository(
@@ -105,6 +110,30 @@ class PlexAccountRepository(
         )
     }
 
+    suspend fun recoverConnection(
+        accountToken: String,
+        currentConnection: PlexConnection,
+        serverId: String?,
+        serverName: String?,
+    ): PlexRecoveredServer {
+        val servers = discoverServers(accountToken)
+        val server = selectReconnectServer(
+            servers = servers,
+            serverId = serverId,
+            serverName = serverName,
+            currentBaseUrl = currentConnection.baseUrl,
+        ) ?: throw PlexSignInException(
+            "Plex found multiple servers and could not identify the previously selected one.",
+        )
+        val resolved = resolveConnection(server)
+        // Resource discovery uses the owner's account token. Keep the active
+        // connection token here so a managed Plex Home profile stays selected.
+        return PlexRecoveredServer(
+            server = server,
+            connection = resolved.copy(token = currentConnection.token),
+        )
+    }
+
     private companion object {
         const val PIN_POLL_MS = 1_000L
         const val PIN_TIMEOUT_MS = 5 * 60_000L
@@ -126,6 +155,37 @@ internal fun rankPlexConnections(
             }
         }.thenBy { if (it.uri.orEmpty().startsWith("https://", ignoreCase = true)) 0 else 1 },
     )
+
+internal fun selectReconnectServer(
+    servers: List<PlexDiscoveredServer>,
+    serverId: String?,
+    serverName: String?,
+    currentBaseUrl: String,
+): PlexDiscoveredServer? {
+    serverId?.let { savedId ->
+        servers.firstOrNull { it.id == savedId }?.let { return it }
+    }
+
+    val normalizedCurrent = normalizePlexAddressForComparison(currentBaseUrl)
+    servers.firstOrNull { server ->
+        server.connections.any { candidate ->
+            normalizePlexAddressForComparison(candidate.uri) == normalizedCurrent
+        }
+    }?.let { return it }
+
+    serverName?.let { savedName ->
+        servers.singleOrNull { it.name.equals(savedName, ignoreCase = true) }?.let { return it }
+    }
+
+    return servers.singleOrNull()
+}
+
+private fun normalizePlexAddressForComparison(address: String?): String? = address
+    ?.trim()
+    ?.takeIf(String::isNotBlank)
+    ?.let { runCatching { PlexConfig.normalizeServerAddress(it) }.getOrNull() }
+    ?.trimEnd('/')
+    ?.lowercase()
 
 internal fun buildPlexAuthorizationUrl(code: String): String {
     fun encode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8.name())

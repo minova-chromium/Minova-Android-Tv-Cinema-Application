@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -242,14 +243,17 @@ private fun MobileTopBar(
 ) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val tablet = configuration.smallestScreenWidthDp >= 600
     Row(
-        Modifier.fillMaxWidth().height(if (landscape) 56.dp else 74.dp).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth()
+            .height(if (tablet) 72.dp else if (landscape) 56.dp else 74.dp)
+            .padding(horizontal = if (tablet) 28.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         androidx.compose.foundation.Image(
             painter = painterResource(R.drawable.ic_launcher),
             contentDescription = null,
-            modifier = Modifier.size(if (landscape) 34.dp else 40.dp),
+            modifier = Modifier.size(if (tablet) 42.dp else if (landscape) 34.dp else 40.dp),
         )
         if (configuration.screenWidthDp >= 380) {
             Column(Modifier.padding(start = 9.dp).weight(1f)) {
@@ -311,6 +315,7 @@ private fun MobileIconButton(
 private fun MobileBottomBar(selected: MobileBrowseTab, onSelect: (MobileBrowseTab) -> Unit) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val tablet = configuration.smallestScreenWidthDp >= 600
     val destinations = listOf(
         Triple(MobileBrowseTab.Home, Icons.Rounded.Home, "Home"),
         Triple(MobileBrowseTab.Movies, Icons.Rounded.Movie, "Movies"),
@@ -318,35 +323,44 @@ private fun MobileBottomBar(selected: MobileBrowseTab, onSelect: (MobileBrowseTa
         Triple(MobileBrowseTab.Collections, Icons.Rounded.CollectionsBookmark, "Collections"),
         Triple(MobileBrowseTab.MyList, Icons.Rounded.Bookmark, "Watchlist"),
     )
-    Row(
+    Box(
         Modifier.fillMaxWidth().background(MinovaBlack)
             .border(width = 0.5.dp, color = MinovaSurfaceRaised)
-            .navigationBarsPadding().height(if (landscape) 48.dp else 67.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center,
     ) {
-        destinations.forEach { (tab, icon, label) ->
-            val active = selected == tab
-            Column(
-                Modifier.weight(1f).fillMaxHeight()
-                    .clickable(role = Role.Tab) { onSelect(tab) }
-                    .padding(top = if (landscape) 4.dp else 8.dp, bottom = if (landscape) 4.dp else 5.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = if (landscape) Arrangement.Center else Arrangement.SpaceBetween,
-            ) {
-                androidx.compose.material3.Icon(
-                    icon,
-                    label,
-                    tint = if (active) MinovaCyan else MinovaMuted,
-                    modifier = Modifier.size(25.dp),
-                )
-                if (!landscape) {
-                    Text(
+        Row(
+            (if (tablet) Modifier.widthIn(max = 900.dp).fillMaxWidth() else Modifier.fillMaxWidth())
+                .height(if (tablet) 64.dp else if (landscape) 48.dp else 67.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            destinations.forEach { (tab, icon, label) ->
+                val active = selected == tab
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .clickable(role = Role.Tab) { onSelect(tab) }
+                        .padding(
+                            top = if (tablet || landscape) 4.dp else 8.dp,
+                            bottom = if (tablet || landscape) 4.dp else 5.dp,
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = if (tablet || landscape) Arrangement.Center else Arrangement.SpaceBetween,
+                ) {
+                    androidx.compose.material3.Icon(
+                        icon,
                         label,
-                        color = if (active) MinovaCyan else MinovaMuted,
-                        fontSize = 10.sp,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
+                        tint = if (active) MinovaCyan else MinovaMuted,
+                        modifier = Modifier.size(if (tablet) 27.dp else 25.dp),
                     )
+                    if (!landscape) {
+                        Text(
+                            label,
+                            color = if (active) MinovaCyan else MinovaMuted,
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
@@ -413,17 +427,30 @@ private fun MobileShelf(
 ) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
-    Column(Modifier.padding(top = 18.dp)) {
-        Text(title, color = MinovaWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 16.dp))
+    val tablet = configuration.smallestScreenWidthDp >= 600
+    val landscapeCards = if (tablet) showPlayBadge else landscape
+    val horizontalPadding = if (tablet) 28.dp else 16.dp
+    Column(Modifier.padding(top = if (tablet) 22.dp else 18.dp)) {
+        Text(
+            title,
+            color = MinovaWhite,
+            fontSize = if (tablet) 23.sp else MaterialTheme.typography.titleLarge.fontSize,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = horizontalPadding),
+        )
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 11.dp),
-            horizontalArrangement = Arrangement.spacedBy(11.dp),
+            contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = if (tablet) 13.dp else 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (tablet) 15.dp else 11.dp),
         ) {
             items(items, key = { "$title-${it.ratingKey}" }) { content ->
                 MobileMediaCard(
                     content = content,
-                    landscape = landscape,
-                    modifier = Modifier.width(if (landscape) 160.dp else 100.dp),
+                    landscape = landscapeCards,
+                    modifier = Modifier.width(
+                        if (tablet) {
+                            if (landscapeCards) 280.dp else 158.dp
+                        } else if (landscape) 160.dp else 100.dp,
+                    ),
                     onOpen = onTap,
                     onQuickActions = onQuickActions,
                     showPlayBadge = showPlayBadge,
@@ -442,8 +469,15 @@ private fun MobileLibrary(
     onOpen: (MediaContent) -> Unit,
     onQuickActions: (MediaContent) -> Unit,
 ) {
+    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(
+                horizontal = if (tablet) 28.dp else 16.dp,
+                vertical = if (tablet) 16.dp else 12.dp,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Column(Modifier.weight(1f)) {
                 Text(title, color = MinovaWhite, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 Text("${items.size} titles", color = MinovaMuted)
@@ -454,11 +488,15 @@ private fun MobileLibrary(
             MobileEmpty("No matching titles were found.")
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(100.dp),
+                columns = GridCells.Adaptive(if (tablet) 152.dp else 100.dp),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(
+                    start = if (tablet) 28.dp else 12.dp,
+                    end = if (tablet) 28.dp else 12.dp,
+                    bottom = 24.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(if (tablet) 16.dp else 10.dp),
+                verticalArrangement = Arrangement.spacedBy(if (tablet) 20.dp else 14.dp),
             ) {
                 items(items, key = MediaContent::ratingKey) { content ->
                     MobileMediaCard(content, false, Modifier.fillMaxWidth(), onOpen, onQuickActions)
@@ -474,6 +512,7 @@ private fun MobileSearch(
     onOpen: (MediaContent) -> Unit,
     onQuickActions: (MediaContent) -> Unit,
 ) {
+    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     var query by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
@@ -490,7 +529,9 @@ private fun MobileSearch(
     }
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(16.dp).height(54.dp)
+            Modifier.fillMaxWidth()
+                .padding(horizontal = if (tablet) 28.dp else 16.dp, vertical = 16.dp)
+                .height(if (tablet) 62.dp else 54.dp)
                 .background(MinovaSurface, RoundedCornerShape(14.dp))
                 .border(1.dp, MinovaSurfaceRaised, RoundedCornerShape(14.dp))
                 .padding(horizontal = 14.dp),
@@ -526,11 +567,15 @@ private fun MobileSearch(
             query.isBlank() -> MobileEmpty("Search your complete Plex library.")
             results.isEmpty() -> MobileEmpty("No matching titles were found.")
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(100.dp),
+                columns = GridCells.Adaptive(if (tablet) 152.dp else 100.dp),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(
+                    start = if (tablet) 28.dp else 12.dp,
+                    end = if (tablet) 28.dp else 12.dp,
+                    bottom = 24.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(if (tablet) 16.dp else 10.dp),
+                verticalArrangement = Arrangement.spacedBy(if (tablet) 20.dp else 14.dp),
             ) {
                 items(results, key = MediaContent::ratingKey) { content ->
                     MobileMediaCard(content, false, Modifier.fillMaxWidth(), onOpen, onQuickActions)
@@ -547,6 +592,7 @@ private fun MobileCollections(
     onOpen: (MediaContent) -> Unit,
     onQuickActions: (MediaContent) -> Unit,
 ) {
+    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     val collection = catalog.collections.firstOrNull { it.ratingKey == selected }
     var members by remember(selected) { mutableStateOf(emptyList<MediaContent>()) }
@@ -569,7 +615,10 @@ private fun MobileCollections(
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(if (tablet) 28.dp else 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (collection != null) {
                 MobileAction("Back", null, false) { selected = null }
                 Spacer(Modifier.width(12.dp))
@@ -589,9 +638,9 @@ private fun MobileCollections(
         }
         if (collection == null) {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(100.dp), modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+                columns = GridCells.Adaptive(if (tablet) 170.dp else 100.dp), modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = if (tablet) 28.dp else 12.dp, end = if (tablet) 28.dp else 12.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (tablet) 16.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(if (tablet) 20.dp else 14.dp),
             ) {
                 items(catalog.collections, key = MediaCollection::ratingKey) { item ->
                     MobileCollectionCard(item) { selected = item.ratingKey }
@@ -599,9 +648,9 @@ private fun MobileCollections(
             }
         } else if (!loading && !failed) {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(100.dp), modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+                columns = GridCells.Adaptive(if (tablet) 152.dp else 100.dp), modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = if (tablet) 28.dp else 12.dp, end = if (tablet) 28.dp else 12.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (tablet) 16.dp else 10.dp), verticalArrangement = Arrangement.spacedBy(if (tablet) 20.dp else 14.dp),
             ) {
                 items(members, key = MediaContent::ratingKey) { content ->
                     MobileMediaCard(content, false, Modifier.fillMaxWidth(), onOpen, onQuickActions)

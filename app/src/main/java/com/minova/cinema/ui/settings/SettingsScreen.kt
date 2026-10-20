@@ -137,6 +137,9 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
 ) {
     val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
+    val tablet = handheld && LocalConfiguration.current.smallestScreenWidthDp >= 600
+    val tabletWide = tablet && LocalConfiguration.current.screenWidthDp > LocalConfiguration.current.screenHeightDp
+    val compactLayout = handheld
     var pinProfile by remember { mutableStateOf<PlexHomeProfile?>(null) }
     var pin by remember { mutableStateOf("") }
     var timerDialog by remember { mutableStateOf<TimerSettingType?>(null) }
@@ -182,7 +185,7 @@ fun SettingsScreen(
                 if (handheld) Modifier.statusBarsPadding().navigationBarsPadding() else Modifier,
             ),
         ) {
-            if (handheld) {
+            if (compactLayout) {
                 MobileSettingsNavigation(
                     activeSection = activeSection,
                     onBack = onBack,
@@ -192,12 +195,15 @@ fun SettingsScreen(
                     },
                 )
             }
-            Row(Modifier.fillMaxWidth().weight(1f)) {
-                if (!handheld) {
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = if (tabletWide) Arrangement.Center else Arrangement.Start,
+            ) {
+                if (!compactLayout) {
                     SettingsNavigationRail(
                         activeSection = activeSection,
                         railFocusRequesters = sectionRailFocus,
-                        compact = false,
+                        compact = tablet,
                         onSectionSelected = { section ->
                             activeSection = section
                             contentFocusActive = false
@@ -211,17 +217,23 @@ fun SettingsScreen(
                 }
 
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
+                modifier = if (tabletWide) {
+                    Modifier
+                        .width(1120.dp)
+                        .fillMaxHeight()
+                } else {
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                },
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
-                            start = if (handheld) 16.dp else 34.dp,
-                            top = if (handheld) 16.dp else 26.dp,
-                            end = if (handheld) 16.dp else 48.dp,
+                            start = if (compactLayout) 16.dp else 28.dp,
+                            top = if (compactLayout) 16.dp else 24.dp,
+                            end = if (compactLayout) 16.dp else 36.dp,
                             bottom = 12.dp,
                         ),
                 ) {
@@ -233,9 +245,9 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     contentPadding = PaddingValues(
-                        start = if (handheld) 12.dp else 34.dp,
+                        start = if (compactLayout) 12.dp else 28.dp,
                         top = 6.dp,
-                        end = if (handheld) 12.dp else 48.dp,
+                        end = if (compactLayout) 12.dp else 36.dp,
                         bottom = 56.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -447,7 +459,7 @@ fun SettingsScreen(
             ) {
                 Box(Modifier.fillMaxWidth().padding(top = 14.dp)) {
                     ResponsiveSettingsPair(
-                        handheld = handheld,
+                        handheld = compactLayout,
                         first = { itemModifier ->
                     PlaybackToggleButton(
                         title = "Autoplay next episode",
@@ -481,7 +493,7 @@ fun SettingsScreen(
                     modifier = Modifier.padding(top = 20.dp, bottom = 9.dp),
                 )
                 ResponsiveSettingsPair(
-                    handheld = handheld,
+                    handheld = compactLayout,
                     first = { itemModifier ->
                     TimerSettingButton(
                         title = "Ambient screensaver",
@@ -574,7 +586,7 @@ fun SettingsScreen(
             ) {
                 Box(Modifier.fillMaxWidth().padding(top = 14.dp)) {
                     ResponsiveSettingsPair(
-                        handheld = handheld,
+                        handheld = compactLayout,
                         first = { itemModifier ->
                     PlaybackToggleButton(
                         title = "Cinema Mode",
