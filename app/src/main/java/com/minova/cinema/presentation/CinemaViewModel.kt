@@ -83,6 +83,7 @@ class CinemaViewModel(
     private var offlineDownloadsJob: Job? = null
     private var plexSignInJob: Job? = null
     private var networkReconnectJob: Job? = null
+    private var playbackReportJob: Job? = null
     private var discoveredServers: Map<String, PlexDiscoveredServer> = emptyMap()
 
     init {
@@ -644,7 +645,11 @@ class CinemaViewModel(
         durationMs: Long,
         state: String,
     ) {
-        viewModelScope.launch {
+        // Only the newest checkpoint matters. Cancelling a slow older request
+        // prevents it from reaching Plex after a newer position and rewinding
+        // Continue Watching to a stale timestamp.
+        playbackReportJob?.cancel()
+        playbackReportJob = viewModelScope.launch {
             if (offlineDownloadsStore.isOfflineContent(content)) {
                 val currentConnection = connection
                 if (currentConnection != null) {

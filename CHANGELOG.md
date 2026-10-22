@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 3.0.0 — 2026-10-22
+
+- Added a touch-draggable playback timeline on phones and tablets so movies and episodes can be scrubbed directly instead of relying only on the ten-second seek buttons.
+- Preserved the exact playback position immediately when pausing, seeking, entering Picture-in-Picture, or briefly leaving the app, preventing playback from jumping back to an older Plex timestamp on return.
+- Added a short-lived local resume checkpoint that safely bridges interrupted network updates while keeping Plex as the long-term playback source of truth.
+- Prevented slow, stale Plex progress requests from overwriting newer playback positions, while retaining the normal ten-second background reporting interval.
+
 ## 2.10.0 — 2026-10-20
 
 - Added automatic Plex connection recovery after Wi-Fi, mobile-data, VPN, Tailscale, and other network changes so phones and tablets can reconnect without signing out and signing in again.

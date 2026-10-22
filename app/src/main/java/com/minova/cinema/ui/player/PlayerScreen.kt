@@ -42,6 +42,8 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -119,6 +121,7 @@ import com.minova.cinema.ui.theme.MinovaMuted
 import com.minova.cinema.ui.theme.MinovaNightDeep
 import com.minova.cinema.ui.theme.MinovaSurface
 import com.minova.cinema.ui.theme.MinovaTeal
+import kotlin.math.roundToLong
 import com.minova.cinema.ui.platform.DeviceProfile
 import com.minova.cinema.ui.platform.rememberDeviceProfile
 import kotlinx.coroutines.delay
@@ -848,6 +851,10 @@ fun PlayerScreen(
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 reportPictureInPictureAvailability()
+                if (!playWhenReady && player.currentMediaItemIndex == mainFeatureIndex) {
+                    val duration = player.duration.takeIf { it > 0L } ?: content.durationMs ?: 0L
+                    latestProgress(player.currentPosition.coerceAtLeast(0L), duration, "paused")
+                }
             }
         }
         player.addListener(listener)
@@ -937,15 +944,14 @@ fun PlayerScreen(
         controlsInteractionId += 1L
     }
 
-    fun seekBy(deltaMs: Long) {
+    fun seekToPosition(requestedPositionMs: Long) {
         val duration = player.duration.takeIf { it > 0 }
             ?: content.durationMs?.takeIf { isMainFeatureActive }
             ?: 0L
-        val current = player.currentPosition.coerceAtLeast(0L)
         val target = if (duration > 0L) {
-            (current + deltaMs).coerceIn(0L, duration)
+            requestedPositionMs.coerceIn(0L, duration)
         } else {
-            (current + deltaMs).coerceAtLeast(0L)
+            requestedPositionMs.coerceAtLeast(0L)
         }
         player.seekTo(target)
         // Repeating Left/Right cancels and restarts the debounce below. Once
@@ -956,6 +962,10 @@ fun PlayerScreen(
         playbackDurationMs = duration
         playbackTimeLeftMs = (duration - target).coerceAtLeast(0L)
         showControlsForInteraction()
+    }
+
+    fun seekBy(deltaMs: Long) {
+        seekToPosition(player.currentPosition.coerceAtLeast(0L) + deltaMs)
     }
 
     LaunchedEffect(seekResyncRequestId) {
@@ -998,7 +1008,17 @@ fun PlayerScreen(
                 Lifecycle.Event.ON_STOP -> {
                     resumePlayback = player.playWhenReady
                     val activity = context as? Activity
-                    if (!(handheld && activity?.isInPictureInPictureMode == true)) {
+                    val continuesInPictureInPicture =
+                        handheld && activity?.isInPictureInPictureMode == true
+                    if (player.currentMediaItemIndex == mainFeatureIndex) {
+                        val duration = player.duration.takeIf { it > 0L } ?: content.durationMs ?: 0L
+                        latestProgress(
+                            player.currentPosition.coerceAtLeast(0L),
+                            duration,
+                            if (continuesInPictureInPicture && player.isPlaying) "playing" else "paused",
+                        )
+                    }
+                    if (!continuesInPictureInPicture) {
                         player.pause()
                     }
                 }
@@ -1246,6 +1266,19 @@ fun PlayerScreen(
                 PlaybackTimeline(
                     positionMs = playbackPositionMs,
                     durationMs = playbackDurationMs,
+                    seekable = handheld && isMainFeatureActive,
+                    onSeekRequested = { target ->
+                        seekToPosition(target)
+                        val duration = player.duration.takeIf { it > 0L }
+                            ?: content.durationMs
+                            ?: 0L
+                        latestProgress(
+                            target,
+                            duration,
+                            if (player.isPlaying) "playing" else "paused",
+                        )
+                        onUserInteraction()
+                    },
                     modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -1991,6 +2024,8 @@ private fun ContinueWatchingOverlay(
 private fun PlaybackTimeline(
     positionMs: Long,
     durationMs: Long,
+    seekable: Boolean = false,
+    onSeekRequested: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val safeDuration = durationMs.coerceAtLeast(0L)
@@ -1999,8 +2034,11 @@ private fun PlaybackTimeline(
     } else {
         positionMs.coerceAtLeast(0L)
     }
+    var scrubbing by remember { mutableStateOf(false) }
+    var scrubPositionMs by remember { mutableLongStateOf(safePosition) }
+    val displayedPosition = if (scrubbing) scrubPositionMs else safePosition
     val progress = if (safeDuration > 0L) {
-        safePosition.toFloat() / safeDuration.toFloat()
+        displayedPosition.toFloat() / safeDuration.toFloat()
     } else {
         0f
     }
@@ -2011,7 +2049,7 @@ private fun PlaybackTimeline(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = formatPlayerTimestamp(safePosition),
+                text = formatPlayerTimestamp(displayedPosition),
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -2021,22 +2059,45 @@ private fun PlaybackTimeline(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp)
-                .height(7.dp)
-                .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.22f)),
-        ) {
+        if (seekable && safeDuration > 0L) {
+            Slider(
+                value = progress.coerceIn(0f, 1f),
+                onValueChange = { value ->
+                    scrubbing = true
+                    scrubPositionMs = (value.coerceIn(0f, 1f) * safeDuration).roundToLong()
+                },
+                onValueChangeFinished = {
+                    val target = scrubPositionMs.coerceIn(0L, safeDuration)
+                    scrubbing = false
+                    onSeekRequested(target)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("player-timeline-scrubber"),
+                colors = SliderDefaults.colors(
+                    thumbColor = MinovaCyan,
+                    activeTrackColor = MinovaTeal,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.22f),
+                ),
+            )
+        } else {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(progress.coerceIn(0f, 1f))
-                    .fillMaxHeight()
-                    .background(
-                        Brush.horizontalGradient(listOf(MinovaCyan, MinovaTeal)),
-                    ),
-            )
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .height(7.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.22f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .background(
+                            Brush.horizontalGradient(listOf(MinovaCyan, MinovaTeal)),
+                        ),
+                )
+            }
         }
     }
 }

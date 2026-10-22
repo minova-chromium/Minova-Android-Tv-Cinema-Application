@@ -54,6 +54,7 @@ import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.CinemaPlaybackPlan
 import com.minova.cinema.domain.hasSeriesPlaybackProgress
 import com.minova.cinema.data.local.PlaybackPreferences
+import com.minova.cinema.data.local.PlaybackResumeStore
 import com.minova.cinema.presentation.CinemaUiState
 import com.minova.cinema.presentation.CinemaViewModel
 import com.minova.cinema.presentation.ShowDetailUiState
@@ -233,6 +234,9 @@ private fun MainScreen(
     val playbackPreferences = remember(context.applicationContext) {
         PlaybackPreferences(context.applicationContext)
     }
+    val playbackResumeStore = remember(context.applicationContext) {
+        PlaybackResumeStore(context.applicationContext)
+    }
     var playbackSettings by remember { mutableStateOf(playbackPreferences.read()) }
     var lastPlaybackInteractionAtMs by remember {
         mutableLongStateOf(SystemClock.elapsedRealtime())
@@ -402,9 +406,20 @@ private fun MainScreen(
                     },
                 ) { plan ->
                     if (plan != null) {
+                        val playablePlan = if (fromBeginning) {
+                            playbackResumeStore.clear(plan.mainFeature.ratingKey, durable = true)
+                            plan.copy(mainFeature = plan.mainFeature.copy(viewOffsetMs = 0L))
+                        } else {
+                            val resumePosition = playbackResumeStore.resumePosition(
+                                ratingKey = plan.mainFeature.ratingKey,
+                                serverPositionMs = plan.mainFeature.viewOffsetMs,
+                                durationMs = plan.mainFeature.durationMs,
+                            )
+                            plan.copy(mainFeature = plan.mainFeature.copy(viewOffsetMs = resumePosition))
+                        }
                         lastPlaybackInteractionAtMs = SystemClock.elapsedRealtime()
                         val castStarted = handheld && castController?.cast(
-                            content = plan.mainFeature,
+                            content = playablePlan.mainFeature,
                             connection = PlexConnection(
                                 baseUrl = castServerUrl ?: state.connection.baseUrl,
                                 token = state.connection.token,
@@ -419,13 +434,7 @@ private fun MainScreen(
                             ).show()
                         } else {
                             routes.add(
-                                CinemaRoute.Player(
-                                    if (fromBeginning) {
-                                        plan.copy(mainFeature = plan.mainFeature.copy(viewOffsetMs = 0L))
-                                    } else {
-                                        plan
-                                    },
-                                ),
+                                CinemaRoute.Player(playablePlan),
                             )
                         }
                     }
@@ -643,6 +652,12 @@ private fun MainScreen(
                             (context as? Activity)?.moveTaskToBack(true)
                         },
                         onProgress = { position, duration, playbackState ->
+                            playbackResumeStore.save(
+                                ratingKey = route.plan.mainFeature.ratingKey,
+                                positionMs = position,
+                                durationMs = duration,
+                                durable = playbackState != "playing",
+                            )
                             viewModel.reportPlayback(
                                 route.plan.mainFeature,
                                 position,
@@ -655,7 +670,15 @@ private fun MainScreen(
                                 content = route.plan.mainFeature,
                                 positionMs = position,
                                 durationMs = duration,
-                                onComplete = onComplete,
+                                onComplete = { errorMessage ->
+                                    if (errorMessage == null) {
+                                        playbackResumeStore.clear(
+                                            route.plan.mainFeature.ratingKey,
+                                            durable = true,
+                                        )
+                                    }
+                                    onComplete(errorMessage)
+                                },
                             )
                         },
                         onHandoffFinished = {
@@ -686,6 +709,10 @@ private fun MainScreen(
                         },
                         onDiagnosticsRequested = viewModel::loadPlaybackDiagnostics,
                         onPlaybackEnded = { onReady ->
+                            playbackResumeStore.clear(
+                                route.plan.mainFeature.ratingKey,
+                                durable = true,
+                            )
                             if (route.plan.mainFeature.kind == MediaKind.Movie && experience.endScreen) {
                                 if (routes.lastOrNull() is CinemaRoute.Player) routes[routes.lastIndex] = CinemaRoute.Finished(route.plan.mainFeature)
                                 viewModel.finishPlaybackAndLoadNext(route.plan.mainFeature) { viewModel.refresh(silent = true) }

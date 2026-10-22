@@ -4,6 +4,8 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertRangeInfoEquals
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasContentDescription
@@ -11,6 +13,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.minova.cinema.showcase.PlayerSettingsShowcaseActivity
 import org.junit.Rule
@@ -31,6 +35,10 @@ class PhonePlayerSettingsTest {
         assumeFalse(uiMode.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION)
 
         compose.waitUntilAtLeastOneExists(hasTestTag("player-play-pause"), 8_000)
+        compose.onNodeWithTag("player-timeline-scrubber")
+            .assertIsDisplayed()
+            .performTouchInput { click(center) }
+            .assertRangeInfoEquals(ProgressBarRangeInfo(0.5f, 0f..1f))
         compose.onNodeWithTag("player-seek-back").assertIsDisplayed()
         compose.onNodeWithTag("player-play-pause").assertIsDisplayed()
         compose.onNodeWithTag("player-seek-forward").assertIsDisplayed()
