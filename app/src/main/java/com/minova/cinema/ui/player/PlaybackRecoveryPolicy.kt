@@ -1,5 +1,6 @@
 package com.minova.cinema.ui.player
 
+import androidx.media3.common.Player
 import com.minova.cinema.data.remote.PlaybackQuality
 
 internal enum class PlaybackFailureKind {
@@ -55,4 +56,37 @@ internal object PlaybackRecoveryPolicy {
         PlaybackQuality.Hd -> listOf(PlaybackQuality.Sd)
         PlaybackQuality.Sd -> emptyList()
     }
+}
+
+internal data class MarkerSkipRecoveryRequest(
+    val id: Long,
+    val targetPositionMs: Long,
+    val mediaItemIndex: Int,
+    val shouldPlay: Boolean,
+)
+
+/**
+ * Leaves successful marker seeks alone and only rebuilds the decoder pipeline
+ * when the timeline has remained stuck after a bounded grace period.
+ */
+internal object MarkerSkipRecoveryPolicy {
+    const val timeoutMs = 4_000L
+
+    fun shouldRecover(
+        request: MarkerSkipRecoveryRequest,
+        currentPositionMs: Long,
+        playbackState: Int,
+        currentMediaItemIndex: Int,
+        playWhenReady: Boolean,
+    ): Boolean {
+        if (!request.shouldPlay || !playWhenReady) return false
+        if (currentMediaItemIndex != request.mediaItemIndex) return false
+        if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_BUFFERING) {
+            return true
+        }
+        return playbackState == Player.STATE_READY &&
+            currentPositionMs < request.targetPositionMs + MINIMUM_ADVANCE_MS
+    }
+
+    private const val MINIMUM_ADVANCE_MS = 1_000L
 }

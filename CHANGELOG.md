@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 4.0.0 — 2026-10-27
+
+- Hardened Android Skip Intro against intermittent black screens, frozen frames, and endless buffering on affected hardware decoders.
+- Preserved the existing fast skip path when playback advances normally, with a bounded recovery watchdog that rebuilds the same stream at the same timestamp only after a confirmed stall.
+- Prevented recovery from interrupting a user pause or acting after playback has already moved to another playlist item.
+- Saved the post-intro playback position immediately so Plex progress remains synchronized after the skip.
+
 ## 3.0.0 — 2026-10-22
 
 - Added a touch-draggable playback timeline on phones and tablets so movies and episodes can be scrubbed directly instead of relying only on the ten-second seek buttons.

@@ -235,6 +235,9 @@ fun PlayerScreen(
     var bottomControlsFocused by remember { mutableStateOf(false) }
     var controlsInteractionId by remember { mutableStateOf(0L) }
     var seekResyncRequestId by remember(content.ratingKey) { mutableLongStateOf(0L) }
+    var markerSkipRecoveryRequest by remember(content.ratingKey) {
+        mutableStateOf<MarkerSkipRecoveryRequest?>(null)
+    }
     var selectedQuality by remember { mutableStateOf(PlaybackQuality.Original) }
     var settingsVisible by remember { mutableStateOf(false) }
     var phoneSubtitleMenuVisible by remember { mutableStateOf(false) }
@@ -974,6 +977,32 @@ fun PlayerScreen(
         resynchronizePlayback(rebuildPipeline = false, announce = false)
     }
 
+    LaunchedEffect(markerSkipRecoveryRequest?.id) {
+        val request = markerSkipRecoveryRequest ?: return@LaunchedEffect
+        delay(MarkerSkipRecoveryPolicy.timeoutMs)
+        if (markerSkipRecoveryRequest?.id != request.id) return@LaunchedEffect
+        val stalled = MarkerSkipRecoveryPolicy.shouldRecover(
+            request = request,
+            currentPositionMs = player.currentPosition.coerceAtLeast(0L),
+            playbackState = player.playbackState,
+            currentMediaItemIndex = player.currentMediaItemIndex,
+            playWhenReady = player.playWhenReady,
+        )
+        if (stalled) {
+            // Some Android hardware decoders fail to emit a new frame after a
+            // marker seek even though the source is valid. Rebuild only after
+            // the normal seek has demonstrably stalled, preserving the fast
+            // path on devices where Skip Intro already works correctly.
+            playbackMessage = "Recovering playback after intro…"
+            val shouldResume = player.playWhenReady
+            player.stop()
+            player.seekTo(request.mediaItemIndex, request.targetPositionMs)
+            player.prepare()
+            player.playWhenReady = shouldResume
+        }
+        markerSkipRecoveryRequest = null
+    }
+
     fun continueElsewhere() {
         if (handoffInProgress || !isMainFeatureActive) return
         player.pause()
@@ -1462,8 +1491,11 @@ fun PlayerScreen(
                         ?: content.durationMs
                         ?: activeSkipMarker.endTimeOffsetMs
                     val target = activeSkipMarker.endTimeOffsetMs.coerceAtMost(duration)
+                    val shouldPlay = player.playWhenReady
                     player.seekTo(target)
                     playbackPositionMs = target
+                    playbackDurationMs = duration
+                    playbackTimeLeftMs = (duration - target).coerceAtLeast(0L)
                     onUserInteraction()
                     if (activeIntroMarker == null) {
                         // Plex credit markers can end exactly at the final
@@ -1474,6 +1506,18 @@ fun PlayerScreen(
                         latestProgress(target, duration, "stopped")
                         completePlayback()
                     } else {
+                        val nextRequestId = (markerSkipRecoveryRequest?.id ?: 0L) + 1L
+                        markerSkipRecoveryRequest = MarkerSkipRecoveryRequest(
+                            id = nextRequestId,
+                            targetPositionMs = target,
+                            mediaItemIndex = player.currentMediaItemIndex,
+                            shouldPlay = shouldPlay,
+                        )
+                        latestProgress(
+                            target,
+                            duration,
+                            if (shouldPlay) "playing" else "paused",
+                        )
                         playerView?.requestFocus()
                     }
                 }

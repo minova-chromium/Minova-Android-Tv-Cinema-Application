@@ -1,6 +1,9 @@
 package com.minova.cinema.ui.player
 
+import androidx.media3.common.Player
 import com.minova.cinema.data.remote.PlaybackQuality
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -74,4 +77,76 @@ class PlaybackRecoveryPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun markerSkipLeavesAHealthySeekAlone() {
+        assertFalse(
+            MarkerSkipRecoveryPolicy.shouldRecover(
+                request = markerSkipRequest(),
+                currentPositionMs = 63_000L,
+                playbackState = Player.STATE_READY,
+                currentMediaItemIndex = 0,
+                playWhenReady = true,
+            ),
+        )
+    }
+
+    @Test
+    fun markerSkipRecoversASeekThatNeverAdvanced() {
+        assertTrue(
+            MarkerSkipRecoveryPolicy.shouldRecover(
+                request = markerSkipRequest(),
+                currentPositionMs = 60_200L,
+                playbackState = Player.STATE_READY,
+                currentMediaItemIndex = 0,
+                playWhenReady = true,
+            ),
+        )
+    }
+
+    @Test
+    fun markerSkipRecoversAPlayerStillBuffering() {
+        assertTrue(
+            MarkerSkipRecoveryPolicy.shouldRecover(
+                request = markerSkipRequest(),
+                currentPositionMs = 60_000L,
+                playbackState = Player.STATE_BUFFERING,
+                currentMediaItemIndex = 0,
+                playWhenReady = true,
+            ),
+        )
+    }
+
+    @Test
+    fun markerSkipDoesNotRestartAfterTheUserPauses() {
+        assertFalse(
+            MarkerSkipRecoveryPolicy.shouldRecover(
+                request = markerSkipRequest(),
+                currentPositionMs = 60_000L,
+                playbackState = Player.STATE_READY,
+                currentMediaItemIndex = 0,
+                playWhenReady = false,
+            ),
+        )
+    }
+
+    @Test
+    fun markerSkipDoesNotTouchTheNextPlaylistItem() {
+        assertFalse(
+            MarkerSkipRecoveryPolicy.shouldRecover(
+                request = markerSkipRequest(),
+                currentPositionMs = 0L,
+                playbackState = Player.STATE_BUFFERING,
+                currentMediaItemIndex = 1,
+                playWhenReady = true,
+            ),
+        )
+    }
+
+    private fun markerSkipRequest() = MarkerSkipRecoveryRequest(
+        id = 1L,
+        targetPositionMs = 60_000L,
+        mediaItemIndex = 0,
+        shouldPlay = true,
+    )
 }
