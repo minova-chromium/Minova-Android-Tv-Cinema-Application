@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 4.0.1 — 2026-11-01
+
+- Added automatic Plex discovery over wired and Wi-Fi local networks, with remembered local and remote routes so a previously authorized server remains available when internet access is interrupted.
+- Preferred the validated direct LAN route for browsing, artwork, playback, progress, and watched-state updates while keeping Tailscale, reverse-proxy, and Plex relay addresses as fallbacks.
+- Matched local discovery replies to the saved Plex server identity to avoid switching to a different server on networks that host more than one.
+- Added optional persistent offline artwork storage for posters, backdrops, and cast images, bounded to 384 MB with live usage reporting and a safe clear-artwork action in Settings.
+
 ## 4.0.0 — 2026-10-27
 
 - Hardened Android Skip Intro against intermittent black screens, frozen frames, and endless buffering on affected hardware decoders.
