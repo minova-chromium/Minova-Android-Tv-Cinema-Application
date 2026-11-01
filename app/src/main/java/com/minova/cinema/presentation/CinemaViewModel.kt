@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.minova.cinema.data.PlexRepository
 import com.minova.cinema.data.PlexAccountRepository
+import com.minova.cinema.data.PlexConnectionResolver
 import com.minova.cinema.data.PlexDiscoveredServer
 import com.minova.cinema.data.PlexProfileRepository
 import com.minova.cinema.data.PlaybackCapabilityAssistant
@@ -49,6 +50,7 @@ class CinemaViewModel(
     private val offlineDownloadsStore: OfflineDownloadsStore,
     private val clientIdentifier: String,
     private val accountRepository: PlexAccountRepository,
+    private val connectionResolver: PlexConnectionResolver,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<CinemaUiState>(CinemaUiState.Loading)
     val uiState: StateFlow<CinemaUiState> = _uiState.asStateFlow()
@@ -826,7 +828,11 @@ class CinemaViewModel(
                 else -> CinemaUiState.Loading
             }
             try {
-                var activeConnection = newConnection
+                var activeConnection = connectionResolver.resolve(
+                    newConnection,
+                    serverIdentifier = preferences.readServerId(),
+                )
+                if (activeConnection != newConnection) preferences.saveRouteConnection(activeConnection)
                 var activeRepository = createRepository(activeConnection)
                 // Cached browsing can resolve details immediately while the
                 // paged background refresh is still in progress.
@@ -936,6 +942,7 @@ class CinemaViewModel(
             clientIdentifier,
             PlexServiceFactory.createAccount(clientIdentifier),
         )
+        private val connectionResolver = PlexConnectionResolver()
 
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -947,6 +954,7 @@ class CinemaViewModel(
                 offlineDownloadsStore,
                 clientIdentifier,
                 accountRepository,
+                connectionResolver,
             ) as T
         }
     }

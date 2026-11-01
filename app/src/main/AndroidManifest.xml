@@ -42,6 +42,7 @@
     </queries>
 
     <application
+        android:name=".MinovaCinemaApplication"
         android:allowBackup="true"
         android:appCategory="video"
         android:banner="@drawable/app_banner"

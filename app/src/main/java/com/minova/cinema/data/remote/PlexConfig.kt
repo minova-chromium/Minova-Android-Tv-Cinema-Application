@@ -9,6 +9,7 @@ data class PlexConnection(
     val baseUrl: String,
     val token: String,
     val clientIdentifier: String = BuildConfig.PLEX_CLIENT_ID,
+    val fallbackBaseUrls: List<String> = emptyList(),
 )
 
 object PlexConfig {

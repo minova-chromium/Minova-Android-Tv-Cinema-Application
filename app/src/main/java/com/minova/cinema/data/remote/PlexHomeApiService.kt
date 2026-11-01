@@ -55,6 +55,8 @@ data class PlexResourceDto(
 
 data class PlexResourceConnectionDto(
     @SerializedName("uri") val uri: String? = null,
+    @SerializedName("address") val address: String? = null,
+    @SerializedName("port") val port: Int? = null,
     @SerializedName("local") val local: Boolean? = null,
     @SerializedName("relay") val relay: Boolean? = null,
 )

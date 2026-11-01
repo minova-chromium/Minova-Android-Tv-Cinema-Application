@@ -22,6 +22,7 @@ class PlexPreferences(context: Context) {
             baseUrl = baseUrl,
             token = token,
             clientIdentifier = clientIdentifier,
+            fallbackBaseUrls = preferences.getStringSet(KEY_FALLBACK_BASE_URLS, emptySet()).orEmpty().toList(),
         )
     }
 
@@ -35,6 +36,7 @@ class PlexPreferences(context: Context) {
             putString(KEY_BASE_URL, connection.baseUrl)
             putString(KEY_TOKEN, connection.token)
             putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
+            putStringSet(KEY_FALLBACK_BASE_URLS, connection.fallbackBaseUrls.toSet())
             putString(KEY_OWNER_TOKEN, ownerToken)
             if (serverId.isNullOrBlank()) remove(KEY_SERVER_ID)
             else putString(KEY_SERVER_ID, serverId)
@@ -56,6 +58,7 @@ class PlexPreferences(context: Context) {
             putString(KEY_BASE_URL, connection.baseUrl)
             putString(KEY_TOKEN, connection.token)
             putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
+            putStringSet(KEY_FALLBACK_BASE_URLS, connection.fallbackBaseUrls.toSet())
             putString(KEY_SERVER_ID, serverId)
             putString(KEY_SERVER_NAME, serverName)
         }
@@ -74,7 +77,18 @@ class PlexPreferences(context: Context) {
             putString(KEY_BASE_URL, connection.baseUrl)
             putString(KEY_TOKEN, connection.token)
             putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
+            putStringSet(KEY_FALLBACK_BASE_URLS, connection.fallbackBaseUrls.toSet())
             putString(KEY_ACTIVE_PROFILE_UUID, profileUuid)
+        }
+    }
+
+    /** Remembers a working LAN route without changing Plex account/profile ownership data. */
+    fun saveRouteConnection(connection: PlexConnection) {
+        preferences.edit {
+            putString(KEY_BASE_URL, connection.baseUrl)
+            putString(KEY_TOKEN, connection.token)
+            putString(KEY_CLIENT_IDENTIFIER, connection.clientIdentifier)
+            putStringSet(KEY_FALLBACK_BASE_URLS, connection.fallbackBaseUrls.toSet())
         }
     }
 
@@ -96,6 +110,7 @@ class PlexPreferences(context: Context) {
             remove(KEY_CLIENT_IDENTIFIER)
             remove(KEY_SERVER_ID)
             remove(KEY_SERVER_NAME)
+            remove(KEY_FALLBACK_BASE_URLS)
         }
     }
 
@@ -116,5 +131,6 @@ class PlexPreferences(context: Context) {
         const val KEY_CLIENT_IDENTIFIER = "client_identifier"
         const val KEY_SERVER_ID = "server_id"
         const val KEY_SERVER_NAME = "server_name"
+        const val KEY_FALLBACK_BASE_URLS = "fallback_base_urls"
     }
 }

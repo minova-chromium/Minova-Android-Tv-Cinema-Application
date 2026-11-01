@@ -21,8 +21,27 @@ class PlexAccountRepositoryTest {
         val localHttps = PlexResourceConnectionDto("https://local.example:32400", local = true, relay = false)
 
         assertEquals(
-            listOf(localHttps, localHttp, remote, relay),
+            listOf(localHttp, localHttps, remote, relay),
             rankPlexConnections(listOf(relay, localHttp, remote, localHttps)),
+        )
+    }
+
+    @Test
+    fun `server discovery adds a direct router address for a local Plex resource`() {
+        val plexDirect = PlexResourceConnectionDto(
+            uri = "https://192-168-1-25.example.plex.direct:32400",
+            address = "192.168.1.25",
+            port = 32400,
+            local = true,
+            relay = false,
+        )
+
+        assertEquals(
+            listOf(
+                "http://192.168.1.25:32400/",
+                "https://192-168-1-25.example.plex.direct:32400",
+            ),
+            rankPlexConnections(listOf(plexDirect)).mapNotNull { it.uri },
         )
     }
 

@@ -3,6 +3,7 @@ package com.minova.cinema.data.local
 import android.content.Context
 import coil3.imageLoader
 import coil3.request.ImageRequest
+import coil3.request.CachePolicy
 import com.minova.cinema.domain.MediaContent
 import kotlinx.coroutines.delay
 
@@ -12,6 +13,7 @@ class PlexArtworkPrefetcher(context: Context) {
     private val imageLoader = appContext.imageLoader
 
     suspend fun prefetch(media: List<MediaContent>, focusedKey: String) {
+        if (!ArtworkCachePreferences(appContext).isEnabled()) return
         delay(800)
         for (item in artworkNeighbours(media, focusedKey)) {
             item.posterUrl?.let { imageLoader.execute(artworkRequest(appContext, it, false)) }
@@ -27,4 +29,7 @@ internal fun artworkNeighbours(media: List<MediaContent>, focusedKey: String): L
 /** Same bounded decode size in foreground and prefetch, sharing Coil's cache. */
 fun artworkRequest(context: Context, url: String?, backdrop: Boolean): ImageRequest =
     ImageRequest.Builder(context).data(url)
+        .diskCachePolicy(
+            if (ArtworkCachePreferences(context).isEnabled()) CachePolicy.ENABLED else CachePolicy.DISABLED,
+        )
         .size(if (backdrop) 1920 else 400, if (backdrop) 1080 else 600).build()

@@ -17,6 +17,7 @@
 Minova Cinema connects directly to a Plex Media Server and presents personal movies and series through adaptive touch-first phone and D-pad-native television interfaces. It is an independent Minova project and is not affiliated with Plex, Inc.
 
 - Secure Plex browser sign-in with automatic owned/shared server discovery, plus advanced manual server and token setup; no personal token is compiled into the app.
+- Automatic wired/Wi-Fi LAN discovery and remembered local/remote server routes, allowing the saved Plex account to browse and play while the internet is unavailable but the router and server remain online.
 - Separate Home, Movies, and Series destinations with shelves, full-library grids, genre filters, and global search.
 - A phone-native layout with compact media shelves, library shortcuts, persistent bottom navigation, software-keyboard search, touch playback controls, and portrait or landscape support.
 - Plex-synced watched state, watchlist, Continue Watching progress, manual mark watched/unwatched, and dismiss-from-continue actions.
@@ -35,6 +36,7 @@ Minova Cinema connects directly to a Plex Media Server and presents personal mov
 - Automatic post-seek A/V timestamp stabilization, a manual playback-pipeline resync action, and manual audio/subtitle delay correction for television synchronization issues.
 - Media3 frame-rate matching and supported surround-audio passthrough.
 - Private per-server metadata caching, duplicate-request coalescing, paged large-library loading, visible-first artwork loading, and upcoming-artwork prefetching.
+- Optional persistent offline artwork storage for viewed posters, backdrops, and cast images, bounded to 384 MB with a Settings action that clears artwork without touching Plex login or preferences.
 - Personalized Plex shelves using viewing progress, watched history, ratings, genres, and only server artwork.
 - Plex Home profile switching for full, managed, and PIN-protected users.
 - Android TV Home Continue Watching and Watchlist channels with title deep links.

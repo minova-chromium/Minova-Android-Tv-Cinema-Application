@@ -51,6 +51,7 @@ class PlexProfileRepository(
             baseUrl = ownerConnection.baseUrl,
             token = matchingServer?.accessToken?.takeIf(String::isNotBlank) ?: switchedToken,
             clientIdentifier = ownerConnection.clientIdentifier,
+            fallbackBaseUrls = ownerConnection.fallbackBaseUrls,
         )
     }
 }

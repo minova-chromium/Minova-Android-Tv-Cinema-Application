@@ -6,6 +6,9 @@ import androidx.tv.material3.Text
 import coil3.imageLoader
 import com.minova.cinema.data.local.ExperienceSettings
 import com.minova.cinema.data.local.PlaybackSettings
+import com.minova.cinema.data.local.ArtworkCachePreferences
+import com.minova.cinema.data.local.offlineArtworkDirectory
+import com.minova.cinema.data.local.offlineArtworkSize
 import com.minova.cinema.ui.settings.SettingsSecondaryButton
 import com.minova.cinema.ui.theme.MinovaMuted
 import kotlinx.coroutines.Dispatchers
@@ -19,13 +22,15 @@ internal fun ExperienceSettingsDialog(settings: ExperienceSettings, onChange: (E
     onPreset: (String) -> Unit, onRestoreLights: () -> Unit, onClose: () -> Unit,
     hasCustomPreset: Boolean = false, onSavePreset: () -> Unit = {}, onLoadPreset: () -> Unit = {},
     playback: PlaybackSettings = PlaybackSettings(), onCinemaChange: (PlaybackSettings) -> Unit = {},
+    offlineArtworkEnabled: Boolean = true, onOfflineArtworkChanged: (Boolean) -> Unit = {},
     showCinemaControls: Boolean = true) {
-    val loader = LocalContext.current.imageLoader
+    val context = LocalContext.current
+    val loader = context.imageLoader
     val scope = rememberCoroutineScope()
     var imageBytes by remember { mutableLongStateOf(0L) }
     var clearing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { imageBytes = withContext(Dispatchers.IO) { loader.diskCache?.size ?: 0L } }
+    LaunchedEffect(Unit) { imageBytes = withContext(Dispatchers.IO) { offlineArtworkSize(context) } }
     val languages = listOf("" to "Plex / automatic", "en" to "English", "nl" to "Dutch", "fr" to "French", "de" to "German", "es" to "Spanish", "it" to "Italian", "ja" to "Japanese")
     CinemaPanel(if (showCinemaControls) "Cinema preferences" else "App preferences", onClose, status = message) {
         item {
@@ -63,12 +68,27 @@ internal fun ExperienceSettingsDialog(settings: ExperienceSettings, onChange: (E
             item { SettingsSecondaryButton(onClick = { onRestoreLights(); message = "Restoring the captured original brightness of selected Tapo lights, if a playback snapshot is available." }) { Text("Restore Tapo lights now") } }
             item { Text("Only selected lights are controlled. Lights that were off stay off. Manual restore always uses their captured original state.", color = MinovaMuted) }
         }
-        item { Text("Artwork disk cache: ${imageBytes / (1024 * 1024)} MB", color = MinovaMuted) }
+        item { Text("Offline artwork: ${if (offlineArtworkEnabled) "On" else "Off"} · ${imageBytes / (1024 * 1024)} MB saved", color = MinovaMuted) }
+        item { SettingsSecondaryButton(onClick = {
+            val enabled = !offlineArtworkEnabled
+            onOfflineArtworkChanged(enabled)
+            message = if (enabled) {
+                "Posters and backdrops you browse will be kept locally. The persistent cache is fully active after the next app start."
+            } else {
+                "New browse artwork will not be saved for offline use. Existing saved artwork remains until you clear it."
+            }
+        }) { Text("Save artwork for offline use: ${if (offlineArtworkEnabled) "On" else "Off"}") } }
         item { SettingsSecondaryButton(enabled = !clearing, onClick = {
             clearing = true
             scope.launch {
-                runCatching { withContext(Dispatchers.IO) { loader.diskCache?.clear(); loader.memoryCache?.clear() } }
-                    .onSuccess { imageBytes = loader.diskCache?.size ?: 0L; message = "Artwork cleared. Plex login, metadata, and preferences were kept; visible images will reload." }
+                runCatching { withContext(Dispatchers.IO) {
+                    loader.diskCache?.clear()
+                    loader.memoryCache?.clear()
+                    if (!ArtworkCachePreferences(context).isEnabled()) {
+                        offlineArtworkDirectory(context).deleteRecursively()
+                    }
+                } }
+                    .onSuccess { imageBytes = offlineArtworkSize(context); message = "Artwork cleared. Plex login, metadata, and preferences were kept; visible images will reload." }
                     .onFailure { message = "Couldn't clear artwork. Try again after returning to Home." }
                 clearing = false
             }

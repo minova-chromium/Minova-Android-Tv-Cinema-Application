@@ -4,6 +4,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import com.minova.cinema.data.local.ExperiencePreferences
+import com.minova.cinema.data.local.ArtworkCachePreferences
 import com.minova.cinema.ui.experience.*
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
 import android.app.Activity
@@ -334,7 +335,9 @@ private fun MainScreen(
             var homePreferences by remember(profileKey) { mutableStateOf(browsePreferences.read()) }
             var customizeHome by remember { mutableStateOf(false) }
             val experiencePreferences = remember(profileKey) { ExperiencePreferences(context, profileKey) }
+            val artworkCachePreferences = remember(context.applicationContext) { ArtworkCachePreferences(context) }
             var experience by remember(profileKey) { mutableStateOf(experiencePreferences.read()) }
+            var offlineArtworkEnabled by remember { mutableStateOf(artworkCachePreferences.isEnabled()) }
             var customPreset by remember(profileKey) { mutableStateOf(experiencePreferences.customPreset()) }
             var experienceOpen by remember { mutableStateOf(false) }
             var discoveryOpen by remember { mutableStateOf(false) }
@@ -461,6 +464,11 @@ private fun MainScreen(
             if (experienceOpen) ExperienceSettingsDialog(experience,
                 showCinemaControls = !handheld,
                 onChange = { experience = it; experiencePreferences.save(it) },
+                offlineArtworkEnabled = offlineArtworkEnabled,
+                onOfflineArtworkChanged = { enabled ->
+                    artworkCachePreferences.setEnabled(enabled)
+                    offlineArtworkEnabled = enabled
+                },
                 playback = playbackSettings,
                 onCinemaChange = { changed ->
                     playbackSettings = playbackPreferences.applyCustomCinemaPreset(

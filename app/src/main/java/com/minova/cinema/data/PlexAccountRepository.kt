@@ -84,7 +84,11 @@ class PlexAccountRepository(
             }
 
     suspend fun resolveConnection(server: PlexDiscoveredServer): PlexConnection {
-        for (candidate in rankPlexConnections(server.connections)) {
+        val ranked = rankPlexConnections(server.connections)
+        val routes = ranked.mapNotNull { candidate ->
+            candidate.uri?.let { runCatching { PlexConfig.normalizeServerAddress(it) }.getOrNull() }
+        }.distinct()
+        for (candidate in ranked) {
             val uri = candidate.uri ?: continue
             val normalized = runCatching { PlexConfig.normalizeServerAddress(uri) }.getOrNull()
                 ?: continue
@@ -92,6 +96,7 @@ class PlexAccountRepository(
                 baseUrl = normalized,
                 token = server.accessToken,
                 clientIdentifier = clientIdentifier,
+                fallbackBaseUrls = routes.filterNot { it == normalized },
             )
             val reachable = try {
                 withTimeoutOrNull(CONNECTION_TEST_TIMEOUT_MS) {
@@ -144,6 +149,16 @@ class PlexAccountRepository(
 internal fun rankPlexConnections(
     connections: List<PlexResourceConnectionDto>,
 ): List<PlexResourceConnectionDto> = connections
+    .flatMap { connection ->
+        val direct = connection.address?.takeIf { connection.local == true }
+            ?.let { address ->
+                val uri = "http://$address:${connection.port?.takeIf { it in 1..65535 } ?: 32400}/"
+                uri.takeIf(::isDirectLanPlexAddress)?.let {
+                    connection.copy(uri = it, local = true, relay = false)
+                }
+            }
+        listOfNotNull(connection, direct)
+    }
     .filter { !it.uri.isNullOrBlank() }
     .distinctBy { it.uri?.trimEnd('/') }
     .sortedWith(
@@ -153,7 +168,8 @@ internal fun rankPlexConnections(
                 it.relay != true -> 1
                 else -> 2
             }
-        }.thenBy { if (it.uri.orEmpty().startsWith("https://", ignoreCase = true)) 0 else 1 },
+        }.thenBy { if (isDirectLanPlexAddress(it.uri.orEmpty())) 0 else 1 }
+            .thenBy { if (it.uri.orEmpty().startsWith("https://", ignoreCase = true)) 0 else 1 },
     )
 
 internal fun selectReconnectServer(
