@@ -1,10 +1,10 @@
 window.MINOVA_CINEMA_CONFIG = Object.freeze({
-  currentVersion: "4.0.3",
+  currentVersion: "4.0.4",
   feedbackEndpoint: "",
   feedbackRecipient: "minova.chromium@gmail.com",
   repositoryUrl: "https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application",
   latestReleaseApiUrl: "https://api.github.com/repos/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/latest",
-  latestApkUrl: "https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v4.0.3/Minova-Cinema-4.0.3.apk",
+  latestApkUrl: "https://github.com/minova-chromium/Minova-Android-Tv-Cinema-Application/releases/download/v4.0.4/Minova-Cinema-4.0.4.apk",
   desktopVersion: "1.1.0",
   desktopRepositoryUrl: "https://github.com/minova-chromium/Minova-Cinema-Windows",
   desktopReleaseApiUrl: "https://api.github.com/repos/minova-chromium/Minova-Cinema-Windows/releases/latest",

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 4.0.4 — 2026-11-03
+
+- Recognizes hybrid 4K DoVi/HDR10 HEVC Main 10 sources separately from regular Dolby Vision and HDR10 media.
+- Preserves the original 4K Dolby Vision HEVC video, bitrate, and HDR metadata instead of converting it to 1080p.
+- Remuxes affected hybrid titles through Plex HLS to avoid the unstable direct-MKV playback path without re-encoding the picture.
+- Preserves the best compatible surround track and keeps subtitles separate so they do not force video conversion.
+
 ## 4.0.3 — 2026-11-03
 
 - Routes Dolby Vision titles through a forced Plex video-transcode compatibility stream instead of handing the original Dolby Vision bitstream to unstable or underpowered television decoders.
