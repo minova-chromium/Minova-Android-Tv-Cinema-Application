@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 4.0.3 — 2026-11-03
+
+- Routes Dolby Vision titles through a forced Plex video-transcode compatibility stream instead of handing the original Dolby Vision bitstream to unstable or underpowered television decoders.
+- Keeps Direct Play enabled for normal HEVC, HDR, and non-Dolby Vision media.
+- Prevents quality changes from accidentally re-enabling direct Dolby Vision decoding during the same playback session.
+- Shows clear playback diagnostics while Minova prepares the safer Plex stream.
+
 ## 4.0.2 — 2026-11-03
 
 - Updated the Android Media3 playback stack to 1.11.1 for newer Dolby Vision, decoder, and video-surface fixes.
