@@ -73,6 +73,8 @@ data class MediaTechnicalInfo(
     val videoCodec: String? = null,
     val audioCodec: String? = null,
     val container: String? = null,
+    val isDolbyVision: Boolean = false,
+    val dolbyVisionProfile: Int? = null,
 )
 
 enum class PlexPlaybackMode(val label: String) {

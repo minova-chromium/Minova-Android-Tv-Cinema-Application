@@ -589,6 +589,7 @@ class PlexRepository(
                     selected = stream.selected == true,
                 )
             }
+        val videoStream = part?.streams?.firstOrNull { it.streamType == 1 }
         val playback = part?.takeIf { it.id != null }?.let {
             val media = metadata.media.firstOrNull { candidate ->
                 candidate.parts.any { candidatePart -> candidatePart.id == it.id }
@@ -607,6 +608,9 @@ class PlexRepository(
                     videoCodec = media?.videoCodec,
                     audioCodec = media?.audioCodec,
                     container = media?.container ?: it.container,
+                    isDolbyVision = videoStream?.dolbyVisionPresent == 1 ||
+                        videoStream?.dolbyVisionProfile != null,
+                    dolbyVisionProfile = videoStream?.dolbyVisionProfile,
                 ),
             )
         }

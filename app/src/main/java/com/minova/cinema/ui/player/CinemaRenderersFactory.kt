@@ -30,6 +30,13 @@ internal class CinemaRenderersFactory(
 ) : DefaultRenderersFactory(context) {
     private var delayedTextOutput: DelayedTextOutput? = null
 
+    init {
+        // Vendor Dolby Vision decoders occasionally advertise support but fail
+        // during initialization. Let Media3 try a lower-priority compatible
+        // decoder before escalating to the Plex compatibility-stream recovery.
+        setEnableDecoderFallback(true)
+    }
+
     override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,

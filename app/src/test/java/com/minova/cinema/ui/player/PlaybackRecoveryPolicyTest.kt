@@ -2,12 +2,27 @@ package com.minova.cinema.ui.player
 
 import androidx.media3.common.Player
 import com.minova.cinema.data.remote.PlaybackQuality
+import com.minova.cinema.domain.MediaTechnicalInfo
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlaybackRecoveryPolicyTest {
+    @Test
+    fun dolbyVisionGetsExclusivePlaybackPipeline() {
+        assertFalse(
+            PlaybackCodecPolicy.shouldPreloadNextItem(
+                MediaTechnicalInfo(isDolbyVision = true, dolbyVisionProfile = 8),
+            ),
+        )
+        assertTrue(
+            PlaybackCodecPolicy.shouldPreloadNextItem(
+                MediaTechnicalInfo(videoCodec = "hevc"),
+            ),
+        )
+    }
+
     @Test
     fun networkFailureRetriesCurrentSourceOnce() {
         assertEquals(

@@ -211,4 +211,6 @@ data class Stream(
     @SerializedName("title") val title: String? = null,
     @SerializedName("selected") val selected: Boolean? = null,
     @SerializedName("forced") val forced: Boolean? = null,
+    @SerializedName("DOVIPresent") val dolbyVisionPresent: Int? = null,
+    @SerializedName("DOVIProfile") val dolbyVisionProfile: Int? = null,
 )

@@ -164,10 +164,10 @@ dependencies {
     implementation("androidx.tv:tv-material:1.1.0")
     implementation("androidx.tvprovider:tvprovider:1.0.0")
 
-    implementation("androidx.media3:media3-exoplayer:1.10.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
-    implementation("androidx.media3:media3-session:1.10.1")
-    implementation("androidx.media3:media3-ui:1.10.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
+    implementation("androidx.media3:media3-session:1.11.1")
+    implementation("androidx.media3:media3-ui:1.11.1")
 
     // Phone and tablet sender support. The TV application remains a normal
     // ten-foot client; Cast-enabled televisions use Google's Default Media

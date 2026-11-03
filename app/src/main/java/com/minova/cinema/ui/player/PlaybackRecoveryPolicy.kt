@@ -2,6 +2,7 @@ package com.minova.cinema.ui.player
 
 import androidx.media3.common.Player
 import com.minova.cinema.data.remote.PlaybackQuality
+import com.minova.cinema.domain.MediaTechnicalInfo
 
 internal enum class PlaybackFailureKind {
     Network,
@@ -56,6 +57,15 @@ internal object PlaybackRecoveryPolicy {
         PlaybackQuality.Hd -> listOf(PlaybackQuality.Sd)
         PlaybackQuality.Sd -> emptyList()
     }
+}
+
+internal object PlaybackCodecPolicy {
+    /**
+     * Dolby Vision decoding is unusually resource-heavy on Android TV SoCs.
+     * Avoid buffering the next playlist item alongside it so the active vendor
+     * decoder retains the surface and codec resources it needs.
+     */
+    fun shouldPreloadNextItem(source: MediaTechnicalInfo): Boolean = !source.isDolbyVision
 }
 
 internal data class MarkerSkipRecoveryRequest(

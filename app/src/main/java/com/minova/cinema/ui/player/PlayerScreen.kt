@@ -389,11 +389,14 @@ fun PlayerScreen(
             .apply {
                 repeatMode = Player.REPEAT_MODE_OFF
                 playWhenReady = true
-                // Media3 1.10 preloads the next playlist period while the
-                // current trailer/bumper is playing.
-                preloadConfiguration = ExoPlayer.PreloadConfiguration(
-                    PLAYLIST_PRELOAD_DURATION_US,
-                )
+                // Dolby Vision vendor decoders are sensitive to codec and
+                // surface pressure. Keep playlist preloading for normal media,
+                // but give Dolby Vision the playback pipeline exclusively.
+                if (PlaybackCodecPolicy.shouldPreloadNextItem(playback.technicalInfo)) {
+                    preloadConfiguration = ExoPlayer.PreloadConfiguration(
+                        PLAYLIST_PRELOAD_DURATION_US,
+                    )
+                }
             }
     }
     val mediaSessionActivity = remember(context) {
