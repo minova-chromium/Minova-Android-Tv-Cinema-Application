@@ -11,6 +11,16 @@ class PlexConfigTest {
     }
 
     @Test
+    fun hybridDolbyVisionProfilePinsH264MpegTs() {
+        assertEquals(
+            "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&" +
+                "container=mpegts&videoCodec=h264&audioCodec=ac3,aac&" +
+                "subtitleCodec=webvtt&replace=true)",
+            SAFE_H264_HLS_PROFILE,
+        )
+    }
+
+    @Test
     fun bareLanAddressUsesPlexPort() {
         assertEquals(
             "http://192.168.1.20:32400/",

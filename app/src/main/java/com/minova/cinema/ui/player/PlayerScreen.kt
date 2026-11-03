@@ -266,7 +266,9 @@ fun PlayerScreen(
     var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var playbackMessage by remember(content.ratingKey) {
         mutableStateOf(
-            if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
+            if (PlaybackCodecPolicy.requiresSafeH264Transcode(playback.technicalInfo)) {
+                "Preparing compatible DoVi/HDR10 playback through Plex…"
+            } else if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
                 "Preparing safe Dolby Vision playback through Plex…"
             } else {
                 null
@@ -455,6 +457,9 @@ fun PlayerScreen(
                 subtitleStreamId = selectedPlexSubtitleId,
                 audioStreamId = selectedPlexAudioId,
                 forceVideoTranscode = PlaybackCodecPolicy.requiresPlexVideoTranscode(
+                    playback.technicalInfo,
+                ),
+                forceSafeH264 = PlaybackCodecPolicy.requiresSafeH264Transcode(
                     playback.technicalInfo,
                 ),
             )

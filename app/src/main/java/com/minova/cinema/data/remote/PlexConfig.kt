@@ -106,7 +106,13 @@ class PlexUrlFactory(
         subtitleStreamId: Long? = null,
         audioStreamId: Long? = null,
         forceVideoTranscode: Boolean = false,
+        forceSafeH264: Boolean = false,
     ): String {
+        val effectiveQuality = if (forceSafeH264 && quality == PlaybackQuality.Original) {
+            PlaybackQuality.FullHd
+        } else {
+            quality
+        }
         val builder = connection.baseUrl.toUri().buildUpon()
             .appendEncodedPath("video/:/transcode/universal/start.m3u8")
             .appendQueryParameter("path", "http://127.0.0.1:32400/library/metadata/$ratingKey")
@@ -121,16 +127,26 @@ class PlexUrlFactory(
             .appendQueryParameter("audioBoost", "100")
             .appendQueryParameter("location", "lan")
             .appendQueryParameter("session", sessionId)
+            .appendQueryParameter("X-Plex-Session-Identifier", sessionId)
+            .appendQueryParameter("hasMDE", "1")
             .appendQueryParameter(PlexConfig.HEADER_TOKEN, connection.token)
             .appendQueryParameter(PlexConfig.HEADER_CLIENT_ID, connection.clientIdentifier)
             .appendQueryParameter("X-Plex-Product", "Minova Cinema")
             .appendQueryParameter("X-Plex-Version", BuildConfig.VERSION_NAME)
             .appendQueryParameter("X-Plex-Platform", "Android")
-        if (quality != PlaybackQuality.Original) {
+        if (forceSafeH264) {
+            builder
+                .appendQueryParameter("X-Plex-Client-Profile-Name", "Generic")
+                .appendQueryParameter(
+                    "X-Plex-Client-Profile-Extra",
+                    SAFE_H264_HLS_PROFILE,
+                )
+        }
+        if (effectiveQuality != PlaybackQuality.Original) {
             builder
                 .appendQueryParameter("videoQuality", "100")
-                .appendQueryParameter("videoResolution", quality.resolution)
-                .appendQueryParameter("maxVideoBitrate", quality.maxBitrateKbps.toString())
+                .appendQueryParameter("videoResolution", effectiveQuality.resolution)
+                .appendQueryParameter("maxVideoBitrate", effectiveQuality.maxBitrateKbps.toString())
         }
         audioStreamId?.takeIf { it > 0L }?.let {
             builder.appendQueryParameter("audioStreamID", it.toString())
@@ -147,6 +163,10 @@ class PlexUrlFactory(
 
 internal fun plexDirectStreamFlag(forceVideoTranscode: Boolean): String =
     if (forceVideoTranscode) "0" else "1"
+
+internal const val SAFE_H264_HLS_PROFILE =
+    "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&" +
+        "container=mpegts&videoCodec=h264&audioCodec=ac3,aac&subtitleCodec=webvtt&replace=true)"
 
 enum class PlaybackQuality(
     val label: String,

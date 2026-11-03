@@ -11,6 +11,7 @@ import com.minova.cinema.data.remote.PlexWatchlistApiService
 import com.minova.cinema.data.remote.PlexDownloadQueueItem
 import com.minova.cinema.data.remote.PlexDownloadResponse
 import com.minova.cinema.data.remote.PersonTag
+import com.minova.cinema.data.remote.isDolbyVisionHdr10Hybrid
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaCollection
 import com.minova.cinema.domain.AudioStream
@@ -611,6 +612,9 @@ class PlexRepository(
                     isDolbyVision = videoStream?.dolbyVisionPresent == 1 ||
                         videoStream?.dolbyVisionProfile != null,
                     dolbyVisionProfile = videoStream?.dolbyVisionProfile,
+                    isDolbyVisionHdr10Hybrid = videoStream?.isDolbyVisionHdr10Hybrid() == true,
+                    bitDepth = videoStream?.bitDepth,
+                    videoProfile = videoStream?.profile,
                 ),
             )
         }

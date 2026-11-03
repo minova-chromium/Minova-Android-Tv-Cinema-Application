@@ -16,11 +16,28 @@ class PlaybackRecoveryPolicyTest {
             PlaybackCodecPolicy.shouldPreloadNextItem(dolbyVision),
         )
         assertTrue(PlaybackCodecPolicy.requiresPlexVideoTranscode(dolbyVision))
+        assertFalse(PlaybackCodecPolicy.requiresSafeH264Transcode(dolbyVision))
         assertTrue(
             PlaybackCodecPolicy.shouldPreloadNextItem(
                 MediaTechnicalInfo(videoCodec = "hevc"),
             ),
         )
+    }
+
+    @Test
+    fun hybridDolbyVisionHdr10UsesExplicitSafeH264Target() {
+        val hybrid = MediaTechnicalInfo(
+            videoCodec = "hevc",
+            videoResolution = "4k",
+            isDolbyVision = true,
+            dolbyVisionProfile = 8,
+            isDolbyVisionHdr10Hybrid = true,
+            bitDepth = 10,
+            videoProfile = "main 10",
+        )
+
+        assertTrue(PlaybackCodecPolicy.requiresPlexVideoTranscode(hybrid))
+        assertTrue(PlaybackCodecPolicy.requiresSafeH264Transcode(hybrid))
     }
 
     @Test
