@@ -66,6 +66,13 @@ internal object PlaybackCodecPolicy {
      * decoder retains the surface and codec resources it needs.
      */
     fun shouldPreloadNextItem(source: MediaTechnicalInfo): Boolean = !source.isDolbyVision
+
+    /**
+     * A fatal vendor MediaCodec failure terminates the whole process before
+     * Player.Listener can recover. Route Dolby Vision through Plex video
+     * transcoding so the device receives a stable compatibility bitstream.
+     */
+    fun requiresPlexVideoTranscode(source: MediaTechnicalInfo): Boolean = source.isDolbyVision
 }
 
 internal data class MarkerSkipRecoveryRequest(

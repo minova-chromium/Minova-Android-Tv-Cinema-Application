@@ -264,7 +264,15 @@ fun PlayerScreen(
         mutableStateOf(content.durationMs?.coerceAtLeast(0L) ?: 0L)
     }
     var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
-    var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
+    var playbackMessage by remember(content.ratingKey) {
+        mutableStateOf(
+            if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
+                "Preparing safe Dolby Vision playback through Plex…"
+            } else {
+                null
+            },
+        )
+    }
     var handoffInProgress by remember(content.ratingKey) { mutableStateOf(false) }
     var handoffCommitted by remember(content.ratingKey) { mutableStateOf(false) }
     val latestHandoffCommitted by rememberUpdatedState(handoffCommitted)
@@ -276,13 +284,25 @@ fun PlayerScreen(
     var attemptedRecoveryQualities by remember(content.ratingKey) {
         mutableStateOf(emptySet<PlaybackQuality>())
     }
-    var forceCompatibilityStream by remember(content.ratingKey) { mutableStateOf(false) }
+    var forceCompatibilityStream by remember(content.ratingKey) {
+        mutableStateOf(
+            PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo),
+        )
+    }
     var readyRecoverySources by remember(content.ratingKey) { mutableStateOf(emptySet<String>()) }
     var diagnostics by remember(content.ratingKey) {
         mutableStateOf(
             PlaybackDiagnostics(
-                mode = PlexPlaybackMode.DirectPlay,
-                reason = "Playing the original file without conversion",
+                mode = if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
+                    PlexPlaybackMode.Transcode
+                } else {
+                    PlexPlaybackMode.DirectPlay
+                },
+                reason = if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
+                    "Using Plex video transcoding to avoid an unstable Dolby Vision decoder"
+                } else {
+                    "Playing the original file without conversion"
+                },
                 source = playback.technicalInfo,
             ),
         )
@@ -434,6 +454,9 @@ fun PlayerScreen(
                 sessionId = playbackSessionId,
                 subtitleStreamId = selectedPlexSubtitleId,
                 audioStreamId = selectedPlexAudioId,
+                forceVideoTranscode = PlaybackCodecPolicy.requiresPlexVideoTranscode(
+                    playback.technicalInfo,
+                ),
             )
         }
         return MediaItem.Builder()
@@ -1561,7 +1584,9 @@ fun PlayerScreen(
                 plexSubtitles = playback.subtitles,
                 selectedPlexSubtitleId = selectedPlexSubtitleId,
                 onQualitySelected = {
-                    forceCompatibilityStream = false
+                    forceCompatibilityStream = PlaybackCodecPolicy.requiresPlexVideoTranscode(
+                        playback.technicalInfo,
+                    )
                     selectedQuality = it
                     settingsVisible = false
                 },

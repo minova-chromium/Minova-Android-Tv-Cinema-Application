@@ -5,6 +5,12 @@ import org.junit.Test
 
 class PlexConfigTest {
     @Test
+    fun dolbyVisionCompatibilityStreamForcesVideoTranscode() {
+        assertEquals("0", plexDirectStreamFlag(forceVideoTranscode = true))
+        assertEquals("1", plexDirectStreamFlag(forceVideoTranscode = false))
+    }
+
+    @Test
     fun bareLanAddressUsesPlexPort() {
         assertEquals(
             "http://192.168.1.20:32400/",

@@ -105,6 +105,7 @@ class PlexUrlFactory(
         sessionId: String = UUID.randomUUID().toString(),
         subtitleStreamId: Long? = null,
         audioStreamId: Long? = null,
+        forceVideoTranscode: Boolean = false,
     ): String {
         val builder = connection.baseUrl.toUri().buildUpon()
             .appendEncodedPath("video/:/transcode/universal/start.m3u8")
@@ -115,7 +116,7 @@ class PlexUrlFactory(
             .appendQueryParameter("offset", "0")
             .appendQueryParameter("fastSeek", "1")
             .appendQueryParameter("directPlay", "0")
-            .appendQueryParameter("directStream", "1")
+            .appendQueryParameter("directStream", plexDirectStreamFlag(forceVideoTranscode))
             .appendQueryParameter("subtitleSize", "100")
             .appendQueryParameter("audioBoost", "100")
             .appendQueryParameter("location", "lan")
@@ -143,6 +144,9 @@ class PlexUrlFactory(
             .toString()
     }
 }
+
+internal fun plexDirectStreamFlag(forceVideoTranscode: Boolean): String =
+    if (forceVideoTranscode) "0" else "1"
 
 enum class PlaybackQuality(
     val label: String,

@@ -11,11 +11,11 @@ import org.junit.Test
 class PlaybackRecoveryPolicyTest {
     @Test
     fun dolbyVisionGetsExclusivePlaybackPipeline() {
+        val dolbyVision = MediaTechnicalInfo(isDolbyVision = true, dolbyVisionProfile = 8)
         assertFalse(
-            PlaybackCodecPolicy.shouldPreloadNextItem(
-                MediaTechnicalInfo(isDolbyVision = true, dolbyVisionProfile = 8),
-            ),
+            PlaybackCodecPolicy.shouldPreloadNextItem(dolbyVision),
         )
+        assertTrue(PlaybackCodecPolicy.requiresPlexVideoTranscode(dolbyVision))
         assertTrue(
             PlaybackCodecPolicy.shouldPreloadNextItem(
                 MediaTechnicalInfo(videoCodec = "hevc"),
