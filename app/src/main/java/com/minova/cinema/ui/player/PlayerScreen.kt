@@ -266,10 +266,8 @@ fun PlayerScreen(
     var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var playbackMessage by remember(content.ratingKey) {
         mutableStateOf(
-            if (PlaybackCodecPolicy.requiresSafeH264Transcode(playback.technicalInfo)) {
-                "Preparing compatible DoVi/HDR10 playback through Plex…"
-            } else if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
-                "Preparing safe Dolby Vision playback through Plex…"
+            if (PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo)) {
+                "Preparing original 4K Dolby Vision playback through Plex…"
             } else {
                 null
             },
@@ -288,20 +286,20 @@ fun PlayerScreen(
     }
     var forceCompatibilityStream by remember(content.ratingKey) {
         mutableStateOf(
-            PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo),
+            PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo),
         )
     }
     var readyRecoverySources by remember(content.ratingKey) { mutableStateOf(emptySet<String>()) }
     var diagnostics by remember(content.ratingKey) {
         mutableStateOf(
             PlaybackDiagnostics(
-                mode = if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
-                    PlexPlaybackMode.Transcode
+                mode = if (PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo)) {
+                    PlexPlaybackMode.DirectStream
                 } else {
                     PlexPlaybackMode.DirectPlay
                 },
-                reason = if (PlaybackCodecPolicy.requiresPlexVideoTranscode(playback.technicalInfo)) {
-                    "Using Plex video transcoding to avoid an unstable Dolby Vision decoder"
+                reason = if (PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo)) {
+                    "Remuxing the original Dolby Vision video without conversion"
                 } else {
                     "Playing the original file without conversion"
                 },
@@ -456,12 +454,12 @@ fun PlayerScreen(
                 sessionId = playbackSessionId,
                 subtitleStreamId = selectedPlexSubtitleId,
                 audioStreamId = selectedPlexAudioId,
-                forceVideoTranscode = PlaybackCodecPolicy.requiresPlexVideoTranscode(
-                    playback.technicalInfo,
-                ),
-                forceSafeH264 = PlaybackCodecPolicy.requiresSafeH264Transcode(
-                    playback.technicalInfo,
-                ),
+                forceVideoTranscode = false,
+                preferOriginalDolbyVisionRemux =
+                    selectedQuality == PlaybackQuality.Original &&
+                        PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(
+                            playback.technicalInfo,
+                        ),
             )
         }
         return MediaItem.Builder()
@@ -1589,9 +1587,11 @@ fun PlayerScreen(
                 plexSubtitles = playback.subtitles,
                 selectedPlexSubtitleId = selectedPlexSubtitleId,
                 onQualitySelected = {
-                    forceCompatibilityStream = PlaybackCodecPolicy.requiresPlexVideoTranscode(
-                        playback.technicalInfo,
-                    )
+                    forceCompatibilityStream =
+                        it != PlaybackQuality.Original ||
+                            PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(
+                                playback.technicalInfo,
+                            )
                     selectedQuality = it
                     settingsVisible = false
                 },

@@ -68,20 +68,11 @@ internal object PlaybackCodecPolicy {
     fun shouldPreloadNextItem(source: MediaTechnicalInfo): Boolean = !source.isDolbyVision
 
     /**
-     * A fatal vendor MediaCodec failure terminates the whole process before
-     * Player.Listener can recover. Route Dolby Vision through Plex video
-     * transcoding so the device receives a stable compatibility bitstream.
+     * Keep the original HEVC Main 10 bitstream, Dolby Vision metadata and
+     * bitrate, but have Plex remux hybrid DoVi/HDR10 titles into HLS. This
+     * avoids the unstable direct-MKV path without converting the picture.
      */
-    fun requiresPlexVideoTranscode(source: MediaTechnicalInfo): Boolean = source.isDolbyVision
-
-    /**
-     * Hybrid DoVi/HDR10 HEVC Main 10 streams can select a vendor Dolby Vision
-     * decoder even though their base layer is valid HDR10. Some televisions
-     * then terminate the process mid-stream. For this exact source class we
-     * ask Plex for an explicit H.264/MPEG-TS compatibility target rather than
-     * leaving the transcoder output codec up to its default client profile.
-     */
-    fun requiresSafeH264Transcode(source: MediaTechnicalInfo): Boolean =
+    fun requiresOriginalDolbyVisionRemux(source: MediaTechnicalInfo): Boolean =
         source.isDolbyVisionHdr10Hybrid
 }
 

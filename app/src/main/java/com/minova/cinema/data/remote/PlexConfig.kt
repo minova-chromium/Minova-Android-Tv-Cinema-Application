@@ -106,13 +106,8 @@ class PlexUrlFactory(
         subtitleStreamId: Long? = null,
         audioStreamId: Long? = null,
         forceVideoTranscode: Boolean = false,
-        forceSafeH264: Boolean = false,
+        preferOriginalDolbyVisionRemux: Boolean = false,
     ): String {
-        val effectiveQuality = if (forceSafeH264 && quality == PlaybackQuality.Original) {
-            PlaybackQuality.FullHd
-        } else {
-            quality
-        }
         val builder = connection.baseUrl.toUri().buildUpon()
             .appendEncodedPath("video/:/transcode/universal/start.m3u8")
             .appendQueryParameter("path", "http://127.0.0.1:32400/library/metadata/$ratingKey")
@@ -123,6 +118,9 @@ class PlexUrlFactory(
             .appendQueryParameter("fastSeek", "1")
             .appendQueryParameter("directPlay", "0")
             .appendQueryParameter("directStream", plexDirectStreamFlag(forceVideoTranscode))
+            .appendQueryParameter("directStreamAudio", "1")
+            .appendQueryParameter("copyts", "1")
+            .appendQueryParameter("mediaBufferSize", "102400")
             .appendQueryParameter("subtitleSize", "100")
             .appendQueryParameter("audioBoost", "100")
             .appendQueryParameter("location", "lan")
@@ -134,24 +132,28 @@ class PlexUrlFactory(
             .appendQueryParameter("X-Plex-Product", "Minova Cinema")
             .appendQueryParameter("X-Plex-Version", BuildConfig.VERSION_NAME)
             .appendQueryParameter("X-Plex-Platform", "Android")
-        if (forceSafeH264) {
+        if (preferOriginalDolbyVisionRemux) {
             builder
                 .appendQueryParameter("X-Plex-Client-Profile-Name", "Generic")
                 .appendQueryParameter(
                     "X-Plex-Client-Profile-Extra",
-                    SAFE_H264_HLS_PROFILE,
+                    ORIGINAL_DOLBY_VISION_HLS_PROFILE,
                 )
         }
-        if (effectiveQuality != PlaybackQuality.Original) {
+        if (quality != PlaybackQuality.Original) {
             builder
                 .appendQueryParameter("videoQuality", "100")
-                .appendQueryParameter("videoResolution", effectiveQuality.resolution)
-                .appendQueryParameter("maxVideoBitrate", effectiveQuality.maxBitrateKbps.toString())
+                .appendQueryParameter("videoResolution", quality.resolution)
+                .appendQueryParameter("maxVideoBitrate", quality.maxBitrateKbps.toString())
         }
         audioStreamId?.takeIf { it > 0L }?.let {
             builder.appendQueryParameter("audioStreamID", it.toString())
         }
-        if (subtitleStreamId != null && subtitleStreamId > 0L) {
+        if (preferOriginalDolbyVisionRemux) {
+            // Preserve the untouched Dolby Vision video. Subtitles remain
+            // separate Media3 tracks; burning them would force video encoding.
+            builder.appendQueryParameter("skipSubtitles", "1")
+        } else if (subtitleStreamId != null && subtitleStreamId > 0L) {
             builder.appendQueryParameter("subtitles", "burn")
         } else {
             builder.appendQueryParameter("skipSubtitles", "1")
@@ -164,9 +166,10 @@ class PlexUrlFactory(
 internal fun plexDirectStreamFlag(forceVideoTranscode: Boolean): String =
     if (forceVideoTranscode) "0" else "1"
 
-internal const val SAFE_H264_HLS_PROFILE =
+internal const val ORIGINAL_DOLBY_VISION_HLS_PROFILE =
     "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&" +
-        "container=mpegts&videoCodec=h264&audioCodec=ac3,aac&subtitleCodec=webvtt&replace=true)"
+        "container=mpegts&videoCodec=hevc&audioCodec=ac3,eac3,dca,aac&" +
+        "subtitleCodec=webvtt&replace=true)"
 
 enum class PlaybackQuality(
     val label: String,

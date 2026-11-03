@@ -11,12 +11,12 @@ class PlexConfigTest {
     }
 
     @Test
-    fun hybridDolbyVisionProfilePinsH264MpegTs() {
+    fun hybridDolbyVisionProfilePreservesOriginalHevcInMpegTs() {
         assertEquals(
             "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&" +
-                "container=mpegts&videoCodec=h264&audioCodec=ac3,aac&" +
+                "container=mpegts&videoCodec=hevc&audioCodec=ac3,eac3,dca,aac&" +
                 "subtitleCodec=webvtt&replace=true)",
-            SAFE_H264_HLS_PROFILE,
+            ORIGINAL_DOLBY_VISION_HLS_PROFILE,
         )
     }
 
