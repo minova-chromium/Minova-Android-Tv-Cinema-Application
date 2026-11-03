@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 4.0.2 — 2026-11-03
+
+- Updated the Android Media3 playback stack to 1.11.1 for newer Dolby Vision, decoder, and video-surface fixes.
+- Enabled lower-priority decoder fallback when a device advertises a Dolby Vision decoder that cannot initialize the stream reliably.
+- Added Dolby Vision profile detection from Plex metadata and reserved the active playback pipeline for Dolby Vision titles instead of preloading another playlist item alongside them.
+- Kept automatic Plex compatibility-stream recovery available when the device reports a recoverable decoder failure.
+
 ## 4.0.1 — 2026-11-01
 
 - Added automatic Plex discovery over wired and Wi-Fi local networks, with remembered local and remote routes so a previously authorized server remains available when internet access is interrupted.
