@@ -30,6 +30,7 @@ internal object PlaybackRecoveryPolicy {
         currentSourceRetried: Boolean,
         usingCompatibilityStream: Boolean,
         attemptedQualities: Set<PlaybackQuality>,
+        preserveOriginalQuality: Boolean = false,
     ): AutomaticPlaybackRecovery {
         if (failure == PlaybackFailureKind.Network || failure == PlaybackFailureKind.Other) {
             if (!currentSourceRetried) return AutomaticPlaybackRecovery.RetryCurrent
@@ -37,6 +38,18 @@ internal object PlaybackRecoveryPolicy {
 
         if (currentQuality == PlaybackQuality.Original && !usingCompatibilityStream) {
             return AutomaticPlaybackRecovery.UseCompatibilityStream
+        }
+
+        // On devices where original playback needs a platform-specific codec
+        // workaround, never silently replace a requested 4K source with 1080p.
+        // The user can still explicitly select another quality in playback
+        // settings, but automatic recovery remains at original quality.
+        if (
+            currentQuality == PlaybackQuality.Original &&
+            preserveOriginalQuality &&
+            failure == PlaybackFailureKind.Decoder
+        ) {
+            return AutomaticPlaybackRecovery.AskUser
         }
 
         val nextQuality = qualityLadderAfter(currentQuality)

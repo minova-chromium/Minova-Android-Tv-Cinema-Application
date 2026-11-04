@@ -1,6 +1,7 @@
 package com.minova.cinema.ui.player
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
@@ -29,6 +30,22 @@ internal class CinemaRenderersFactory(
     private val subtitleDelayMs: Int,
 ) : DefaultRenderersFactory(context) {
     private var delayedTextOutput: DelayedTextOutput? = null
+
+    init {
+        if (
+            MediaCodecQueueingPolicy.shouldForceSynchronous(
+                manufacturer = Build.MANUFACTURER,
+                sdkInt = Build.VERSION.SDK_INT,
+                fingerprint = Build.FINGERPRINT,
+            )
+        ) {
+            // TCL's Android 12 G10 firmware can abort the complete app from
+            // libmedia_jni while delivering an asynchronous codec callback.
+            // Synchronous queueing avoids that platform callback bug without
+            // changing the original video, HDR/Dolby Vision, or audio stream.
+            forceDisableMediaCodecAsynchronousQueueing()
+        }
+    }
 
     override fun buildAudioSink(
         context: Context,
@@ -66,6 +83,23 @@ internal class CinemaRenderersFactory(
         delayedTextOutput?.clear()
         delayedTextOutput = null
     }
+}
+
+internal object MediaCodecQueueingPolicy {
+    fun shouldForceSynchronousForCurrentDevice(): Boolean = shouldForceSynchronous(
+        manufacturer = Build.MANUFACTURER,
+        sdkInt = Build.VERSION.SDK_INT,
+        fingerprint = Build.FINGERPRINT,
+    )
+
+    fun shouldForceSynchronous(
+        manufacturer: String,
+        sdkInt: Int,
+        fingerprint: String,
+    ): Boolean =
+        manufacturer.equals("TCL", ignoreCase = true) &&
+            sdkInt == Build.VERSION_CODES.S &&
+            fingerprint.contains("/G10_4K_GB/G10:", ignoreCase = true)
 }
 
 @OptIn(UnstableApi::class)

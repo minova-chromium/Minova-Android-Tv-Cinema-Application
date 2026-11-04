@@ -105,6 +105,7 @@ class PlexUrlFactory(
         sessionId: String = UUID.randomUUID().toString(),
         subtitleStreamId: Long? = null,
         audioStreamId: Long? = null,
+        preferOriginalVideoRemux: Boolean = false,
     ): String {
         val builder = connection.baseUrl.toUri().buildUpon()
             .appendEncodedPath("video/:/transcode/universal/start.m3u8")
@@ -116,15 +117,28 @@ class PlexUrlFactory(
             .appendQueryParameter("fastSeek", "1")
             .appendQueryParameter("directPlay", "0")
             .appendQueryParameter("directStream", "1")
+            .appendQueryParameter("directStreamAudio", "1")
+            .appendQueryParameter("copyts", "1")
+            .appendQueryParameter("mediaBufferSize", "102400")
             .appendQueryParameter("subtitleSize", "100")
             .appendQueryParameter("audioBoost", "100")
             .appendQueryParameter("location", "lan")
             .appendQueryParameter("session", sessionId)
+            .appendQueryParameter("X-Plex-Session-Identifier", sessionId)
+            .appendQueryParameter("hasMDE", "1")
             .appendQueryParameter(PlexConfig.HEADER_TOKEN, connection.token)
             .appendQueryParameter(PlexConfig.HEADER_CLIENT_ID, connection.clientIdentifier)
             .appendQueryParameter("X-Plex-Product", "Minova Cinema")
             .appendQueryParameter("X-Plex-Version", BuildConfig.VERSION_NAME)
             .appendQueryParameter("X-Plex-Platform", "Android")
+        if (preferOriginalVideoRemux) {
+            builder
+                .appendQueryParameter("X-Plex-Client-Profile-Name", "Generic")
+                .appendQueryParameter(
+                    "X-Plex-Client-Profile-Extra",
+                    ORIGINAL_HEVC_HLS_PROFILE,
+                )
+        }
         if (quality != PlaybackQuality.Original) {
             builder
                 .appendQueryParameter("videoQuality", "100")
@@ -134,7 +148,11 @@ class PlexUrlFactory(
         audioStreamId?.takeIf { it > 0L }?.let {
             builder.appendQueryParameter("audioStreamID", it.toString())
         }
-        if (subtitleStreamId != null && subtitleStreamId > 0L) {
+        if (preferOriginalVideoRemux) {
+            // Burning subtitles would force Plex to encode the 4K picture.
+            // Media3 continues to render the selected subtitle separately.
+            builder.appendQueryParameter("skipSubtitles", "1")
+        } else if (subtitleStreamId != null && subtitleStreamId > 0L) {
             builder.appendQueryParameter("subtitles", "burn")
         } else {
             builder.appendQueryParameter("skipSubtitles", "1")
@@ -143,6 +161,11 @@ class PlexUrlFactory(
             .toString()
     }
 }
+
+internal const val ORIGINAL_HEVC_HLS_PROFILE =
+    "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&" +
+        "container=mpegts&videoCodec=hevc&audioCodec=ac3,eac3,dca,aac&" +
+        "subtitleCodec=webvtt&replace=true)"
 
 enum class PlaybackQuality(
     val label: String,

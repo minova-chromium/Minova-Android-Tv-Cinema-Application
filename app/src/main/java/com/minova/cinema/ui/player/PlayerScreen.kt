@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.compose.runtime.mutableLongStateOf
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
@@ -101,6 +102,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
+import coil3.imageLoader
 import com.minova.cinema.MainActivity
 import com.minova.cinema.data.remote.PlaybackQuality
 import com.minova.cinema.data.remote.PlexConfig
@@ -131,6 +133,7 @@ private const val NEXT_EPISODE_COUNTDOWN_SECONDS = 10
 private const val INACTIVITY_PROMPT_SECONDS = 30
 private const val PLAYLIST_PRELOAD_DURATION_US = 30L * 1_000_000L
 private const val PLAYBACK_STARTUP_TIMEOUT_MS = 15_000L
+private const val PLAYBACK_LOG_TAG = "MinovaPlayback"
 
 private data class SubtitleTrackOption(
     val id: String,
@@ -337,6 +340,13 @@ fun PlayerScreen(
         )
     }
 
+    // Poster and backdrop bitmaps are useful while browsing, but retaining the
+    // whole artwork LRU competes with TCL's tunneled 4K Dolby Vision pipeline.
+    // The disk cache remains intact, so returning to browse reloads locally.
+    LaunchedEffect(content.ratingKey) {
+        context.imageLoader.memoryCache?.clear()
+    }
+
     val renderersFactory = remember(content.ratingKey, audioDelayMs, subtitleDelayMs) {
         CinemaRenderersFactory(context, audioDelayMs, subtitleDelayMs)
     }
@@ -368,6 +378,9 @@ fun PlayerScreen(
                         MimeTypes.AUDIO_TRUEHD,
                     )
                     .setAllowAudioMixedMimeTypeAdaptiveness(false)
+                    .setTunnelingEnabled(
+                        MediaCodecQueueingPolicy.shouldForceSynchronousForCurrentDevice(),
+                    )
                     .build(),
             )
         }
@@ -391,9 +404,11 @@ fun PlayerScreen(
                 playWhenReady = true
                 // Media3 1.10 preloads the next playlist period while the
                 // current trailer/bumper is playing.
-                preloadConfiguration = ExoPlayer.PreloadConfiguration(
-                    PLAYLIST_PRELOAD_DURATION_US,
-                )
+                if (!MediaCodecQueueingPolicy.shouldForceSynchronousForCurrentDevice()) {
+                    preloadConfiguration = ExoPlayer.PreloadConfiguration(
+                        PLAYLIST_PRELOAD_DURATION_US,
+                    )
+                }
             }
     }
     val mediaSessionActivity = remember(context) {
@@ -431,6 +446,10 @@ fun PlayerScreen(
                 sessionId = playbackSessionId,
                 subtitleStreamId = selectedPlexSubtitleId,
                 audioStreamId = selectedPlexAudioId,
+                preferOriginalVideoRemux =
+                    quality == PlaybackQuality.Original &&
+                        forceCompatibilityStream &&
+                        MediaCodecQueueingPolicy.shouldForceSynchronousForCurrentDevice(),
             )
         }
         return MediaItem.Builder()
@@ -475,15 +494,21 @@ fun PlayerScreen(
         reason: String,
     ): Boolean {
         val sourceKey = activeSourceKey()
-        return when (
-            val recovery = PlaybackRecoveryPolicy.decide(
+        val recovery = PlaybackRecoveryPolicy.decide(
                 failure = failure,
                 currentQuality = selectedQuality,
                 currentSourceRetried = sourceKey in retriedRecoverySources,
                 usingCompatibilityStream = forceCompatibilityStream,
                 attemptedQualities = attemptedRecoveryQualities,
+                preserveOriginalQuality = MediaCodecQueueingPolicy.shouldForceSynchronousForCurrentDevice(),
             )
-        ) {
+        Log.w(
+            PLAYBACK_LOG_TAG,
+            "Recovery decision=$recovery failure=$failure quality=$selectedQuality " +
+                "compatibility=$forceCompatibilityStream state=${player.playbackState} " +
+                "positionMs=${player.currentPosition.coerceAtLeast(0L)} reason=$reason",
+        )
+        return when (recovery) {
             AutomaticPlaybackRecovery.RetryCurrent -> {
                 retriedRecoverySources = retriedRecoverySources + sourceKey
                 recoveryPosition = player.currentPosition.coerceAtLeast(0L)
@@ -581,13 +606,23 @@ fun PlayerScreen(
             sourceKey in readyRecoverySources ||
             !player.playWhenReady
         ) return@LaunchedEffect
-        delay(PLAYBACK_STARTUP_TIMEOUT_MS)
+        val startupTimeoutMs = if (MediaCodecQueueingPolicy.shouldForceSynchronousForCurrentDevice()) {
+            45_000L
+        } else {
+            PLAYBACK_STARTUP_TIMEOUT_MS
+        }
+        delay(startupTimeoutMs)
         if (
             player.playbackState == Player.STATE_BUFFERING &&
             player.currentMediaItemIndex == mainFeatureIndex &&
             activeSourceKey() == sourceKey &&
             player.playWhenReady
         ) {
+            Log.w(
+                PLAYBACK_LOG_TAG,
+                "Startup timeout after ${startupTimeoutMs}ms quality=$selectedQuality " +
+                    "compatibility=$forceCompatibilityStream state=${player.playbackState}",
+            )
             attemptAutomaticRecovery(
                 failure = PlaybackFailureKind.StartupTimeout,
                 reason = "Playback is taking too long to start.",
@@ -795,6 +830,14 @@ fun PlayerScreen(
                     return
                 }
                 recoveryPosition = player.currentPosition.coerceAtLeast(0L)
+                Log.e(
+                    PLAYBACK_LOG_TAG,
+                    "Player error code=${error.errorCode} name=${error.errorCodeName} " +
+                        "quality=$selectedQuality compatibility=$forceCompatibilityStream " +
+                        "tunneling=${player.isTunnelingEnabled} state=${player.playbackState} " +
+                        "positionMs=$recoveryPosition",
+                    error,
+                )
                 val failure = when (error.errorCode) {
                     PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                     PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> PlaybackFailureKind.Network
@@ -828,6 +871,11 @@ fun PlayerScreen(
                 reportPlaybackActivity()
                 reportPictureInPictureAvailability()
                 if (playbackState == Player.STATE_READY) {
+                    Log.i(
+                        PLAYBACK_LOG_TAG,
+                        "Playback ready quality=$selectedQuality compatibility=$forceCompatibilityStream " +
+                            "tunneling=${player.isTunnelingEnabled} resolution=$activeVideoResolution",
+                    )
                     readyRecoverySources = readyRecoverySources + activeSourceKey()
                     playbackMessage = null
                     if (player.currentMediaItemIndex == mainFeatureIndex) {

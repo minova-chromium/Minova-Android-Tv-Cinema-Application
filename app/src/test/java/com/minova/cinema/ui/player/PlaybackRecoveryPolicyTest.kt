@@ -9,6 +9,35 @@ import org.junit.Test
 
 class PlaybackRecoveryPolicyTest {
     @Test
+    fun affectedTclAndroid12FirmwareUsesSynchronousCodecQueueing() {
+        assertTrue(
+            MediaCodecQueueingPolicy.shouldForceSynchronous(
+                manufacturer = "TCL",
+                sdkInt = 31,
+                fingerprint = "TCL/G10_4K_GB/G10:12/STT2.230203.001/AS16:user/release-keys",
+            ),
+        )
+    }
+
+    @Test
+    fun otherDevicesKeepDefaultCodecQueueing() {
+        assertFalse(
+            MediaCodecQueueingPolicy.shouldForceSynchronous(
+                manufacturer = "Google",
+                sdkInt = 31,
+                fingerprint = "google/walleye/walleye:12/example",
+            ),
+        )
+        assertFalse(
+            MediaCodecQueueingPolicy.shouldForceSynchronous(
+                manufacturer = "TCL",
+                sdkInt = 32,
+                fingerprint = "TCL/G10_4K_GB/G10:12L/example",
+            ),
+        )
+    }
+
+    @Test
     fun networkFailureRetriesCurrentSourceOnce() {
         assertEquals(
             AutomaticPlaybackRecovery.RetryCurrent,
@@ -46,6 +75,36 @@ class PlaybackRecoveryPolicyTest {
                 currentSourceRetried = false,
                 usingCompatibilityStream = true,
                 attemptedQualities = setOf(PlaybackQuality.FullHd),
+            ),
+        )
+    }
+
+    @Test
+    fun affectedDeviceNeverSilentlyDowngradesOriginalQuality() {
+        assertEquals(
+            AutomaticPlaybackRecovery.AskUser,
+            PlaybackRecoveryPolicy.decide(
+                failure = PlaybackFailureKind.Decoder,
+                currentQuality = PlaybackQuality.Original,
+                currentSourceRetried = false,
+                usingCompatibilityStream = true,
+                attemptedQualities = emptySet(),
+                preserveOriginalQuality = true,
+            ),
+        )
+    }
+
+    @Test
+    fun affectedDeviceCanDowngradeOriginalQualityForPoorNetwork() {
+        assertEquals(
+            AutomaticPlaybackRecovery.ChangeQuality(PlaybackQuality.FullHd),
+            PlaybackRecoveryPolicy.decide(
+                failure = PlaybackFailureKind.StartupTimeout,
+                currentQuality = PlaybackQuality.Original,
+                currentSourceRetried = true,
+                usingCompatibilityStream = true,
+                attemptedQualities = emptySet(),
+                preserveOriginalQuality = true,
             ),
         )
     }

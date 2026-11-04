@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 4.0.7 — 2026-11-04
+
+- Enabled Android's larger media heap across the Android phone, tablet, and TV application, matching the memory class used by Plex on Android TV and preventing 4K Dolby Vision playback from exhausting TCL's normal 192 MB app limit.
+- Added a targeted TCL Android 12 G10 playback path with synchronous MediaCodec queueing, tunneled audio/video decoding, a longer 4K startup allowance, and no competing playlist preload.
+- Preserved original 4K Dolby Vision/HDR video and compatible surround audio through a Plex HEVC/HLS remux when the affected decoder rejects the direct container.
+- Prevented decoder failures from silently replacing original 4K playback with 1080p while retaining automatic 1080p, 720p, and 480p recovery for genuine network problems and prolonged buffering.
+- Released browsing artwork from memory when playback opens while retaining the disk artwork cache, reserving more heap for high-bitrate video without slowing later local artwork reloads.
+
 ## 4.0.5 — 2026-11-04
 
 - Restored the proven 4.0.1 playback pipeline after the Dolby Vision compatibility experiments caused choppy playback for otherwise working media.
