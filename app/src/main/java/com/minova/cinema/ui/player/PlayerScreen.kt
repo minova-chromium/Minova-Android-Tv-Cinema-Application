@@ -264,15 +264,7 @@ fun PlayerScreen(
         mutableStateOf(content.durationMs?.coerceAtLeast(0L) ?: 0L)
     }
     var activeVideoResolution by remember(content.ratingKey) { mutableStateOf<String?>(null) }
-    var playbackMessage by remember(content.ratingKey) {
-        mutableStateOf(
-            if (PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo)) {
-                "Preparing original 4K Dolby Vision playback through Plex…"
-            } else {
-                null
-            },
-        )
-    }
+    var playbackMessage by remember(content.ratingKey) { mutableStateOf<String?>(null) }
     var handoffInProgress by remember(content.ratingKey) { mutableStateOf(false) }
     var handoffCommitted by remember(content.ratingKey) { mutableStateOf(false) }
     val latestHandoffCommitted by rememberUpdatedState(handoffCommitted)
@@ -284,25 +276,13 @@ fun PlayerScreen(
     var attemptedRecoveryQualities by remember(content.ratingKey) {
         mutableStateOf(emptySet<PlaybackQuality>())
     }
-    var forceCompatibilityStream by remember(content.ratingKey) {
-        mutableStateOf(
-            PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo),
-        )
-    }
+    var forceCompatibilityStream by remember(content.ratingKey) { mutableStateOf(false) }
     var readyRecoverySources by remember(content.ratingKey) { mutableStateOf(emptySet<String>()) }
     var diagnostics by remember(content.ratingKey) {
         mutableStateOf(
             PlaybackDiagnostics(
-                mode = if (PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo)) {
-                    PlexPlaybackMode.DirectStream
-                } else {
-                    PlexPlaybackMode.DirectPlay
-                },
-                reason = if (PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(playback.technicalInfo)) {
-                    "Remuxing the original Dolby Vision video without conversion"
-                } else {
-                    "Playing the original file without conversion"
-                },
+                mode = PlexPlaybackMode.DirectPlay,
+                reason = "Playing the original file without conversion",
                 source = playback.technicalInfo,
             ),
         )
@@ -409,14 +389,11 @@ fun PlayerScreen(
             .apply {
                 repeatMode = Player.REPEAT_MODE_OFF
                 playWhenReady = true
-                // Dolby Vision vendor decoders are sensitive to codec and
-                // surface pressure. Keep playlist preloading for normal media,
-                // but give Dolby Vision the playback pipeline exclusively.
-                if (PlaybackCodecPolicy.shouldPreloadNextItem(playback.technicalInfo)) {
-                    preloadConfiguration = ExoPlayer.PreloadConfiguration(
-                        PLAYLIST_PRELOAD_DURATION_US,
-                    )
-                }
+                // Media3 1.10 preloads the next playlist period while the
+                // current trailer/bumper is playing.
+                preloadConfiguration = ExoPlayer.PreloadConfiguration(
+                    PLAYLIST_PRELOAD_DURATION_US,
+                )
             }
     }
     val mediaSessionActivity = remember(context) {
@@ -454,12 +431,6 @@ fun PlayerScreen(
                 sessionId = playbackSessionId,
                 subtitleStreamId = selectedPlexSubtitleId,
                 audioStreamId = selectedPlexAudioId,
-                forceVideoTranscode = false,
-                preferOriginalDolbyVisionRemux =
-                    selectedQuality == PlaybackQuality.Original &&
-                        PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(
-                            playback.technicalInfo,
-                        ),
             )
         }
         return MediaItem.Builder()
@@ -1587,11 +1558,7 @@ fun PlayerScreen(
                 plexSubtitles = playback.subtitles,
                 selectedPlexSubtitleId = selectedPlexSubtitleId,
                 onQualitySelected = {
-                    forceCompatibilityStream =
-                        it != PlaybackQuality.Original ||
-                            PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(
-                                playback.technicalInfo,
-                            )
+                    forceCompatibilityStream = false
                     selectedQuality = it
                     settingsVisible = false
                 },

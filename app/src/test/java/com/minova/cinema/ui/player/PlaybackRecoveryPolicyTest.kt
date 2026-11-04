@@ -2,42 +2,12 @@ package com.minova.cinema.ui.player
 
 import androidx.media3.common.Player
 import com.minova.cinema.data.remote.PlaybackQuality
-import com.minova.cinema.domain.MediaTechnicalInfo
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlaybackRecoveryPolicyTest {
-    @Test
-    fun dolbyVisionGetsExclusivePlaybackPipeline() {
-        val dolbyVision = MediaTechnicalInfo(isDolbyVision = true, dolbyVisionProfile = 8)
-        assertFalse(
-            PlaybackCodecPolicy.shouldPreloadNextItem(dolbyVision),
-        )
-        assertFalse(PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(dolbyVision))
-        assertTrue(
-            PlaybackCodecPolicy.shouldPreloadNextItem(
-                MediaTechnicalInfo(videoCodec = "hevc"),
-            ),
-        )
-    }
-
-    @Test
-    fun hybridDolbyVisionHdr10UsesOriginalQualityRemux() {
-        val hybrid = MediaTechnicalInfo(
-            videoCodec = "hevc",
-            videoResolution = "4k",
-            isDolbyVision = true,
-            dolbyVisionProfile = 8,
-            isDolbyVisionHdr10Hybrid = true,
-            bitDepth = 10,
-            videoProfile = "main 10",
-        )
-
-        assertTrue(PlaybackCodecPolicy.requiresOriginalDolbyVisionRemux(hybrid))
-    }
-
     @Test
     fun networkFailureRetriesCurrentSourceOnce() {
         assertEquals(

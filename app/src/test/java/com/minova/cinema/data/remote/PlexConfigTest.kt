@@ -5,22 +5,6 @@ import org.junit.Test
 
 class PlexConfigTest {
     @Test
-    fun dolbyVisionCompatibilityStreamForcesVideoTranscode() {
-        assertEquals("0", plexDirectStreamFlag(forceVideoTranscode = true))
-        assertEquals("1", plexDirectStreamFlag(forceVideoTranscode = false))
-    }
-
-    @Test
-    fun hybridDolbyVisionProfilePreservesOriginalHevcInMpegTs() {
-        assertEquals(
-            "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&" +
-                "container=mpegts&videoCodec=hevc&audioCodec=ac3,eac3,dca,aac&" +
-                "subtitleCodec=webvtt&replace=true)",
-            ORIGINAL_DOLBY_VISION_HLS_PROFILE,
-        )
-    }
-
-    @Test
     fun bareLanAddressUsesPlexPort() {
         assertEquals(
             "http://192.168.1.20:32400/",

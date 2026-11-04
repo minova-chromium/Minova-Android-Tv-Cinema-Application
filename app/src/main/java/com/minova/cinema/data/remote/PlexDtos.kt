@@ -211,25 +211,4 @@ data class Stream(
     @SerializedName("title") val title: String? = null,
     @SerializedName("selected") val selected: Boolean? = null,
     @SerializedName("forced") val forced: Boolean? = null,
-    @SerializedName("profile") val profile: String? = null,
-    @SerializedName("bitDepth") val bitDepth: Int? = null,
-    @SerializedName("colorTrc") val colorTransfer: String? = null,
-    @SerializedName("DOVIPresent") val dolbyVisionPresent: Int? = null,
-    @SerializedName("DOVIProfile") val dolbyVisionProfile: Int? = null,
-    @SerializedName("DOVIBLCompatID") val dolbyVisionBaseLayerCompatibilityId: Int? = null,
 )
-
-internal fun Stream.isDolbyVisionHdr10Hybrid(): Boolean {
-    val hasDolbyVision = dolbyVisionPresent == 1 || dolbyVisionProfile != null
-    if (!hasDolbyVision) return false
-
-    val plexLabel = listOfNotNull(displayTitle, title).joinToString(" ")
-    val explicitlyAdvertisesHdr10 = plexLabel.contains("HDR10", ignoreCase = true)
-    val hasHdr10Transfer = colorTransfer.equals("smpte2084", ignoreCase = true) ||
-        colorTransfer.equals("pq", ignoreCase = true)
-    // Plex uses BL compatibility IDs 1 and 6 for the common Profile 8
-    // HDR10-compatible base layers. The label/transfer checks also cover
-    // servers that omit DOVIBLCompatID from their JSON response.
-    val hasHdr10CompatibleBaseLayer = dolbyVisionBaseLayerCompatibilityId in setOf(1, 6)
-    return explicitlyAdvertisesHdr10 || hasHdr10Transfer || hasHdr10CompatibleBaseLayer
-}

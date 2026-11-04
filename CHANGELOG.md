@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 4.0.5 — 2026-11-04
+
+- Restored the proven 4.0.1 playback pipeline after the Dolby Vision compatibility experiments caused choppy playback for otherwise working media.
+- Restored Media3 1.10.1, the original Direct Play and Direct Stream request behavior, normal playlist preloading, and the earlier renderer/recovery configuration.
+- Removed all automatic Dolby Vision detection, forced transcoding, and hybrid DoVi/HDR10 remux overrides; Minova once again sends original-quality media through the same path used before those experiments.
+- Kept the newer local Plex discovery, offline LAN access, and persistent artwork-cache features introduced in 4.0.1.
+
 ## 4.0.4 — 2026-11-03
 
 - Recognizes hybrid 4K DoVi/HDR10 HEVC Main 10 sources separately from regular Dolby Vision and HDR10 media.
