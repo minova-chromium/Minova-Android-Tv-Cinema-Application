@@ -90,6 +90,9 @@ fun DetailScreen(
     onDownload: (MediaContent) -> Unit = {},
     onPlayOffline: (OfflineDownload) -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    relatedMedia: List<MediaContent> = emptyList(),
+    onOpenRelated: (MediaContent) -> Unit = {},
+    experimentalTvInterface: Boolean = false,
     onBack: () -> Unit = {},
 ) {
     if (rememberDeviceProfile() == DeviceProfile.Handheld) {
@@ -112,6 +115,33 @@ fun DetailScreen(
             onDownload = onDownload,
             onPlayOffline = onPlayOffline,
             onOpenDownloads = onOpenDownloads,
+            onBack = onBack,
+        )
+        return
+    }
+    if (experimentalTvInterface) {
+        ExperimentalTvDetailScreen(
+            content = content,
+            showDetail = showDetail,
+            trailers = trailers,
+            relatedMedia = relatedMedia,
+            isWatched = isWatched,
+            isInMyList = isInMyList,
+            isInContinueWatching = isInContinueWatching,
+            seriesHasProgress = seriesHasProgress,
+            onPlay = onPlay,
+            onPlayTrailer = onPlayTrailer,
+            onWatchedChanged = onWatchedChanged,
+            onToggleMyList = onToggleMyList,
+            onRemoveFromContinueWatching = onRemoveFromContinueWatching,
+            onOpenPerson = onOpenPerson,
+            onOpenEpisode = onOpenEpisode,
+            onSeasonSelected = onSeasonSelected,
+            offlineDownloads = offlineDownloads,
+            onDownload = onDownload,
+            onPlayOffline = onPlayOffline,
+            onOpenDownloads = onOpenDownloads,
+            onOpenRelated = onOpenRelated,
             onBack = onBack,
         )
         return

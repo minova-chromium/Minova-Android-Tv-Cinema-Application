@@ -525,14 +525,31 @@ private fun MainScreen(
                             experiencePreferences.resetTracks(it.ratingKey)
                             android.widget.Toast.makeText(context, "Title preferences reset", android.widget.Toast.LENGTH_SHORT).show()
                         },
+                        experimentalTvInterface = experience.experimentalTvInterface,
                     ) }
                     is CinemaRoute.Detail -> {
                         val detailedMovie = (movieDetail as? MovieDetailUiState.Ready)
                             ?.takeIf { it.movie.ratingKey == route.content.ratingKey }
                         val detailedShow = (showDetail as? ShowDetailUiState.Ready)
                             ?.takeIf { it.show.ratingKey == route.content.ratingKey }
+                        val detailContent = detailedMovie?.movie ?: detailedShow?.show ?: route.content
+                        val relatedMedia = remember(detailContent.ratingKey, state.catalog.movies, state.catalog.shows) {
+                            (state.catalog.movies + state.catalog.shows)
+                                .asSequence()
+                                .filter { it.ratingKey != detailContent.ratingKey }
+                                .sortedByDescending { candidate ->
+                                    val sharedGenres = candidate.genres.count { genre ->
+                                        detailContent.genres.any { it.equals(genre, ignoreCase = true) }
+                                    }
+                                    sharedGenres * 100 +
+                                        (if (candidate.kind == detailContent.kind) 30 else 0) +
+                                        ((candidate.audienceRating ?: 0.0) * 2).toInt()
+                                }
+                                .take(20)
+                                .toList()
+                        }
                         DetailScreen(
-                            content = detailedMovie?.movie ?: detailedShow?.show ?: route.content,
+                            content = detailContent,
                             showDetail = showDetail,
                             trailers = detailedMovie?.trailers.orEmpty(),
                             isWatched = currentWatchedState(
@@ -593,6 +610,9 @@ private fun MainScreen(
                                 }
                             },
                             onOpenDownloads = { routes.add(CinemaRoute.Downloads) },
+                            relatedMedia = relatedMedia,
+                            onOpenRelated = ::open,
+                            experimentalTvInterface = experience.experimentalTvInterface,
                             onBack = {
                                 if (routes.size > 1) routes.removeAt(routes.lastIndex)
                             },
@@ -784,6 +804,7 @@ private fun MainScreen(
                     )
                     CinemaRoute.Settings -> SettingsScreen(
                         serverUrl = state.connection.baseUrl,
+                        experimentalTvInterface = experience.experimentalTvInterface,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
                         inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
                         inactivityTimeoutMs = playbackSettings.inactivityTimeoutMs,
@@ -801,6 +822,10 @@ private fun MainScreen(
                             viewModel.refresh(silent = true)
                         },
                         onChangeServer = viewModel::changeServer,
+                        onExperimentalTvInterfaceChanged = { enabled ->
+                            experience = experience.copy(experimentalTvInterface = enabled)
+                            experiencePreferences.save(experience)
+                        },
                         onAutoplayNextEpisodeChanged = { enabled ->
                             playbackSettings = playbackPreferences.setAutoplayNextEpisode(enabled)
                         },

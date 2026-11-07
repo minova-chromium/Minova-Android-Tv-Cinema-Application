@@ -97,6 +97,7 @@ import com.minova.cinema.ui.platform.rememberDeviceProfile
 @Composable
 fun SettingsScreen(
     serverUrl: String,
+    experimentalTvInterface: Boolean,
     autoplayNextEpisode: Boolean,
     inactivityCheckEnabled: Boolean,
     inactivityTimeoutMs: Long,
@@ -110,6 +111,7 @@ fun SettingsScreen(
     networkAssistantState: NetworkAssistantUiState,
     onRefresh: () -> Unit,
     onChangeServer: () -> Unit,
+    onExperimentalTvInterfaceChanged: (Boolean) -> Unit,
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
     onInactivityCheckChanged: (Boolean) -> Unit,
     onInactivityTimeoutChanged: (Long) -> Unit,
@@ -518,6 +520,38 @@ fun SettingsScreen(
                     )
                     },
                 )
+            }
+            if (!handheld) {
+                Spacer(Modifier.height(12.dp))
+                SettingsCard(
+                    title = "Interface preview",
+                    subtitle = "Try the Desktop-inspired cinematic TV design",
+                ) {
+                    PlaybackToggleButton(
+                        title = "Experimental TV interface",
+                        description = if (experimentalTvInterface) {
+                            "Enabled · The stable interface remains available here at any time"
+                        } else {
+                            "Off · Enable the new left-rail, landscape-shelf TV experience"
+                        },
+                        checked = experimentalTvInterface,
+                        onClick = {
+                            onExperimentalTvInterfaceChanged(!experimentalTvInterface)
+                            savedMessage = if (experimentalTvInterface) {
+                                "Stable TV interface selected"
+                            } else {
+                                "Experimental TV interface selected"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                    )
+                    Text(
+                        "This changes browsing and title details only. Your Plex account, playback settings, watch state, downloads and phone interface stay unchanged.",
+                        color = MinovaMuted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
             }
         }
 

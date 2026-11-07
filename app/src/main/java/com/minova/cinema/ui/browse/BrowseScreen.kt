@@ -161,6 +161,7 @@ fun BrowseScreen(
     onHighlighted: (MediaContent?) -> Unit = {},
     onResetPlaybackPreferences: (MediaContent) -> Unit = {},
     loadCollectionMembers: (suspend (String) -> List<MediaContent>)? = null,
+    experimentalTvInterface: Boolean = false,
 ) {
     if (rememberDeviceProfile() == DeviceProfile.Handheld) {
         MobileBrowseScreen(
@@ -178,6 +179,24 @@ fun BrowseScreen(
             refreshing = refreshing,
             onHighlighted = onHighlighted,
             onResetPlaybackPreferences = onResetPlaybackPreferences,
+            loadCollectionMembers = loadCollectionMembers,
+        )
+        return
+    }
+    if (experimentalTvInterface) {
+        ExperimentalTvBrowseScreen(
+            catalog = catalog,
+            onOpen = onOpen,
+            onPlay = onPlay,
+            onToggleMyList = onToggleMyList,
+            onSettings = onSettings,
+            onDownloads = onDownloads,
+            onWatchlistRefresh = onWatchlistRefresh,
+            homePreferences = homePreferences,
+            onDiscover = onDiscover,
+            onRefresh = onRefresh,
+            refreshing = refreshing,
+            onHighlighted = onHighlighted,
             loadCollectionMembers = loadCollectionMembers,
         )
         return

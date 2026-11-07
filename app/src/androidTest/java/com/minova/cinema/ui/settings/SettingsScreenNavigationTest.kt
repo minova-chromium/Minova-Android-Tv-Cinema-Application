@@ -94,6 +94,7 @@ class SettingsScreenNavigationTest {
             MinovaCinemaTheme {
                 SettingsScreen(
                     serverUrl = "http://192.168.1.10:32400/",
+                    experimentalTvInterface = false,
                     autoplayNextEpisode = true,
                     inactivityCheckEnabled = true,
                     inactivityTimeoutMs = 3L * 60L * 60_000L,
@@ -107,6 +108,7 @@ class SettingsScreenNavigationTest {
                     networkAssistantState = NetworkAssistantUiState.Idle,
                     onRefresh = {},
                     onChangeServer = {},
+                    onExperimentalTvInterfaceChanged = {},
                     onAutoplayNextEpisodeChanged = {},
                     onInactivityCheckChanged = {},
                     onInactivityTimeoutChanged = {},

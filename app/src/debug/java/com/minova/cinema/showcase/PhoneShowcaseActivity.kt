@@ -130,6 +130,7 @@ class PhoneShowcaseActivity : ComponentActivity() {
                     }
                     PhoneShowcasePage.Settings -> SettingsScreen(
                         serverUrl = "http://192.168.1.10:32400",
+                        experimentalTvInterface = false,
                         autoplayNextEpisode = autoplayNextEpisode,
                         inactivityCheckEnabled = inactivityCheckEnabled,
                         inactivityTimeoutMs = inactivityTimeoutMs,
@@ -143,6 +144,7 @@ class PhoneShowcaseActivity : ComponentActivity() {
                         networkAssistantState = NetworkAssistantUiState.Idle,
                         onRefresh = { notify("Library refreshed") },
                         onChangeServer = { notify("Change server selected") },
+                        onExperimentalTvInterfaceChanged = {},
                         onAutoplayNextEpisodeChanged = { autoplayNextEpisode = it },
                         onInactivityCheckChanged = { inactivityCheckEnabled = it },
                         onInactivityTimeoutChanged = { inactivityTimeoutMs = it },
