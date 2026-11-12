@@ -488,8 +488,17 @@ class BrowseScreenNavigationTest {
             experimentalTvPosterCards = true,
         )
 
-        compose.onNodeWithTag("experimental-shelf-poster-movie-1", useUnmergedTree = true)
-            .assertIsDisplayed()
+        val poster = compose.onNodeWithTag(
+            "experimental-shelf-poster-movie-1",
+            useUnmergedTree = true,
+        )
+        poster.assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitForIdle()
+        val posterBounds = poster.fetchSemanticsNode().boundsInRoot
+        val rootBounds = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        assertTrue(posterBounds.top >= rootBounds.top)
+        assertTrue(posterBounds.bottom <= rootBounds.bottom)
         compose.onNodeWithTag("experimental-shelf-landscape-movie-1", useUnmergedTree = true)
             .assertDoesNotExist()
     }

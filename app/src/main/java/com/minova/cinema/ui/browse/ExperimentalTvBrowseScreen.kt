@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -370,6 +371,10 @@ private fun ExperimentalBrowseContent(
     refreshing: Boolean,
     usePosterCards: Boolean,
 ) {
+    val shelfListState = rememberLazyListState()
+    LaunchedEffect(destination, layout, usePosterCards) {
+        if (layout == ExperimentalLayout.Rows) shelfListState.scrollToItem(0)
+    }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -519,6 +524,7 @@ private fun ExperimentalBrowseContent(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
+                state = shelfListState,
                 contentPadding = PaddingValues(bottom = 30.dp),
             ) {
                 items(shelves, key = ExperimentalShelf::title) { shelf ->
@@ -787,7 +793,7 @@ private fun ExperimentalMediaShelf(
     onFocused: (MediaContent) -> Unit,
     usePosterCards: Boolean,
 ) {
-    Column(Modifier.fillMaxWidth().height(if (usePosterCards) 248.dp else 188.dp)) {
+    Column(Modifier.fillMaxWidth().height(if (usePosterCards) 234.dp else 188.dp)) {
         Text(
             shelf.title,
             color = MinovaWhite,
@@ -797,7 +803,10 @@ private fun ExperimentalMediaShelf(
         )
         LazyRow(
             modifier = Modifier.fillMaxWidth().focusGroup(),
-            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 3.dp),
+            contentPadding = PaddingValues(
+                horizontal = 48.dp,
+                vertical = if (usePosterCards) 8.dp else 4.dp,
+            ),
             horizontalArrangement = Arrangement.spacedBy(15.dp),
         ) {
             items(shelf.media, key = { "${shelf.title}:${it.ratingKey}" }) { content ->
@@ -836,8 +845,8 @@ private fun ExperimentalShelfPosterCard(
     Surface(
         onClick = { onOpen(content) },
         modifier = modifier
-            .width(132.dp)
-            .height(198.dp)
+            .width(120.dp)
+            .height(180.dp)
             .testTag("experimental-shelf-poster-${content.ratingKey}")
             .onFocusChanged {
                 focused = it.isFocused
