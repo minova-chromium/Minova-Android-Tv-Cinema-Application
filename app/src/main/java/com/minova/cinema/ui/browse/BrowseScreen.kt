@@ -190,7 +190,6 @@ fun BrowseScreen(
             onPlay = onPlay,
             onToggleMyList = onToggleMyList,
             onSettings = onSettings,
-            onDownloads = onDownloads,
             onWatchlistRefresh = onWatchlistRefresh,
             homePreferences = homePreferences,
             onDiscover = onDiscover,

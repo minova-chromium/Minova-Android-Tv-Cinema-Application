@@ -8,6 +8,7 @@ import android.view.KeyEvent
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.printToLog
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -29,6 +30,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import com.minova.cinema.domain.CinemaCatalog
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
+import com.minova.cinema.data.local.HomeLayoutPreferences
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
 import org.junit.Rule
 import org.junit.Test
@@ -451,7 +453,35 @@ class BrowseScreenNavigationTest {
         waitUntilFocused("browse-shelf-recently-added-movie-13")
     }
 
+    @Test
+    fun experimentalTvMoviesSwitchesFromRowsToRemoteFocusedGrid() {
+        showBrowseScreen(mediaCount = 30, experimentalTvInterface = true)
+
+        compose.onNodeWithText("Play")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput {
+                pressKey(Key.DirectionUp)
+                pressKey(Key.DirectionCenter)
+            }
+        compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 2_000) {
+            runCatching {
+                compose.onNodeWithTag("experimental-grid-movie-1", useUnmergedTree = true)
+                    .assertIsFocused()
+            }.isSuccess
+        }
+    }
+
+    @Test
+    fun experimentalTvRailOmitsDownloads() {
+        showBrowseScreen(experimentalTvInterface = true)
+
+        compose.onNodeWithContentDescription("Downloads").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
+    }
+
     private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false,
+        experimentalTvInterface: Boolean = false,
         onPlayRequested: () -> Unit = {}, onPlayed: (MediaContent) -> Unit = {},
         onWatchlist: (MediaContent) -> Unit = {}) {
         val movies = List(mediaCount) { index ->
@@ -499,6 +529,12 @@ class BrowseScreenNavigationTest {
                     onToggleMyList = onWatchlist,
                     onSettings = {},
                     onWatchlistRefresh = {},
+                    homePreferences = if (experimentalTvInterface) {
+                        HomeLayoutPreferences(openingTab = "Movies")
+                    } else {
+                        HomeLayoutPreferences()
+                    },
+                    experimentalTvInterface = experimentalTvInterface,
                 )
                 }
             }
