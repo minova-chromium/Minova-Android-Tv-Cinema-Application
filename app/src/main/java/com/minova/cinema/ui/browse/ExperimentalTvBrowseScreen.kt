@@ -478,6 +478,7 @@ private fun ExperimentalBrowseContent(
                         primary = true,
                         modifier = Modifier
                             .focusRequester(heroFocus)
+                            .testTag("experimental-hero-primary")
                             .focusProperties {
                                 left = navigationFocus
                                 up = layoutFocus
@@ -487,6 +488,7 @@ private fun ExperimentalBrowseContent(
                     ExperimentalHeroAction(
                         label = "Details",
                         icon = Icons.Rounded.Info,
+                        modifier = Modifier.testTag("experimental-hero-details"),
                         onClick = { onOpen(hero) },
                     )
                     ExperimentalHeroAction(
@@ -746,6 +748,9 @@ private fun ExperimentalHeroAction(
             pressedContainerColor = MinovaTeal,
             pressedContentColor = Color(0xFF001419),
         ),
+        scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(
+            focusedScale = 1f,
+        ),
         border = androidx.tv.material3.ClickableSurfaceDefaults.border(
             border = androidx.tv.material3.Border(
                 androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
@@ -753,7 +758,7 @@ private fun ExperimentalHeroAction(
                 RoundedCornerShape(999.dp),
             ),
             focusedBorder = androidx.tv.material3.Border(
-                androidx.compose.foundation.BorderStroke(2.dp, MinovaCyan),
+                androidx.compose.foundation.BorderStroke(1.dp, MinovaCyan),
                 0.dp,
                 RoundedCornerShape(999.dp),
             ),

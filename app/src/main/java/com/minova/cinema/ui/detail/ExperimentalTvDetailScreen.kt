@@ -355,6 +355,9 @@ private fun ExperimentalDetailAction(
             pressedContainerColor = MinovaTeal,
             pressedContentColor = Color(0xFF001419),
         ),
+        scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(
+            focusedScale = 1f,
+        ),
         border = androidx.tv.material3.ClickableSurfaceDefaults.border(
             border = androidx.tv.material3.Border(
                 androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
@@ -362,7 +365,7 @@ private fun ExperimentalDetailAction(
                 RoundedCornerShape(999.dp),
             ),
             focusedBorder = androidx.tv.material3.Border(
-                androidx.compose.foundation.BorderStroke(2.dp, MinovaCyan),
+                androidx.compose.foundation.BorderStroke(1.dp, MinovaCyan),
                 0.dp,
                 RoundedCornerShape(999.dp),
             ),

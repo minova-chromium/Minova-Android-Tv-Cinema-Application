@@ -480,6 +480,28 @@ class BrowseScreenNavigationTest {
         compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
     }
 
+    @Test
+    fun experimentalTvHeroActionsKeepTheirBoundsWhenFocusMoves() {
+        showBrowseScreen(experimentalTvInterface = true)
+        val primary = compose.onNodeWithTag("experimental-hero-primary", useUnmergedTree = true)
+        val details = compose.onNodeWithTag("experimental-hero-details", useUnmergedTree = true)
+
+        primary.performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitForIdle()
+        val primaryFocused = primary.fetchSemanticsNode().boundsInRoot
+        val detailsUnfocused = details.fetchSemanticsNode().boundsInRoot
+
+        primary.performKeyInput { pressKey(Key.DirectionRight) }
+        details.assertIsFocused()
+        val primaryUnfocused = primary.fetchSemanticsNode().boundsInRoot
+        val detailsFocused = details.fetchSemanticsNode().boundsInRoot
+
+        assertEquals(primaryFocused, primaryUnfocused)
+        assertEquals(detailsUnfocused, detailsFocused)
+        assertEquals(primaryFocused.top, detailsFocused.top)
+        assertEquals(primaryFocused.bottom, detailsFocused.bottom)
+    }
+
     private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false,
         experimentalTvInterface: Boolean = false,
         onPlayRequested: () -> Unit = {}, onPlayed: (MediaContent) -> Unit = {},
