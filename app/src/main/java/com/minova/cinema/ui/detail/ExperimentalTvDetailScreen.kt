@@ -195,7 +195,7 @@ fun ExperimentalTvDetailScreen(
                 painter = painterResource(R.drawable.minova_cinema_wordmark),
                 contentDescription = "Minova Cinema",
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.padding(start = 18.dp).width(206.dp).height(36.dp),
+                modifier = Modifier.padding(start = 18.dp).width(106.dp).height(36.dp),
             )
         }
     }
@@ -343,18 +343,14 @@ private fun ExperimentalDetailAction(
     compact: Boolean = false,
     onClick: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
     Surface(
         onClick = onClick,
-        modifier = modifier
-            .height(if (compact) 40.dp else 48.dp)
-            .onFocusChanged { focused = it.isFocused }
-            .then(if (focused) Modifier.scale(1.035f) else Modifier),
+        modifier = modifier.height(if (compact) 40.dp else 48.dp),
         shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(999.dp)),
         colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
             containerColor = if (primary) MinovaCyan else MinovaSurface.copy(alpha = 0.94f),
             contentColor = if (primary) Color(0xFF001419) else Color.White,
-            focusedContainerColor = if (primary) Color.White else MinovaCyan,
+            focusedContainerColor = Color.White,
             focusedContentColor = Color(0xFF001419),
             pressedContainerColor = MinovaTeal,
             pressedContentColor = Color(0xFF001419),

@@ -379,7 +379,7 @@ private fun ExperimentalBrowseContent(
                 painter = painterResource(R.drawable.minova_cinema_wordmark),
                 contentDescription = "Minova Cinema",
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.width(214.dp).height(38.dp),
+                modifier = Modifier.width(110.dp).height(38.dp),
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -423,7 +423,7 @@ private fun ExperimentalBrowseContent(
         Column(
             Modifier
                 .fillMaxWidth()
-                .height(256.dp)
+                .height(220.dp)
                 .padding(start = 48.dp, top = 7.dp, end = 42.dp),
         ) {
             if (hero == null) {
@@ -469,7 +469,8 @@ private fun ExperimentalBrowseContent(
                 }
                 Row(
                     Modifier.padding(top = 11.dp).focusGroup(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ExperimentalHeroAction(
                         label = if (hero.viewOffsetMs > 0L || hero.kind == MediaKind.Show && hero.viewedLeafCount > 0) "Resume" else "Play",
@@ -733,18 +734,14 @@ private fun ExperimentalHeroAction(
     primary: Boolean = false,
     onClick: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
     Surface(
         onClick = onClick,
-        modifier = modifier
-            .height(44.dp)
-            .onFocusChanged { focused = it.isFocused }
-            .then(if (focused) Modifier.scale(1.035f) else Modifier),
+        modifier = modifier.height(44.dp),
         shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(999.dp)),
         colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
             containerColor = if (primary) MinovaCyan else MinovaSurface.copy(alpha = 0.92f),
             contentColor = if (primary) Color(0xFF001419) else Color.White,
-            focusedContainerColor = if (primary) Color.White else MinovaCyan,
+            focusedContainerColor = Color.White,
             focusedContentColor = Color(0xFF001419),
             pressedContainerColor = MinovaTeal,
             pressedContentColor = Color(0xFF001419),
