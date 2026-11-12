@@ -567,7 +567,7 @@ private fun ExperimentalLayoutButton(
         ),
     ) {
         Row(
-            Modifier.padding(horizontal = 12.dp),
+            Modifier.fillMaxHeight().padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
@@ -765,7 +765,7 @@ private fun ExperimentalHeroAction(
         ),
     ) {
         Row(
-            Modifier.padding(horizontal = 20.dp),
+            Modifier.fillMaxHeight().padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {

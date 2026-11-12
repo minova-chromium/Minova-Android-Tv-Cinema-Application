@@ -502,6 +502,31 @@ class BrowseScreenNavigationTest {
         assertEquals(primaryFocused.bottom, detailsFocused.bottom)
     }
 
+    @Test
+    fun experimentalTvHeroActionLabelsAreVerticallyCentered() {
+        showBrowseScreen(experimentalTvInterface = true)
+
+        val primaryBounds = compose
+            .onNodeWithTag("experimental-hero-primary", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val playBounds = compose
+            .onNodeWithText("Play", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val detailsBounds = compose
+            .onNodeWithTag("experimental-hero-details", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val detailsLabelBounds = compose
+            .onNodeWithText("Details", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+
+        assertTrue(kotlin.math.abs(primaryBounds.center.y - playBounds.center.y) <= 1.5f)
+        assertTrue(kotlin.math.abs(detailsBounds.center.y - detailsLabelBounds.center.y) <= 1.5f)
+    }
+
     private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false,
         experimentalTvInterface: Boolean = false,
         onPlayRequested: () -> Unit = {}, onPlayed: (MediaContent) -> Unit = {},

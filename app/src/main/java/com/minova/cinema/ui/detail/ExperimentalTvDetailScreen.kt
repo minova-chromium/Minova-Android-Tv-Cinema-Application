@@ -372,7 +372,7 @@ private fun ExperimentalDetailAction(
         ),
     ) {
         Row(
-            Modifier.padding(horizontal = if (compact) 14.dp else 18.dp),
+            Modifier.fillMaxHeight().padding(horizontal = if (compact) 14.dp else 18.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
