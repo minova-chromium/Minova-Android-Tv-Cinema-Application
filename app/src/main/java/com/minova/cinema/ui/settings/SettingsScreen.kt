@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Movie
@@ -98,6 +99,7 @@ import com.minova.cinema.ui.platform.rememberDeviceProfile
 fun SettingsScreen(
     serverUrl: String,
     experimentalTvInterface: Boolean,
+    experimentalTvPosterCards: Boolean,
     autoplayNextEpisode: Boolean,
     inactivityCheckEnabled: Boolean,
     inactivityTimeoutMs: Long,
@@ -112,6 +114,7 @@ fun SettingsScreen(
     onRefresh: () -> Unit,
     onChangeServer: () -> Unit,
     onExperimentalTvInterfaceChanged: (Boolean) -> Unit,
+    onExperimentalTvPosterCardsChanged: (Boolean) -> Unit,
     onAutoplayNextEpisodeChanged: (Boolean) -> Unit,
     onInactivityCheckChanged: (Boolean) -> Unit,
     onInactivityTimeoutChanged: (Long) -> Unit,
@@ -148,9 +151,18 @@ fun SettingsScreen(
     var savedMessage by remember { mutableStateOf<String?>(null) }
     var castServerDraft by remember(castServerUrl) { mutableStateOf(castServerUrl.orEmpty()) }
     var activeSection by remember { mutableStateOf(SettingsSection.Plex) }
+    val availableSections = remember(handheld, experimentalTvInterface) {
+        SettingsSection.entries.filter { section ->
+            section != SettingsSection.Experimental || (!handheld && experimentalTvInterface)
+        }
+    }
     var contentFocusActive by remember { mutableStateOf(false) }
     val sectionEntryFocus = remember { SettingsSection.entries.associateWith { FocusRequester() } }
     val sectionRailFocus = remember { SettingsSection.entries.associateWith { FocusRequester() } }
+
+    LaunchedEffect(availableSections) {
+        if (activeSection !in availableSections) activeSection = SettingsSection.Playback
+    }
 
     fun entryModifier(section: SettingsSection): Modifier = Modifier
         .focusRequester(sectionEntryFocus.getValue(section))
@@ -204,6 +216,7 @@ fun SettingsScreen(
                 if (!compactLayout) {
                     SettingsNavigationRail(
                         activeSection = activeSection,
+                        sections = availableSections,
                         railFocusRequesters = sectionRailFocus,
                         compact = tablet,
                         onSectionSelected = { section ->
@@ -532,7 +545,7 @@ fun SettingsScreen(
                         description = if (experimentalTvInterface) {
                             "Enabled · The stable interface remains available here at any time"
                         } else {
-                            "Off · Enable the new left-rail, landscape-shelf TV experience"
+                            "Off · Enable the new left-rail, customizable-shelf TV experience"
                         },
                         checked = experimentalTvInterface,
                         onClick = {
@@ -552,6 +565,55 @@ fun SettingsScreen(
                         modifier = Modifier.padding(top = 12.dp),
                     )
                 }
+            }
+        }
+
+                SettingsSection.Experimental -> item {
+            SettingsCard(
+                title = "Experimental TV appearance",
+                subtitle = "Choose how movies and shows appear in browsing rows",
+            ) {
+                Text(
+                    "ARTWORK STYLE",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MinovaMuted,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 9.dp),
+                )
+                ResponsiveSettingsPair(
+                    handheld = false,
+                    first = { itemModifier ->
+                        PlaybackToggleButton(
+                            title = "Landscape artwork",
+                            description = "Wide cinematic cards with backdrop artwork",
+                            checked = !experimentalTvPosterCards,
+                            onClick = {
+                                onExperimentalTvPosterCardsChanged(false)
+                                savedMessage = "Landscape artwork selected"
+                            },
+                            modifier = entryModifier(SettingsSection.Experimental)
+                                .then(itemModifier)
+                                .testTag("experimental-artwork-landscape"),
+                        )
+                    },
+                    second = { itemModifier ->
+                        PlaybackToggleButton(
+                            title = "Poster artwork",
+                            description = "Tall cover cards that fit more titles on screen",
+                            checked = experimentalTvPosterCards,
+                            onClick = {
+                                onExperimentalTvPosterCardsChanged(true)
+                                savedMessage = "Poster artwork selected"
+                            },
+                            modifier = itemModifier.testTag("experimental-artwork-posters"),
+                        )
+                    },
+                )
+                Text(
+                    "This affects experimental browsing rows only. Grid view already uses posters, and the stable TV interface is unchanged.",
+                    color = MinovaMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
             }
         }
 
@@ -929,9 +991,10 @@ private enum class SettingsSection(
     Plex("01", "Plex server", "Connection & library", Icons.Rounded.Storage),
     Profiles("02", "Profiles", "Plex Home users", Icons.Rounded.AccountCircle),
     Playback("03", "Playback", "Autoplay & timers", Icons.Rounded.PlayCircle),
-    Network("04", "Network", "Quality & codecs", Icons.Rounded.NetworkCheck),
-    Cinema("05", "Cinema Mode", "Pre-show settings", Icons.Rounded.Movie),
-    Lights("06", "Cinema lights", "Google Home & Tapo", Icons.Rounded.Lightbulb),
+    Experimental("04", "Experimental", "TV preview options", Icons.Rounded.Apps),
+    Network("05", "Network", "Quality & codecs", Icons.Rounded.NetworkCheck),
+    Cinema("06", "Cinema Mode", "Pre-show settings", Icons.Rounded.Movie),
+    Lights("07", "Cinema lights", "Google Home & Tapo", Icons.Rounded.Lightbulb),
 }
 
 @Composable
@@ -1011,6 +1074,7 @@ private fun MobileSettingsNavigation(
 @Composable
 private fun SettingsNavigationRail(
     activeSection: SettingsSection,
+    sections: List<SettingsSection>,
     railFocusRequesters: Map<SettingsSection, FocusRequester>,
     compact: Boolean,
     onSectionSelected: (SettingsSection) -> Unit,
@@ -1064,13 +1128,13 @@ private fun SettingsNavigationRail(
             modifier = Modifier.padding(top = 22.dp, start = 6.dp, bottom = 6.dp),
         )
 
-        SettingsSection.entries.forEach { section ->
+        sections.forEach { section ->
             val selected = activeSection == section
             Surface(
                 onClick = { onSectionSelected(section) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(if (sections.size > 6) 48.dp else 52.dp)
                     .padding(vertical = 2.dp)
                     .focusRequester(railFocusRequesters.getValue(section))
                     .testTag("settings-section-${section.name}")

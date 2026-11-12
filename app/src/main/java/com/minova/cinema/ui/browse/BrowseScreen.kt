@@ -162,6 +162,7 @@ fun BrowseScreen(
     onResetPlaybackPreferences: (MediaContent) -> Unit = {},
     loadCollectionMembers: (suspend (String) -> List<MediaContent>)? = null,
     experimentalTvInterface: Boolean = false,
+    experimentalTvPosterCards: Boolean = false,
 ) {
     if (rememberDeviceProfile() == DeviceProfile.Handheld) {
         MobileBrowseScreen(
@@ -197,6 +198,7 @@ fun BrowseScreen(
             refreshing = refreshing,
             onHighlighted = onHighlighted,
             loadCollectionMembers = loadCollectionMembers,
+            usePosterCards = experimentalTvPosterCards,
         )
         return
     }

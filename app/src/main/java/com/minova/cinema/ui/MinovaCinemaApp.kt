@@ -526,6 +526,7 @@ private fun MainScreen(
                             android.widget.Toast.makeText(context, "Title preferences reset", android.widget.Toast.LENGTH_SHORT).show()
                         },
                         experimentalTvInterface = experience.experimentalTvInterface,
+                        experimentalTvPosterCards = experience.experimentalTvPosterCards,
                     ) }
                     is CinemaRoute.Detail -> {
                         val detailedMovie = (movieDetail as? MovieDetailUiState.Ready)
@@ -805,6 +806,7 @@ private fun MainScreen(
                     CinemaRoute.Settings -> SettingsScreen(
                         serverUrl = state.connection.baseUrl,
                         experimentalTvInterface = experience.experimentalTvInterface,
+                        experimentalTvPosterCards = experience.experimentalTvPosterCards,
                         autoplayNextEpisode = playbackSettings.autoplayNextEpisode,
                         inactivityCheckEnabled = playbackSettings.inactivityCheckEnabled,
                         inactivityTimeoutMs = playbackSettings.inactivityTimeoutMs,
@@ -824,6 +826,10 @@ private fun MainScreen(
                         onChangeServer = viewModel::changeServer,
                         onExperimentalTvInterfaceChanged = { enabled ->
                             experience = experience.copy(experimentalTvInterface = enabled)
+                            experiencePreferences.save(experience)
+                        },
+                        onExperimentalTvPosterCardsChanged = { enabled ->
+                            experience = experience.copy(experimentalTvPosterCards = enabled)
                             experiencePreferences.save(experience)
                         },
                         onAutoplayNextEpisodeChanged = { enabled ->

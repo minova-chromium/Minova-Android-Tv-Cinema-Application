@@ -481,6 +481,20 @@ class BrowseScreenNavigationTest {
     }
 
     @Test
+    fun experimentalTvPosterPreferenceUsesPosterShelves() {
+        showBrowseScreen(
+            mediaCount = 3,
+            experimentalTvInterface = true,
+            experimentalTvPosterCards = true,
+        )
+
+        compose.onNodeWithTag("experimental-shelf-poster-movie-1", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithTag("experimental-shelf-landscape-movie-1", useUnmergedTree = true)
+            .assertDoesNotExist()
+    }
+
+    @Test
     fun experimentalTvHeroActionsKeepTheirBoundsWhenFocusMoves() {
         showBrowseScreen(experimentalTvInterface = true)
         val primary = compose.onNodeWithTag("experimental-hero-primary", useUnmergedTree = true)
@@ -529,6 +543,7 @@ class BrowseScreenNavigationTest {
 
     private fun showBrowseScreen(includeContinueWatching: Boolean = false, mediaCount: Int = 1, simulateNavigation: Boolean = false,
         experimentalTvInterface: Boolean = false,
+        experimentalTvPosterCards: Boolean = false,
         onPlayRequested: () -> Unit = {}, onPlayed: (MediaContent) -> Unit = {},
         onWatchlist: (MediaContent) -> Unit = {}) {
         val movies = List(mediaCount) { index ->
@@ -582,6 +597,7 @@ class BrowseScreenNavigationTest {
                         HomeLayoutPreferences()
                     },
                     experimentalTvInterface = experimentalTvInterface,
+                    experimentalTvPosterCards = experimentalTvPosterCards,
                 )
                 }
             }

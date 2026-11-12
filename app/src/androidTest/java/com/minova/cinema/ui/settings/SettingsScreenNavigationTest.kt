@@ -20,6 +20,7 @@ import com.minova.cinema.tapo.TapoLightsUiState
 import com.minova.cinema.ui.theme.MinovaCinemaTheme
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertTrue
 
 /** Guards the TV-specific section rail and timer-dialog focus path. */
 class SettingsScreenNavigationTest {
@@ -89,12 +90,45 @@ class SettingsScreenNavigationTest {
         compose.onAllNodesWithTag("timer-done", useUnmergedTree = true).assertCountEquals(0)
     }
 
-    private fun showSettings() {
+    @Test
+    fun experimentalSettingsSectionIsHiddenUntilInterfaceIsEnabled() {
+        showSettings(experimentalTvInterface = false)
+
+        compose.onAllNodesWithTag("settings-section-Experimental").assertCountEquals(0)
+    }
+
+    @Test
+    fun experimentalSettingsSelectsPosterArtwork() {
+        var posterCardsSelected = false
+        showSettings(
+            experimentalTvInterface = true,
+            onExperimentalTvPosterCardsChanged = { posterCardsSelected = it },
+        )
+
+        compose.onNodeWithTag("settings-section-Experimental")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+            .performKeyInput { pressKey(Key.DirectionRight) }
+        waitUntilFocused("experimental-artwork-landscape")
+        compose.onNodeWithTag("experimental-artwork-landscape")
+            .performKeyInput { pressKey(Key.DirectionRight) }
+        waitUntilFocused("experimental-artwork-posters")
+        compose.onNodeWithTag("experimental-artwork-posters")
+            .performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.waitForIdle()
+
+        assertTrue(posterCardsSelected)
+    }
+
+    private fun showSettings(
+        experimentalTvInterface: Boolean = false,
+        onExperimentalTvPosterCardsChanged: (Boolean) -> Unit = {},
+    ) {
         compose.setContent {
             MinovaCinemaTheme {
                 SettingsScreen(
                     serverUrl = "http://192.168.1.10:32400/",
-                    experimentalTvInterface = false,
+                    experimentalTvInterface = experimentalTvInterface,
+                    experimentalTvPosterCards = false,
                     autoplayNextEpisode = true,
                     inactivityCheckEnabled = true,
                     inactivityTimeoutMs = 3L * 60L * 60_000L,
@@ -109,6 +143,7 @@ class SettingsScreenNavigationTest {
                     onRefresh = {},
                     onChangeServer = {},
                     onExperimentalTvInterfaceChanged = {},
+                    onExperimentalTvPosterCardsChanged = onExperimentalTvPosterCardsChanged,
                     onAutoplayNextEpisodeChanged = {},
                     onInactivityCheckChanged = {},
                     onInactivityTimeoutChanged = {},

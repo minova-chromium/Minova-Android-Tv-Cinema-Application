@@ -103,6 +103,7 @@ fun ExperimentalTvBrowseScreen(
     refreshing: Boolean = false,
     onHighlighted: (MediaContent?) -> Unit = {},
     loadCollectionMembers: (suspend (String) -> List<MediaContent>)? = null,
+    usePosterCards: Boolean = false,
 ) {
     var destination by rememberSaveable {
         mutableStateOf(ExperimentalDestination.fromOpeningTab(homePreferences.openingTab))
@@ -240,6 +241,7 @@ fun ExperimentalTvBrowseScreen(
                         onHighlighted = { highlighted = it },
                         onRefresh = onRefresh,
                         refreshing = refreshing,
+                        usePosterCards = usePosterCards,
                     )
                 }
             }
@@ -366,6 +368,7 @@ private fun ExperimentalBrowseContent(
     onHighlighted: (MediaContent) -> Unit,
     onRefresh: () -> Unit,
     refreshing: Boolean,
+    usePosterCards: Boolean,
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -524,6 +527,7 @@ private fun ExperimentalBrowseContent(
                         navigationFocus = navigationFocus,
                         onOpen = onOpen,
                         onFocused = onHighlighted,
+                        usePosterCards = usePosterCards,
                     )
                 }
             }
@@ -781,8 +785,9 @@ private fun ExperimentalMediaShelf(
     navigationFocus: FocusRequester,
     onOpen: (MediaContent) -> Unit,
     onFocused: (MediaContent) -> Unit,
+    usePosterCards: Boolean,
 ) {
-    Column(Modifier.fillMaxWidth().height(188.dp)) {
+    Column(Modifier.fillMaxWidth().height(if (usePosterCards) 248.dp else 188.dp)) {
         Text(
             shelf.title,
             color = MinovaWhite,
@@ -796,14 +801,115 @@ private fun ExperimentalMediaShelf(
             horizontalArrangement = Arrangement.spacedBy(15.dp),
         ) {
             items(shelf.media, key = { "${shelf.title}:${it.ratingKey}" }) { content ->
-                ExperimentalLandscapeCard(
-                    content = content,
-                    modifier = if (content.ratingKey == shelf.media.firstOrNull()?.ratingKey) {
-                        Modifier.focusProperties { left = navigationFocus }
-                    } else Modifier,
-                    onOpen = onOpen,
-                    onFocused = onFocused,
+                val cardModifier = if (content.ratingKey == shelf.media.firstOrNull()?.ratingKey) {
+                    Modifier.focusProperties { left = navigationFocus }
+                } else Modifier
+                if (usePosterCards) {
+                    ExperimentalShelfPosterCard(
+                        content = content,
+                        modifier = cardModifier,
+                        onOpen = onOpen,
+                        onFocused = onFocused,
+                    )
+                } else {
+                    ExperimentalLandscapeCard(
+                        content = content,
+                        modifier = cardModifier,
+                        onOpen = onOpen,
+                        onFocused = onFocused,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExperimentalShelfPosterCard(
+    content: MediaContent,
+    modifier: Modifier = Modifier,
+    onOpen: (MediaContent) -> Unit,
+    onFocused: (MediaContent) -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
+    Surface(
+        onClick = { onOpen(content) },
+        modifier = modifier
+            .width(132.dp)
+            .height(198.dp)
+            .testTag("experimental-shelf-poster-${content.ratingKey}")
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused(content)
+            }
+            .then(if (focused) Modifier.scale(1.035f) else Modifier),
+        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(shape),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = MinovaSurface,
+            focusedContainerColor = MinovaSurfaceRaised,
+        ),
+        border = androidx.tv.material3.ClickableSurfaceDefaults.border(
+            border = androidx.tv.material3.Border(
+                androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                0.dp,
+                shape,
+            ),
+            focusedBorder = androidx.tv.material3.Border(
+                androidx.compose.foundation.BorderStroke(3.dp, MinovaCyan),
+                0.dp,
+                shape,
+            ),
+        ),
+        tonalElevation = if (focused) 8.dp else 0.dp,
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            BrowseArtwork(
+                url = content.posterUrl ?: content.backdropUrl,
+                description = content.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.58f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.96f),
+                    ),
+                ),
+            )
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(10.dp)) {
+                Text(
+                    content.title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    content.secondaryTitle ?: content.metadataLine,
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (content.isWatched) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(7.dp).size(21.dp)
+                        .background(MinovaCyan, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Text("✓", color = Color(0xFF001419), fontWeight = FontWeight.Black) }
+            }
+            if (content.progress > 0f) {
+                Box(
+                    Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp)
+                        .background(Color.White.copy(alpha = 0.26f)),
+                ) {
+                    Box(Modifier.fillMaxWidth(content.progress).fillMaxHeight().background(MinovaCyan))
+                }
             }
         }
     }
@@ -823,6 +929,7 @@ private fun ExperimentalLandscapeCard(
         modifier = modifier
             .width(258.dp)
             .height(142.dp)
+            .testTag("experimental-shelf-landscape-${content.ratingKey}")
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused(content)
