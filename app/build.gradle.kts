@@ -52,8 +52,8 @@ android {
         // intentionally use API 29 as the public platform baseline.
         minSdk = 29
         targetSdk = 37
-        versionCode = 60
-        versionName = "4.0.7"
+        versionCode = 61
+        versionName = "4.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

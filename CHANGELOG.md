@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 4.0.8 — 2026-11-14
+
+- Added an opt-in Experimental TV interface while keeping the established Android TV experience enabled by default.
+- Added experimental landscape and poster artwork modes, plus independently remembered Rows or Grid layouts for Movies, Series, and Watchlist.
+- Refined experimental TV spacing, focus behavior, poster sizing, shelf density, details, search, collections, discovery, and settings for reliable D-pad navigation without clipped artwork or text.
+- Kept experimental appearance controls hidden until Experimental TV is enabled and left the phone, tablet, and stable TV interfaces unchanged.
+
 ## 4.0.7 — 2026-11-04
 
 - Enabled Android's larger media heap across the Android phone, tablet, and TV application, matching the memory class used by Plex on Android TV and preventing 4K Dolby Vision playback from exhausting TCL's normal 192 MB app limit.
