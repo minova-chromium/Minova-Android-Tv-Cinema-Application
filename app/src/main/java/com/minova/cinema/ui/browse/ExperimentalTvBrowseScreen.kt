@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,8 +27,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,9 +46,9 @@ import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -87,7 +86,6 @@ import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
 import com.minova.cinema.ui.theme.MinovaWhite
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * Controller-first port of the Desktop experimental renderer. It deliberately
@@ -376,8 +374,17 @@ private fun ExperimentalBrowseContent(
     usePosterCards: Boolean,
 ) {
     val shelfListState = rememberLazyListState()
+    var focusedShelfIndex by remember(destination) { mutableIntStateOf(0) }
     LaunchedEffect(destination, layout, usePosterCards) {
-        if (layout == ExperimentalLayout.Rows) shelfListState.scrollToItem(0)
+        if (layout == ExperimentalLayout.Rows) {
+            focusedShelfIndex = 0
+            shelfListState.scrollToItem(0)
+        }
+    }
+    LaunchedEffect(focusedShelfIndex) {
+        if (layout == ExperimentalLayout.Rows) {
+            shelfListState.animateScrollToItem(focusedShelfIndex)
+        }
     }
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -435,7 +442,7 @@ private fun ExperimentalBrowseContent(
         Column(
             Modifier
                 .fillMaxWidth()
-                .height(220.dp)
+                .heightIn(min = 178.dp, max = 220.dp)
                 .padding(start = 48.dp, top = 7.dp, end = 42.dp),
         ) {
             if (hero == null) {
@@ -531,12 +538,17 @@ private fun ExperimentalBrowseContent(
                 state = shelfListState,
                 contentPadding = PaddingValues(bottom = 30.dp),
             ) {
-                items(shelves, key = ExperimentalShelf::title) { shelf ->
+                items(
+                    count = shelves.size,
+                    key = { index -> shelves[index].title },
+                ) { index ->
+                    val shelf = shelves[index]
                     ExperimentalMediaShelf(
                         shelf = shelf,
                         navigationFocus = navigationFocus,
                         onOpen = onOpen,
                         onFocused = onHighlighted,
+                        onShelfFocused = { focusedShelfIndex = index },
                         usePosterCards = usePosterCards,
                     )
                 }
@@ -795,20 +807,14 @@ private fun ExperimentalMediaShelf(
     navigationFocus: FocusRequester,
     onOpen: (MediaContent) -> Unit,
     onFocused: (MediaContent) -> Unit,
+    onShelfFocused: () -> Unit,
     usePosterCards: Boolean,
 ) {
-    val shelfBringIntoView = remember { BringIntoViewRequester() }
-    val scope = rememberCoroutineScope()
     val focusWithinShelf: (MediaContent) -> Unit = { content ->
+        onShelfFocused()
         onFocused(content)
-        scope.launch { shelfBringIntoView.bringIntoView() }
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .height(if (usePosterCards) 234.dp else 188.dp)
-            .bringIntoViewRequester(shelfBringIntoView),
-    ) {
+    Column(Modifier.fillMaxWidth().height(if (usePosterCards) 234.dp else 188.dp)) {
         Text(
             shelf.title,
             color = MinovaWhite,
