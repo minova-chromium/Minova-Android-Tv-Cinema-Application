@@ -163,6 +163,10 @@ fun BrowseScreen(
     loadCollectionMembers: (suspend (String) -> List<MediaContent>)? = null,
     experimentalTvInterface: Boolean = false,
     experimentalTvPosterCards: Boolean = false,
+    experimentalTvMoviesGrid: Boolean = false,
+    experimentalTvSeriesGrid: Boolean = false,
+    experimentalTvWatchlistGrid: Boolean = false,
+    onExperimentalTvLayoutChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     if (rememberDeviceProfile() == DeviceProfile.Handheld) {
         MobileBrowseScreen(
@@ -199,6 +203,10 @@ fun BrowseScreen(
             onHighlighted = onHighlighted,
             loadCollectionMembers = loadCollectionMembers,
             usePosterCards = experimentalTvPosterCards,
+            moviesGrid = experimentalTvMoviesGrid,
+            seriesGrid = experimentalTvSeriesGrid,
+            watchlistGrid = experimentalTvWatchlistGrid,
+            onLayoutChanged = onExperimentalTvLayoutChanged,
         )
         return
     }

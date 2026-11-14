@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -28,7 +30,14 @@ import com.minova.cinema.ui.platform.rememberDeviceProfile
 import com.minova.cinema.ui.theme.*
 
 @Composable
-internal fun CinemaPanel(title: String, onClose: () -> Unit, doneLabel: String = "Done", status: String? = null, content: LazyListScope.() -> Unit) {
+internal fun CinemaPanel(
+    title: String,
+    onClose: () -> Unit,
+    doneLabel: String = "Done",
+    status: String? = null,
+    experimentalTv: Boolean = false,
+    content: LazyListScope.() -> Unit,
+) {
     val handheld = rememberDeviceProfile() == DeviceProfile.Handheld
     val first = remember { FocusRequester() }
     val body = remember { FocusRequester() }
@@ -40,9 +49,13 @@ internal fun CinemaPanel(title: String, onClose: () -> Unit, doneLabel: String =
                     android.view.KeyEvent.KEYCODE_NUMPAD_ENTER, android.view.KeyEvent.KEYCODE_BUTTON_A)) {
                 activation.consume(key.keyCode, key.action == android.view.KeyEvent.ACTION_DOWN, key.repeatCount, key.isCanceled)
             } else false
-        }.background(MinovaNightDeep).padding(
-            horizontal = if (handheld) 16.dp else 40.dp,
-            vertical = if (handheld) 14.dp else 24.dp,
+        }.background(
+            if (experimentalTv) Brush.linearGradient(
+                listOf(Color(0xFF05090E), MinovaNightDeep, Color(0xFF071820)),
+            ) else Brush.linearGradient(listOf(MinovaNightDeep, MinovaNightDeep)),
+        ).padding(
+            horizontal = if (handheld) 16.dp else if (experimentalTv) 52.dp else 40.dp,
+            vertical = if (handheld) 14.dp else if (experimentalTv) 16.dp else 24.dp,
         )) {
             Row(
                 Modifier.fillMaxWidth().statusBarsPadding(),
@@ -55,7 +68,7 @@ internal fun CinemaPanel(title: String, onClose: () -> Unit, doneLabel: String =
                     .focusRequester(first).focusProperties { down = body }) { Text(doneLabel) }
             }
             status?.let { Text(it, color = MinovaMuted, modifier = Modifier.padding(top = 10.dp)) }
-            LazyColumn(Modifier.weight(1f).testTag("cinema-panel-list").focusRequester(body).focusGroup().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+            LazyColumn(Modifier.weight(1f).testTag("cinema-panel-list").focusRequester(body).focusGroup().padding(top = if (experimentalTv) 10.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(if (experimentalTv) 9.dp else 14.dp),
                 contentPadding = PaddingValues(bottom = if (handheld) 48.dp else 20.dp), content = content)
         }
         LaunchedEffect(handheld) {
@@ -112,7 +125,13 @@ internal fun LibraryFilterDialog(items: List<MediaContent>, initial: LibraryFilt
 }
 
 @Composable
-internal fun DiscoveryDialog(catalog: CinemaCatalog, onOpen: (MediaContent) -> Unit, onWatched: (MediaContent, Boolean) -> Unit, onClose: () -> Unit) {
+internal fun DiscoveryDialog(
+    catalog: CinemaCatalog,
+    onOpen: (MediaContent) -> Unit,
+    onWatched: (MediaContent, Boolean) -> Unit,
+    onClose: () -> Unit,
+    experimentalTv: Boolean = false,
+) {
     var tab by remember { mutableStateOf("Movie Night") }
     var minutes by remember { mutableIntStateOf(120) }
     var genres by remember { mutableStateOf(emptySet<String>()) }
@@ -123,7 +142,7 @@ internal fun DiscoveryDialog(catalog: CinemaCatalog, onOpen: (MediaContent) -> U
     val choices = remember(catalog.movies, minutes, genres, seed) { movieNightChoices(catalog.movies, minutes, genres, seed) }
     val members = remember(all, collection) { collection?.let { collectionMembers(all, it) }.orEmpty() }
     val history = remember(all) { all.filter { (it.lastViewedAtEpochSeconds ?: 0) > 0 }.sortedByDescending { it.lastViewedAtEpochSeconds }.take(100) }
-    CinemaPanel("Discover your library", onClose) {
+    CinemaPanel("Discover", onClose, experimentalTv = experimentalTv) {
         item { ChoiceStrip("Choose a section", listOf("Movie Night", "Collections", "History").map { it to it }, tab) { tab = it } }
         when (tab) {
             "Movie Night" -> {

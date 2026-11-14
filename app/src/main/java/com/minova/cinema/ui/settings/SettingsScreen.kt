@@ -219,6 +219,7 @@ fun SettingsScreen(
                         sections = availableSections,
                         railFocusRequesters = sectionRailFocus,
                         compact = tablet,
+                        dense = experimentalTvInterface,
                         onSectionSelected = { section ->
                             activeSection = section
                             contentFocusActive = false
@@ -247,7 +248,7 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .padding(
                             start = if (compactLayout) 16.dp else 28.dp,
-                            top = if (compactLayout) 16.dp else 24.dp,
+                            top = if (compactLayout) 16.dp else if (experimentalTvInterface) 14.dp else 24.dp,
                             end = if (compactLayout) 16.dp else 36.dp,
                             bottom = 12.dp,
                         ),
@@ -261,11 +262,11 @@ fun SettingsScreen(
                         .weight(1f),
                     contentPadding = PaddingValues(
                         start = if (compactLayout) 12.dp else 28.dp,
-                        top = 6.dp,
+                        top = if (experimentalTvInterface) 2.dp else 6.dp,
                         end = if (compactLayout) 12.dp else 36.dp,
                         bottom = 56.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (experimentalTvInterface) 11.dp else 16.dp),
                 ) {
                 when (activeSection) {
                 SettingsSection.Plex -> item {
@@ -607,12 +608,6 @@ fun SettingsScreen(
                             modifier = itemModifier.testTag("experimental-artwork-posters"),
                         )
                     },
-                )
-                Text(
-                    "This affects experimental browsing rows only. Grid view already uses posters, and the stable TV interface is unchanged.",
-                    color = MinovaMuted,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 14.dp),
                 )
             }
         }
@@ -1077,12 +1072,13 @@ private fun SettingsNavigationRail(
     sections: List<SettingsSection>,
     railFocusRequesters: Map<SettingsSection, FocusRequester>,
     compact: Boolean,
+    dense: Boolean = false,
     onSectionSelected: (SettingsSection) -> Unit,
     onEnterSection: (SettingsSection) -> Unit,
 ) {
     Column(
         modifier = Modifier
-            .width(if (compact) 76.dp else 286.dp)
+            .width(if (compact) 76.dp else if (dense) 224.dp else 286.dp)
             .fillMaxHeight()
             .background(
                 Brush.verticalGradient(
@@ -1095,9 +1091,9 @@ private fun SettingsNavigationRail(
                 shape = RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp),
             )
             .padding(
-                start = if (compact) 10.dp else 22.dp,
-                top = if (compact) 14.dp else 22.dp,
-                end = if (compact) 10.dp else 18.dp,
+                start = if (compact) 10.dp else if (dense) 14.dp else 22.dp,
+                top = if (compact) 14.dp else if (dense) 14.dp else 22.dp,
+                end = if (compact) 10.dp else if (dense) 12.dp else 18.dp,
                 bottom = if (compact) 12.dp else 18.dp,
             ),
     ) {
@@ -1125,7 +1121,7 @@ private fun SettingsNavigationRail(
             "SETTINGS",
             style = MaterialTheme.typography.bodySmall,
             color = MinovaMuted,
-            modifier = Modifier.padding(top = 22.dp, start = 6.dp, bottom = 6.dp),
+            modifier = Modifier.padding(top = if (dense) 12.dp else 22.dp, start = 6.dp, bottom = 6.dp),
         )
 
         sections.forEach { section ->
@@ -1134,7 +1130,7 @@ private fun SettingsNavigationRail(
                 onClick = { onSectionSelected(section) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (sections.size > 6) 48.dp else 52.dp)
+                    .height(if (dense) 43.dp else if (sections.size > 6) 48.dp else 52.dp)
                     .padding(vertical = 2.dp)
                     .focusRequester(railFocusRequesters.getValue(section))
                     .testTag("settings-section-${section.name}")
@@ -1192,7 +1188,7 @@ private fun SettingsNavigationRail(
                             style = MaterialTheme.typography.titleSmall,
                             color = Color.White,
                         )
-                        Text(
+                        if (!dense) Text(
                             section.description,
                             style = MaterialTheme.typography.bodySmall,
                             color = if (selected) Color.White.copy(alpha = 0.72f) else MinovaMuted,

@@ -460,7 +460,8 @@ private fun MainScreen(
                 experience.themeMusic && currentRoute == CinemaRoute.Browse && !discoveryOpen && !experienceOpen && !customizeHome,
                 experience.themeVolume)
             if (discoveryOpen) DiscoveryDialog(state.catalog, onOpen = { discoveryOpen = false; open(it) },
-                onWatched = viewModel::setWatched, onClose = { discoveryOpen = false })
+                onWatched = viewModel::setWatched, onClose = { discoveryOpen = false },
+                experimentalTv = experience.experimentalTvInterface)
             if (experienceOpen) ExperienceSettingsDialog(experience,
                 showCinemaControls = !handheld,
                 onChange = { experience = it; experiencePreferences.save(it) },
@@ -527,6 +528,18 @@ private fun MainScreen(
                         },
                         experimentalTvInterface = experience.experimentalTvInterface,
                         experimentalTvPosterCards = experience.experimentalTvPosterCards,
+                        experimentalTvMoviesGrid = experience.experimentalTvMoviesGrid,
+                        experimentalTvSeriesGrid = experience.experimentalTvSeriesGrid,
+                        experimentalTvWatchlistGrid = experience.experimentalTvWatchlistGrid,
+                        onExperimentalTvLayoutChanged = { destination, grid ->
+                            experience = when (destination) {
+                                "movies" -> experience.copy(experimentalTvMoviesGrid = grid)
+                                "series" -> experience.copy(experimentalTvSeriesGrid = grid)
+                                "watchlist" -> experience.copy(experimentalTvWatchlistGrid = grid)
+                                else -> experience
+                            }
+                            experiencePreferences.save(experience)
+                        },
                     ) }
                     is CinemaRoute.Detail -> {
                         val detailedMovie = (movieDetail as? MovieDetailUiState.Ready)

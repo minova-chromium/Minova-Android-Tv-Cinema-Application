@@ -114,8 +114,8 @@ fun ExperimentalTvDetailScreen(
             Modifier.fillMaxSize().background(
                 Brush.horizontalGradient(
                     0f to MinovaNightDeep,
-                    0.43f to MinovaNightDeep.copy(alpha = 0.88f),
-                    0.77f to MinovaNightDeep.copy(alpha = 0.18f),
+                    0.46f to MinovaNightDeep.copy(alpha = 0.94f),
+                    0.8f to MinovaNightDeep.copy(alpha = 0.3f),
                     1f to Color.Transparent,
                 ),
             ),
@@ -124,8 +124,8 @@ fun ExperimentalTvDetailScreen(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
                     0f to Color.Black.copy(alpha = 0.16f),
-                    0.52f to Color.Transparent,
-                    0.82f to MinovaNightDeep.copy(alpha = 0.9f),
+                    0.48f to Color.Transparent,
+                    0.76f to MinovaNightDeep.copy(alpha = 0.92f),
                     1f to MinovaBlack,
                 ),
             ),
@@ -221,8 +221,8 @@ private fun ExperimentalDetailHero(
     onOpenDownloads: () -> Unit,
 ) {
     Column(
-        Modifier.fillMaxWidth().height(348.dp)
-            .padding(start = 76.dp, top = 72.dp, end = 52.dp),
+        Modifier.fillMaxWidth().height(302.dp)
+            .padding(start = 76.dp, top = 66.dp, end = 52.dp),
     ) {
         Text(
             if (content.kind == MediaKind.Show) "TV SHOW" else if (content.kind == MediaKind.Episode) "EPISODE" else "MOVIE",
@@ -233,10 +233,10 @@ private fun ExperimentalDetailHero(
         Text(
             content.title,
             color = Color.White,
-            style = MaterialTheme.typography.displayMedium,
+            style = MaterialTheme.typography.displaySmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.width(760.dp).padding(top = 4.dp),
+            modifier = Modifier.width(720.dp).padding(top = 2.dp),
         )
         Text(
             buildList {
@@ -248,20 +248,20 @@ private fun ExperimentalDetailHero(
             style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.width(820.dp).padding(top = 9.dp),
+            modifier = Modifier.width(780.dp).padding(top = 5.dp),
         )
         content.summary?.let {
             Text(
                 it,
                 color = Color.White.copy(alpha = 0.78f),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(730.dp).padding(top = 12.dp),
+                modifier = Modifier.width(700.dp).padding(top = 7.dp),
             )
         }
         Row(
-            modifier = Modifier.padding(top = 18.dp).focusGroup(),
+            modifier = Modifier.padding(top = 11.dp).focusGroup(),
             horizontalArrangement = Arrangement.spacedBy(11.dp),
         ) {
             ExperimentalDetailAction(
@@ -305,15 +305,11 @@ private fun ExperimentalDetailHero(
                     icon = Icons.Rounded.Download,
                     onClick = onOpenDownloads,
                 )
-                else -> ExperimentalDetailAction(
-                    label = "Download",
-                    icon = Icons.Rounded.Download,
-                    onClick = { onDownload(content) },
-                )
+                else -> Unit
             }
         }
         if (isInContinueWatching) {
-            Row(Modifier.padding(top = 10.dp)) {
+            Row(Modifier.padding(top = 6.dp)) {
                 ExperimentalDetailAction(
                     label = "Remove from Continue Watching",
                     icon = Icons.Rounded.DeleteOutline,
@@ -589,7 +585,7 @@ private fun ExperimentalRelatedShelf(
     media: List<MediaContent>,
     onOpen: (MediaContent) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         Text(
             title,
             color = Color.White,
@@ -648,7 +644,7 @@ private fun ExperimentalCastShelf(
     credits: List<MediaCredit>,
     onOpenPerson: (MediaCredit) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(top = 28.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
         Text(
             "Cast & Crew",
             color = Color.White,

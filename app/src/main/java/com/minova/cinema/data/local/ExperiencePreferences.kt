@@ -7,6 +7,9 @@ import com.google.gson.Gson
 data class ExperienceSettings(
     val experimentalTvInterface: Boolean = false,
     val experimentalTvPosterCards: Boolean = false,
+    val experimentalTvMoviesGrid: Boolean = false,
+    val experimentalTvSeriesGrid: Boolean = false,
+    val experimentalTvWatchlistGrid: Boolean = false,
     val audioLanguage: String = "",
     val subtitleLanguage: String = "",
     val subtitlesOff: Boolean = false,

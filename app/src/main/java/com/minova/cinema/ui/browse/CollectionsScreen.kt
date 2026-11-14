@@ -22,6 +22,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,6 +44,7 @@ internal fun CollectionsScreen(
     onHeaderFocus: () -> Unit,
     onOpen: (MediaContent) -> Unit,
     loadMembers: (suspend (String) -> List<MediaContent>)? = null,
+    experimental: Boolean = false,
 ) {
     val library = remember(catalog.movies, catalog.shows) {
         (catalog.movies + catalog.shows).distinctBy(MediaContent::ratingKey)
@@ -79,7 +81,12 @@ internal fun CollectionsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(MinovaNightDeep).padding(top = 72.dp)) {
+    val columns = if (experimental) 6 else 5
+    Column(
+        Modifier.fillMaxSize()
+            .background(if (experimental) Color(0xF2071018) else MinovaNightDeep)
+            .padding(top = if (experimental) 18.dp else 72.dp),
+    ) {
         if (activeCollection == null) {
             Text("Collections", color = MinovaWhite, style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(horizontal = 44.dp))
@@ -87,10 +94,11 @@ internal fun CollectionsScreen(
                 else "${collections.size} collections · Movies & series",
                 color = MinovaMuted, modifier = Modifier.padding(start = 44.dp, top = 6.dp, bottom = 8.dp))
             LazyVerticalGrid(
-                columns = GridCells.Fixed(5), state = collectionState,
+                columns = GridCells.Fixed(columns), state = collectionState,
                 modifier = Modifier.weight(1f).focusRequester(entryFocus).focusGroup().testTag("collections-grid"),
-                contentPadding = PaddingValues(horizontal = 44.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp),
+                contentPadding = PaddingValues(horizontal = 44.dp, vertical = if (experimental) 12.dp else 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (experimental) 14.dp else 20.dp),
+                verticalArrangement = Arrangement.spacedBy(if (experimental) 14.dp else 20.dp),
             ) {
                 itemsIndexed(collections, key = { _, collection -> collection.ratingKey }) { index, collection ->
                     val focus = remember { FocusRequester() }
@@ -101,7 +109,7 @@ internal fun CollectionsScreen(
                             if (transferFocus && collection.ratingKey == lastCollection) { transferFocus = false; focus.requestFocus() }
                         }
                         .onPreviewKeyEvent {
-                            if (it.type == KeyEventType.KeyDown && it.key == Key.DirectionUp && index < 5) {
+                            if (it.type == KeyEventType.KeyDown && it.key == Key.DirectionUp && index < columns) {
                                 onHeaderFocus(); true
                             } else false
                         }
@@ -112,8 +120,9 @@ internal fun CollectionsScreen(
                     ) {
                         BrowseArtwork(collection.posterUrl, "${collection.title} collection poster",
                             Modifier.fillMaxWidth().aspectRatio(2f / 3f), contentScale = ContentScale.Fit)
-                        Column(Modifier.padding(10.dp)) {
-                            Text(collection.title, color = MinovaWhite, style = MaterialTheme.typography.titleMedium,
+                        Column(Modifier.padding(if (experimental) 8.dp else 10.dp)) {
+                            Text(collection.title, color = MinovaWhite,
+                                style = if (experimental) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                                 maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(collection.childCount?.let { "$it ${if (it == 1) "title" else "titles"}" }
                                 ?: collection.libraryTitle, color = MinovaMuted,
@@ -153,15 +162,16 @@ internal fun CollectionsScreen(
                     }
                 }
                 CompositionLocalProvider(LocalShelfIdentity provides identity, LocalArtworkSequence provides members) {
-                    LazyVerticalGrid(columns = GridCells.Fixed(5), state = grid,
+                    LazyVerticalGrid(columns = GridCells.Fixed(columns), state = grid,
                         modifier = Modifier.weight(1f).focusGroup().testTag("collection-members"),
                         contentPadding = PaddingValues(horizontal = 44.dp, vertical = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (experimental) 14.dp else 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (experimental) 18.dp else 22.dp),
                     ) {
                         itemsIndexed(if (loadFailed) emptyList() else members, key = { _, item -> item.ratingKey }) { index, content ->
                             PosterCard(content, Modifier.fillMaxWidth().testTag("collection-member-${content.ratingKey}")
                                 .onPreviewKeyEvent {
-                                    if (it.type == KeyEventType.KeyDown && it.key == Key.DirectionUp && index < 5) {
+                                    if (it.type == KeyEventType.KeyDown && it.key == Key.DirectionUp && index < columns) {
                                         entryFocus.requestFocus(); true
                                     } else false
                                 }, onOpen)

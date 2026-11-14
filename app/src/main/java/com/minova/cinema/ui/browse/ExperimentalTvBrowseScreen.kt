@@ -107,11 +107,27 @@ fun ExperimentalTvBrowseScreen(
     onHighlighted: (MediaContent?) -> Unit = {},
     loadCollectionMembers: (suspend (String) -> List<MediaContent>)? = null,
     usePosterCards: Boolean = false,
+    moviesGrid: Boolean = false,
+    seriesGrid: Boolean = false,
+    watchlistGrid: Boolean = false,
+    onLayoutChanged: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     var destination by rememberSaveable {
         mutableStateOf(ExperimentalDestination.fromOpeningTab(homePreferences.openingTab))
     }
-    var layout by rememberSaveable { mutableStateOf(ExperimentalLayout.Rows) }
+    val persistedLayouts = remember(moviesGrid, seriesGrid, watchlistGrid) {
+        mapOf(
+            ExperimentalDestination.Movies to if (moviesGrid) ExperimentalLayout.Grid else ExperimentalLayout.Rows,
+            ExperimentalDestination.Series to if (seriesGrid) ExperimentalLayout.Grid else ExperimentalLayout.Rows,
+            ExperimentalDestination.Watchlist to if (watchlistGrid) ExperimentalLayout.Grid else ExperimentalLayout.Rows,
+        )
+    }
+    var layout by rememberSaveable(destination) {
+        mutableStateOf(persistedLayouts[destination] ?: ExperimentalLayout.Rows)
+    }
+    LaunchedEffect(destination, persistedLayouts) {
+        layout = persistedLayouts[destination] ?: ExperimentalLayout.Rows
+    }
     val heroFocus = remember { FocusRequester() }
     val layoutFocus = remember { FocusRequester() }
     val gridFirstFocus = remember { FocusRequester() }
@@ -216,9 +232,12 @@ fun ExperimentalTvBrowseScreen(
                         movies = catalog.movies,
                         shows = catalog.shows,
                         onOpen = onOpen,
+                        deferKeyboard = true,
+                        experimentalShell = true,
                     )
                     ExperimentalDestination.Collections -> CollectionsScreen(
                         catalog = catalog,
+                        experimental = true,
                         entryFocus = collectionFocus,
                         onHeaderFocus = {
                             railFocus.getValue(ExperimentalDestination.Collections).requestFocus()
@@ -236,7 +255,10 @@ fun ExperimentalTvBrowseScreen(
                         gridFirstFocus = gridFirstFocus,
                         navigationFocus = railFocus.getValue(destination),
                         layout = layout,
-                        onLayoutChanged = { layout = it },
+                        onLayoutChanged = {
+                            layout = it
+                            onLayoutChanged(destination.name.lowercase(), it == ExperimentalLayout.Grid)
+                        },
                         isInMyList = { item -> catalog.myList.any { it.ratingKey == item.ratingKey } },
                         onOpen = onOpen,
                         onPlay = onPlay,
@@ -390,8 +412,8 @@ private fun ExperimentalBrowseContent(
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(66.dp)
-                .padding(start = 48.dp, top = 16.dp, end = 42.dp),
+                .height(60.dp)
+                .padding(start = 48.dp, top = 12.dp, end = 42.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
@@ -442,8 +464,8 @@ private fun ExperimentalBrowseContent(
         Column(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 178.dp, max = 220.dp)
-                .padding(start = 48.dp, top = 7.dp, end = 42.dp),
+                .heightIn(min = 154.dp, max = 184.dp)
+                .padding(start = 48.dp, top = 3.dp, end = 42.dp),
         ) {
             if (hero == null) {
                 Text("Nothing to show yet", color = MinovaWhite, style = MaterialTheme.typography.headlineLarge)
@@ -458,14 +480,10 @@ private fun ExperimentalBrowseContent(
                 Text(
                     hero.title,
                     color = Color.White,
-                    style = if (hero.title.length > 32) {
-                        MaterialTheme.typography.headlineLarge
-                    } else {
-                        MaterialTheme.typography.displaySmall
-                    },
+                    style = MaterialTheme.typography.headlineLarge,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.width(650.dp).padding(top = 2.dp),
+                    modifier = Modifier.width(650.dp).padding(top = 1.dp),
                 )
                 Text(
                     buildList {
@@ -474,7 +492,7 @@ private fun ExperimentalBrowseContent(
                     }.joinToString("  •  "),
                     color = Color.White.copy(alpha = 0.86f),
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
                 hero.summary?.let {
                     Text(
@@ -483,11 +501,11 @@ private fun ExperimentalBrowseContent(
                         style = MaterialTheme.typography.bodyLarge,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.width(650.dp).padding(top = 5.dp),
+                        modifier = Modifier.width(650.dp).padding(top = 3.dp),
                     )
                 }
                 Row(
-                    Modifier.padding(top = 11.dp).focusGroup(),
+                    Modifier.padding(top = 7.dp).focusGroup(),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -536,7 +554,7 @@ private fun ExperimentalBrowseContent(
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 state = shelfListState,
-                contentPadding = PaddingValues(bottom = 30.dp),
+                contentPadding = PaddingValues(top = 14.dp, bottom = 30.dp),
             ) {
                 items(
                     count = shelves.size,
@@ -618,7 +636,15 @@ private fun ExperimentalMediaGrid(
     onFocused: (MediaContent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier) {
+    Column(
+        modifier.background(
+            Brush.verticalGradient(
+                0f to MinovaNightDeep.copy(alpha = 0.92f),
+                0.5f to MinovaNightDeep.copy(alpha = 0.82f),
+                1f to MinovaBlack.copy(alpha = 0.96f),
+            ),
+        ),
+    ) {
         Row(
             Modifier.fillMaxWidth().height(52.dp).padding(start = 48.dp, end = 42.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -641,7 +667,7 @@ private fun ExperimentalMediaGrid(
         LazyVerticalGrid(
             columns = GridCells.Fixed(6),
             modifier = Modifier.fillMaxWidth().weight(1f).focusGroup(),
-            contentPadding = PaddingValues(start = 48.dp, top = 4.dp, end = 42.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 52.dp, top = 14.dp, end = 46.dp, bottom = 36.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
@@ -814,7 +840,14 @@ private fun ExperimentalMediaShelf(
         onShelfFocused()
         onFocused(content)
     }
-    Column(Modifier.fillMaxWidth().height(if (usePosterCards) 234.dp else 188.dp)) {
+    val shortShelf = shelf.media.size <= 3
+    val shelfHeight = when {
+        usePosterCards && shortShelf -> 218.dp
+        usePosterCards -> 226.dp
+        shortShelf -> 158.dp
+        else -> 172.dp
+    }
+    Column(Modifier.fillMaxWidth().height(shelfHeight)) {
         Text(
             shelf.title,
             color = MinovaWhite,
@@ -826,7 +859,7 @@ private fun ExperimentalMediaShelf(
             modifier = Modifier.fillMaxWidth().focusGroup(),
             contentPadding = PaddingValues(
                 horizontal = 48.dp,
-                vertical = if (usePosterCards) 8.dp else 4.dp,
+                vertical = if (usePosterCards) 8.dp else 5.dp,
             ),
             horizontalArrangement = Arrangement.spacedBy(15.dp),
         ) {
@@ -866,8 +899,8 @@ private fun ExperimentalShelfPosterCard(
     Surface(
         onClick = { onOpen(content) },
         modifier = modifier
-            .width(120.dp)
-            .height(180.dp)
+            .width(126.dp)
+            .height(184.dp)
             .testTag("experimental-shelf-poster-${content.ratingKey}")
             .onFocusChanged {
                 focused = it.isFocused
@@ -909,7 +942,7 @@ private fun ExperimentalShelfPosterCard(
                     ),
                 ),
             )
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(10.dp)) {
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 9.dp, vertical = 11.dp)) {
                 Text(
                     content.title,
                     color = Color.White,
@@ -957,8 +990,8 @@ private fun ExperimentalLandscapeCard(
     Surface(
         onClick = { onOpen(content) },
         modifier = modifier
-            .width(258.dp)
-            .height(142.dp)
+            .width(220.dp)
+            .height(124.dp)
             .testTag("experimental-shelf-landscape-${content.ratingKey}")
             .onFocusChanged {
                 focused = it.isFocused
@@ -1001,7 +1034,7 @@ private fun ExperimentalLandscapeCard(
                 ),
             )
             Column(
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(12.dp),
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(10.dp),
             ) {
                 Text(
                     content.title,

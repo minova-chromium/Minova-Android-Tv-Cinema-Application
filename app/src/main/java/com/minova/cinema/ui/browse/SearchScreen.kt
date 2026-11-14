@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -38,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.minova.cinema.domain.MediaContent
 import com.minova.cinema.domain.MediaKind
@@ -60,6 +64,8 @@ internal fun SearchScreen(
     movies: List<MediaContent>,
     shows: List<MediaContent>,
     onOpen: (MediaContent) -> Unit,
+    deferKeyboard: Boolean = false,
+    experimentalShell: Boolean = false,
 ) {
     var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var fieldFocused by remember { mutableStateOf(false) }
@@ -70,18 +76,19 @@ internal fun SearchScreen(
     }
     val results = remember(query, allMedia) { searchMedia(allMedia, query) }
 
-    // Entering the Search tab immediately opens the Android TV keyboard.
-    LaunchedEffect(Unit) {
-        delay(120)
-        fieldFocus.requestFocus()
-        keyboard?.show()
+    LaunchedEffect(deferKeyboard) {
+        if (!deferKeyboard) {
+            delay(120)
+            fieldFocus.requestFocus()
+            keyboard?.show()
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MinovaNightDeep)
-            .padding(top = 58.dp),
+            .background(if (experimentalShell) Color(0xF2071018) else MinovaNightDeep)
+            .padding(top = if (experimentalShell) 18.dp else 58.dp),
     ) {
         Row(
             modifier = Modifier
@@ -150,6 +157,11 @@ internal fun SearchScreen(
                 .weight(1f),
         ) {
             when {
+                query.isBlank() && experimentalShell -> ExperimentalSearchEmpty(
+                    allMedia = allMedia,
+                    onGenre = { query = it },
+                    onOpen = onOpen,
+                )
                 query.isBlank() -> SearchMessage("Type a title, genre, year, movie, or series name.")
                 results.isEmpty() -> SearchMessage("No matching titles were found on this Plex server.")
                 else -> LazyVerticalGrid(
@@ -168,6 +180,54 @@ internal fun SearchScreen(
                         PosterCard(content, Modifier.fillMaxWidth(), onOpen)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExperimentalSearchEmpty(
+    allMedia: List<MediaContent>,
+    onGenre: (String) -> Unit,
+    onOpen: (MediaContent) -> Unit,
+) {
+    val genres = remember(allMedia) {
+        allMedia.flatMap(MediaContent::genres).filter(String::isNotBlank)
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(8).map { it.key }
+    }
+    val recent = remember(allMedia) {
+        allMedia.sortedByDescending { it.addedAtEpochSeconds ?: 0L }.take(8)
+    }
+    Column(Modifier.fillMaxSize().padding(start = 48.dp, top = 6.dp, end = 48.dp)) {
+        Text("Browse while you search", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Choose a genre, or press OK on the search box to open the keyboard.",
+            color = MinovaMuted,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(genres, key = { it }) { genre ->
+                Surface(
+                    onClick = { onGenre(genre) },
+                    colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+                        containerColor = MinovaSurface,
+                        focusedContainerColor = MinovaCyan,
+                        focusedContentColor = Color(0xFF001419),
+                    ),
+                    shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(999.dp)),
+                ) {
+                    Text(genre, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Text("Recently added", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            items(recent, key = MediaContent::ratingKey) { content ->
+                PosterCard(content, Modifier.width(132.dp), onOpen)
             }
         }
     }
