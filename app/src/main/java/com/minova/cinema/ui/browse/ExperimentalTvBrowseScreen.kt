@@ -26,6 +26,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,6 +87,7 @@ import com.minova.cinema.ui.theme.MinovaSurfaceRaised
 import com.minova.cinema.ui.theme.MinovaTeal
 import com.minova.cinema.ui.theme.MinovaWhite
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Controller-first port of the Desktop experimental renderer. It deliberately
@@ -793,7 +797,18 @@ private fun ExperimentalMediaShelf(
     onFocused: (MediaContent) -> Unit,
     usePosterCards: Boolean,
 ) {
-    Column(Modifier.fillMaxWidth().height(if (usePosterCards) 234.dp else 188.dp)) {
+    val shelfBringIntoView = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+    val focusWithinShelf: (MediaContent) -> Unit = { content ->
+        onFocused(content)
+        scope.launch { shelfBringIntoView.bringIntoView() }
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(if (usePosterCards) 234.dp else 188.dp)
+            .bringIntoViewRequester(shelfBringIntoView),
+    ) {
         Text(
             shelf.title,
             color = MinovaWhite,
@@ -818,14 +833,14 @@ private fun ExperimentalMediaShelf(
                         content = content,
                         modifier = cardModifier,
                         onOpen = onOpen,
-                        onFocused = onFocused,
+                        onFocused = focusWithinShelf,
                     )
                 } else {
                     ExperimentalLandscapeCard(
                         content = content,
                         modifier = cardModifier,
                         onOpen = onOpen,
-                        onFocused = onFocused,
+                        onFocused = focusWithinShelf,
                     )
                 }
             }
